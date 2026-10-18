@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useStore } from '../store/store';
+import { selectedFurniture, useStore } from '../store/store';
 import { confirmAction } from './primitives';
 
 export function deleteAgent(id: string) {
@@ -31,7 +31,7 @@ export function deleteSelection() {
       onConfirm: () => { s.commit(sel.ids.map((id) => ({ op: 'room.delete', id, cascade: true })), `Delete ${names}`); s.setUi({ selection: { kind: 'none' } }); },
     });
   } else if (sel.kind === 'corridor') { s.commit([{ op: 'corridor.delete', id: sel.id }], 'Delete hallway'); s.setUi({ selection: { kind: 'none' } }); }
-  else if (sel.kind === 'furniture') { s.commit([{ op: 'furniture.delete', id: sel.id }], 'Delete furniture'); s.setUi({ selection: { kind: 'none' } }); }
+  else if (sel.kind === 'furniture') { const ids = selectedFurniture(sel); s.commit(ids.map((id) => ({ op: 'furniture.delete', id })), ids.length > 1 ? `Delete ${ids.length} objects` : 'Delete object'); s.setUi({ selection: { kind: 'none' } }); }
   else if (sel.kind === 'door') {
     const r = s.commit([{ op: 'door.delete', roomId: sel.roomId, doorId: sel.doorId }], 'Delete door', { silent: true });
     if (!r.ok && r.errors.length) {
@@ -55,6 +55,7 @@ export function useShortcuts() {
         e.preventDefault();
         if (s.selection.kind === 'room') s.commit(s.selection.ids.map((id) => ({ op: 'room.duplicate', id })), 'Duplicate room');
         if (s.selection.kind === 'agent') s.commit([{ op: 'agent.duplicate', id: s.selection.id }], 'Duplicate agent');
+        if (s.selection.kind === 'furniture') duplicateFurniture();
         return;
       }
       if (mod || e.altKey) return;
@@ -67,6 +68,14 @@ export function useShortcuts() {
         s.commit(s.selection.ids.map((id) => ({ op: 'room.update', id, patch: { x: s.doc.rooms[id].x + d[0], y: s.doc.rooms[id].y + d[1] } })), 'Nudge room');
         return;
       }
+      if (k.startsWith('arrow') && s.selection.kind === 'furniture' && s.mode === 'construct') {
+        e.preventDefault();
+        const n = e.shiftKey ? 5 : 1;
+        const d = { arrowleft: [-n, 0], arrowright: [n, 0], arrowup: [0, -n], arrowdown: [0, n] }[k]!;
+        s.commit([{ op: 'furniture.moveMany', ids: selectedFurniture(s.selection), dx: d[0], dy: d[1] }], 'Nudge objects');
+        return;
+      }
+      if (k === 'e') { rotateSelectionOrGhost(); return; }
       const tools: Record<string, string> = { v: 'select', r: 'room', h: 'hallway', d: 'door', f: 'furniture', k: 'workstation', n: 'agent' };
       if (tools[k]) { if (k !== 'v') s.setUi({ mode: 'construct' }); s.setUi({ tool: tools[k] as never, hallwayDraft: null }); return; }
       if (k === 'b') { s.setUi({ mode: s.mode === 'construct' ? 'simulate' : 'construct', tool: 'select' }); return; }
@@ -81,4 +90,21 @@ export function useShortcuts() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+}
+
+export function duplicateFurniture() {
+  const s = useStore.getState();
+  const ids = selectedFurniture(s.selection); if (!ids.length) return;
+  const newIds = ids.map((_, i) => `furn_${Date.now().toString(36)}${i}`);
+  const r = s.commit([{ op: 'furniture.duplicateMany', ids, dx: 1, dy: 1, newIds }], ids.length > 1 ? `Duplicate ${ids.length} objects` : 'Duplicate object');
+  if (r.ok) s.setUi({ selection: { kind: 'furniture', id: newIds[0], ids: newIds } });
+}
+
+/** E rotates the selected objects, or the object about to be placed. */
+export function rotateSelectionOrGhost() {
+  const s = useStore.getState();
+  const next = (r: number) => (((r + 90) % 360) as 0 | 90 | 180 | 270);
+  if (s.mode === 'construct' && (s.tool === 'furniture' || s.tool === 'workstation')) { s.setUi({ placeRotation: next(s.placeRotation) }); return; }
+  const ids = selectedFurniture(s.selection);
+  if (ids.length && s.mode === 'construct') s.commit(ids.map((id) => ({ op: 'furniture.update', id, patch: { rotation: next(s.doc.furniture[id].rotation) } })), 'Rotate');
 }

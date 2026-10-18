@@ -4,6 +4,9 @@ import type { DocOp } from './ops';
 import { findFreeSpot } from './ops';
 import { bandCells, doorAnchor, doorInsideCells, key, polylineCells, rectsOverlap } from './geometry';
 import { buildNav, furnitureWorldRect, reachableRooms, roomSpot } from './navigation';
+import { findObjectSpot, objectIndex } from './spatial';
+import { ACCESSORY } from '../model/cosmetics';
+import { FURNITURE_META } from '../model/catalog';
 
 export type Severity = 'error' | 'warning';
 export interface Issue {
@@ -12,7 +15,7 @@ export interface Issue {
   code:
     | 'room-overlap' | 'room-size' | 'out-of-bounds' | 'corridor-through-room' | 'corridor-broken'
     | 'corridor-width' | 'door-dead-end' | 'door-blocked' | 'unreachable-room' | 'furniture-outside'
-    | 'furniture-overlap' | 'corridor-blocked';
+    | 'furniture-overlap' | 'corridor-blocked' | 'equipment-unauthorised';
   message: string;
   objectIds: string[];
   fix?: { label: string; ops: DocOp[] };
@@ -89,6 +92,30 @@ export function validate(doc: OfficeDoc): Issue[] {
         const blocked = doorInsideCells(r, d).some((c) => c.x >= fr.x && c.x < fr.x + fr.w && c.y >= fr.y && c.y < fr.y + fr.h);
         if (blocked) issues.push({ id: `dblock:${f.id}:${d.id}`, severity: 'warning', code: 'door-blocked', message: `${f.workstation?.name ?? f.type} blocks a door in ${r.name}`, objectIds: [f.id, r.id] });
       }
+    }
+  }
+
+  // overlapping objects, found through the spatial index (each pair reported once)
+  const index = objectIndex(doc);
+  for (const f of Object.values(doc.furniture)) {
+    const r = doc.rooms[f.roomId]; if (!r || !f.blocking) continue;
+    const fr = furnitureWorldRect(doc, f);
+    for (const o of index.query(fr)) {
+      if (o.id <= f.id || !o.blocking || o.roomId !== f.roomId) continue;
+      const spot = findObjectSpot(doc, r, o.type, { near: { x: o.x, y: o.y }, rotation: o.rotation, w: o.w, h: o.h, ignore: new Set([o.id]) });
+      const name = (x: typeof f) => x.label ?? x.workstation?.name ?? FURNITURE_META[x.type]?.label ?? x.type;
+      issues.push({ id: `fover:${f.id}:${o.id}`, severity: 'warning', code: 'furniture-overlap', message: `${name(f)} overlaps ${name(o)} in ${r.name}`, objectIds: [f.id, o.id],
+        fix: spot ? { label: `Move ${name(o)} to a free spot`, ops: [{ op: 'furniture.update', id: o.id, patch: { x: spot.x, y: spot.y } }] } : undefined });
+    }
+  }
+
+  // functional equipment must be backed by a real tool permission
+  for (const a of Object.values(doc.agents)) {
+    const tools = new Set([...a.skills.tools, ...a.permissions.allowedTools]);
+    for (const id of a.appearance.accessories ?? []) {
+      const acc = ACCESSORY[id];
+      if (acc?.functionalTool && !tools.has(acc.functionalTool)) issues.push({ id: `equip:${a.id}:${id}`, severity: 'warning', code: 'equipment-unauthorised', message: `${a.identity.name} wears ${acc.label} but lacks the “${acc.functionalTool}” tool`, objectIds: [a.id],
+        fix: { label: `Remove ${acc.label}`, ops: [{ op: 'agent.update', id: a.id, patch: { appearance: { ...a.appearance, accessories: a.appearance.accessories.filter((x) => x !== id) } } }] } });
     }
   }
 

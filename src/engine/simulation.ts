@@ -6,6 +6,10 @@ import { uid } from '../model/defaults';
 import { key, manhattan, rectContains } from './geometry';
 import { buildNav, canStep, findPath, roomSpot, workstationSpot, type NavGraph } from './navigation';
 import { pickHub } from './validate';
+import { escalateAlerts, raiseAlert } from './alerts';
+import { recordUsage, requestAction } from './governance';
+import { stepCapsules } from './tubes';
+import { searchLibrary } from './library';
 
 export const SPEED = 0.2; // cells per tick at animation speed 1
 const PRIORITY = { critical: 0, high: 1, normal: 2, low: 3 } as const;
@@ -116,7 +120,10 @@ function replan(doc: OfficeDoc, rt: RuntimeState, nav: NavGraph, agentId: string
   const name = doc.agents[agentId]?.identity.name ?? agentId;
   const target = r.destination.roomId ? doc.rooms[r.destination.roomId]?.name : 'destination';
   if (!path) {
-    if (r.status !== 'error') log(rt, { kind: 'error', agentId, level: 'error', simulated: false, message: `${name}: no route to ${target} — path blocked` });
+    if (r.status !== 'error') {
+      log(rt, { kind: 'error', agentId, level: 'error', simulated: false, message: `${name}: no route to ${target} — path blocked` });
+      raiseAlert(doc, rt, { key: `route:${agentId}`, severity: 'warning', category: 'operational', title: `${name} can't reach ${target}`, description: 'Every route to the destination is blocked.', recommended: 'Open the room and clear a doorway or hallway.', agentId, roomId: r.destination.roomId, taskId: r.currentTaskId, evidence: [{ kind: 'log', id: rt.events[rt.events.length - 1]?.id ?? '', label: `no route to ${target}` }] });
+    }
     r.status = 'error'; r.statusMessage = `No route to ${target}`; r.path = [];
     return false;
   }
@@ -173,7 +180,9 @@ function demoTask(doc: OfficeDoc, rt: RuntimeState, a: Agent, rand: () => number
     if (meet) return createTask(rt, { name: 'Sync meeting', agentId: a.id, destination: { roomId: meet.id, workstationId: null }, workUnits: 70 });
   }
   const pool = DEMO_TASKS[a.identity.department] ?? ['General upkeep', 'Write status report'];
+  const project = Object.values(doc.projects).find((p) => p.ownerAgentId === a.id && p.status === 'active');
   return createTask(rt, {
+    projectId: project?.id ?? null, costPerUnit: 0.02,
     name: pool[Math.floor(rand() * pool.length)], agentId: a.id, workUnits: 60 + Math.floor(rand() * 80),
     destination: { roomId: a.schedule.assignedRoomId, workstationId: a.schedule.preferredWorkstationId },
   });
@@ -184,6 +193,8 @@ export interface StepOptions { demoTasks: boolean; rand?: () => number }
 export function step(doc: OfficeDoc, rt: RuntimeState, nav: NavGraph, opts: StepOptions) {
   const rand = opts.rand ?? Math.random;
   rt.tick++;
+  if (Object.keys(rt.capsules).length) stepCapsules(doc, rt);
+  if (rt.tick % 20 === 0) escalateAlerts(doc, rt);
   const occupied = new Map<string, string>();
   for (const [id, r] of Object.entries(rt.agents)) occupied.set(key(Math.round(r.pos.x), Math.round(r.pos.y)), id);
 
@@ -250,6 +261,7 @@ export function step(doc: OfficeDoc, rt: RuntimeState, nav: NavGraph, opts: Step
         t.progress = Math.min(100, t.progress + 100 / Math.max(1, t.workUnits));
         if (t.progress >= 100) {
           t.status = 'done'; t.completedAt = new Date().toISOString();
+          if (t.costPerUnit) recordUsage(doc, rt, { agentId: a.id, projectId: t.projectId ?? null, taskId: t.id, credits: +(t.costPerUnit * t.workUnits).toFixed(2), kind: 'model', simulated: t.simulated });
           log(rt, { kind: 'task-complete', agentId: a.id, simulated: t.simulated, message: `${a.identity.name} completed “${t.name}”${t.simulated ? ' (simulated)' : ''}` });
           r.currentTaskId = null; r.destination = null; r.status = 'idle'; r.waitTicks = 15;
         }
@@ -263,6 +275,17 @@ export function step(doc: OfficeDoc, rt: RuntimeState, nav: NavGraph, opts: Step
         if (r.waitTicks > 0) { r.waitTicks--; break; }
         const t = nextTask(rt, a.id) ?? (opts.demoTasks && rand() < 0.03 ? demoTask(doc, rt, a, rand) : undefined);
         if (t) {
+          const estimate = (t.costPerUnit ?? 0) * t.workUnits;
+          const cleared = Object.values(rt.approvals).some((x) => x.taskId === t.id && x.status === 'approved');
+          if (!cleared && estimate > a.budget.approvalAbove) { // routine spend under the agent's limit never bothers the owner
+            const res = requestAction(doc, rt, { agentId: a.id, action: 'spend', detail: `Start “${t.name}” (est. ${estimate.toFixed(0)} credits)`, amount: Math.round(estimate), projectId: t.projectId, taskId: t.id });
+            if (!res.allowed) break;
+          }
+          if (!t.libraryRefs) {
+            const prior = searchLibrary(doc, `${t.name} ${t.description}`, a.id, 3);
+            t.libraryRefs = prior.map((p) => p.entry.id);
+            if (prior.length) log(rt, { kind: 'library', agentId: a.id, simulated: t.simulated, message: `${a.identity.name} checked the library first: found “${prior[0].entry.title}”` });
+          }
           t.status = 'active'; t.startedAt = new Date().toISOString();
           r.currentTaskId = t.id; r.status = 'thinking'; r.waitTicks = 6;
           log(rt, { kind: 'task-start', agentId: a.id, simulated: t.simulated, message: `${a.identity.name} started “${t.name}”${t.simulated ? ' (simulated)' : ''}` });

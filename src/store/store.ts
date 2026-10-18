@@ -12,14 +12,18 @@ import { sampleOffice } from '../model/sample';
 import { emptyOffice } from '../model/defaults';
 import { LocalStorageRepository, type OfficeRepository, type Preferences } from '../persistence/repository';
 import { exportOffice, parseOffice } from '../model/schema';
+import { markFrame } from '../ui/perf';
 
 export type Selection =
   | { kind: 'none' }
   | { kind: 'room'; ids: string[] }
   | { kind: 'corridor'; id: string }
-  | { kind: 'furniture'; id: string }
+  | { kind: 'furniture'; id: string; ids?: string[] }
   | { kind: 'door'; roomId: string; doorId: string }
   | { kind: 'agent'; id: string };
+
+/** Every furniture id in the selection (multi-select keeps the primary in `id`). */
+export function selectedFurniture(sel: Selection): string[] { return sel.kind === 'furniture' ? (sel.ids?.length ? sel.ids : [sel.id]) : []; }
 
 export type Tool = 'select' | 'room' | 'hallway' | 'door' | 'furniture' | 'workstation' | 'agent' | 'connect' | 'pan';
 export type GlobalView = 'auto' | 'top' | 'front' | 'side' | 'three-quarter';
@@ -50,10 +54,11 @@ interface State {
   mode: 'simulate' | 'construct';
   tool: Tool;
   furnitureType: string;
+  placeRotation: 0 | 90 | 180 | 270;
   selection: Selection;
   camera: { x: number; y: number; zoom: number };
   view: GlobalView;
-  layers: { grid: boolean; snap: boolean; boundaries: boolean; paths: boolean; occupancy: boolean; labels: boolean };
+  layers: { grid: boolean; snap: boolean; boundaries: boolean; paths: boolean; occupancy: boolean; labels: boolean; perf: boolean };
   preview: Preview | null;
   conflict: { ops: DocOp[]; label: string; issues: Issue[] } | null;
   profileAgentId: string | null;
@@ -66,7 +71,7 @@ interface State {
   dryRun(ops: DocOp[]): CommitResult;
   runRuntimeOps(ops: RuntimeOp[]): string[];
   undo(): void; redo(): void;
-  setUi(p: Partial<Pick<State, 'mode' | 'tool' | 'selection' | 'camera' | 'view' | 'preview' | 'conflict' | 'profileAgentId' | 'profileTab' | 'page' | 'furnitureType' | 'hallwayDraft'>>): void;
+  setUi(p: Partial<Pick<State, 'mode' | 'tool' | 'selection' | 'camera' | 'view' | 'preview' | 'conflict' | 'profileAgentId' | 'profileTab' | 'page' | 'furnitureType' | 'placeRotation' | 'hallwayDraft'>>): void;
   setLayer(k: keyof State['layers'], v: boolean): void;
   setPrefs(p: Partial<Preferences>): void;
   notify(text: string, level?: 'info' | 'warn' | 'error'): void;
@@ -103,7 +108,7 @@ function cloneRuntime(rt: RuntimeState): RuntimeState {
   for (const [k, a] of Object.entries(rt.agents)) agents[k] = { ...a, pos: { ...a.pos }, path: a.path.slice() };
   const tasks: RuntimeState['tasks'] = {};
   for (const [k, t] of Object.entries(rt.tasks)) tasks[k] = { ...t };
-  return { ...rt, agents, tasks, events: rt.events.slice() };
+  return { ...rt, agents, tasks, events: rt.events.slice(), usage: rt.usage, approvals: { ...rt.approvals }, alerts: { ...rt.alerts }, capsules: { ...rt.capsules } };
 }
 
 function pruneTasks(rt: RuntimeState) {
@@ -133,10 +138,10 @@ export const useStore = create<State>((set, get) => {
     past: [], future: [], dirty: false,
     issues: validate(init.doc),
     prefs,
-    mode: 'simulate', tool: 'select', furnitureType: 'desk', selection: { kind: 'none' },
+    mode: 'simulate', tool: 'select', furnitureType: 'desk', placeRotation: 0, selection: { kind: 'none' },
     camera: { x: -40, y: -40, zoom: 0.8 },
     view: (prefs.viewMode as GlobalView) ?? 'auto',
-    layers: { grid: true, snap: true, boundaries: true, paths: false, occupancy: true, labels: true },
+    layers: { grid: true, snap: true, boundaries: true, paths: false, occupancy: true, labels: true, perf: false },
     preview: null, conflict: null, profileAgentId: null, profileTab: 'identity', page: 'office', toast: null, hallwayDraft: null,
 
     dryRun(ops) {
@@ -148,6 +153,7 @@ export const useStore = create<State>((set, get) => {
     },
 
     commit(ops, label, opts = {}) {
+      const t0 = performance.now();
       const { doc, past } = get();
       const res = get().dryRun(ops);
       if (!res.ok) { if (!opts.silent) get().notify(res.errors[0], 'error'); return res; }
@@ -159,6 +165,7 @@ export const useStore = create<State>((set, get) => {
       const rt = cloneRuntime(get().runtime);
       log(rt, { kind: 'layout', agentId: null, simulated: false, message: `${label}: ${res.summary.join('; ') || 'no changes'}` });
       set({ runtime: rt });
+      markFrame('commit', performance.now() - t0);
       return res;
     },
 
@@ -216,12 +223,14 @@ export const useStore = create<State>((set, get) => {
     notify(text, level = 'info') { set({ toast: { id: Date.now(), text, level } }); },
 
     tick() {
+      const t0 = performance.now();
       const { doc, nav, prefs } = get();
       const rt = cloneRuntime(get().runtime);
       step(doc, rt, nav, { demoTasks: prefs.demoTasks });
       if (rt.tick % 100 === 0) pruneTasks(rt);
       set({ runtime: rt });
       if (rt.tick % 50 === 0) scheduleSave();
+      markFrame('tick', performance.now() - t0, { agents: Object.keys(rt.agents).length, tasks: Object.keys(rt.tasks).length, events: rt.events.length });
     },
 
     save() {

@@ -1,13 +1,16 @@
 // Interactive office viewport: pan/zoom, selection, drag-to-move, resize
 // handles, room creation, hallway editing, doors, furniture and agent placement.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useStore } from '../store/store';
-import type { Point, Rect, Room } from '../model/types';
+import { selectedFurniture, useStore } from '../store/store';
+import type { Furniture, Point, Rect, Room } from '../model/types';
 import type { DocOp } from '../engine/ops';
 import { applyOps } from '../engine/ops';
 import { boundsOf, clampDoor, rectsOverlap, snap } from '../engine/geometry';
 import { AgentPaths, AgentsLayer } from './AgentsLayer';
-import { CorridorShape, FloorPatterns, G, RoomShape, corridorPx, useFurnitureByRoom } from './OfficeLayers';
+import { CorridorShape, FloorPatterns, FurnitureShape, G, RoomShape, corridorPx, useFurnitureByRoom } from './OfficeLayers';
+import { checkPlacement, footprint } from '../engine/spatial';
+import { FURNITURE_META } from '../model/catalog';
+import { markFrame } from '../ui/perf';
 import { ContextMenu, type MenuTarget } from './ContextMenu';
 import { Minimap } from './Minimap';
 
@@ -16,7 +19,8 @@ type Drag =
   | { type: 'rooms'; ids: string[]; start: Point; d: Point; moved: boolean }
   | { type: 'resize'; id: string; handle: string; start: Point; r0: Rect; r: Rect }
   | { type: 'create'; start: Point; cur: Point }
-  | { type: 'furniture'; id: string; start: Point; d: Point }
+  | { type: 'furniture'; ids: string[]; start: Point; d: Point }
+  | { type: 'marquee'; start: Point; cur: Point; add: string[] }
   | { type: 'segment'; id: string; index: number; start: Point; points: Point[]; horizontal: boolean; d: number }
   | { type: 'door'; roomId: string; doorId: string; start: Point; offset0: number; offset: number };
 
@@ -39,6 +43,8 @@ export function Viewport() {
   const preview = useStore((s) => s.preview);
   const hallwayDraft = useStore((s) => s.hallwayDraft);
   const furnitureType = useStore((s) => s.furnitureType);
+  const placeRotation = useStore((s) => s.placeRotation);
+  const [hover, setHover] = useState<Point | null>(null);
   const runtimeAgents = useStore((s) => s.runtime.agents);
   const { setUi, commit, notify } = useStore.getState();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -123,7 +129,11 @@ export function Viewport() {
         if (r.ok) notify('Agent created — open its profile to configure it');
         return;
       }
-      commit([{ op: 'furniture.add', roomId: room.id, type: tool === 'workstation' ? 'desk' : (furnitureType as never), x: c.x - room.x, y: c.y - room.y, workstationName: tool === 'workstation' ? `${room.name} Desk` : undefined }], tool === 'workstation' ? 'Add workstation' : 'Add furniture');
+      const g = ghostFor(c);
+      if (g && !g.check.ok && doc.settings.collisionRule === 'prevent') { notify(g.check.outside ? "That object doesn't fit there" : g.check.blocksDoor ? 'That would block a door' : 'That spot is taken — collisions are set to prevent', 'warn'); return; }
+      const type = tool === 'workstation' ? 'desk' : (furnitureType as never);
+      commit([{ op: 'furniture.add', roomId: room.id, type, x: g?.x ?? c.x - room.x, y: g?.y ?? c.y - room.y, rotation: placeRotation, workstationName: tool === 'workstation' ? `${room.name} Desk` : undefined }], `Place ${FURNITURE_META[type as keyof typeof FURNITURE_META]?.label ?? 'object'}`);
+      if (g && !g.check.ok) notify(g.check.blocksDoor ? 'Placed, but it blocks a door' : 'Placed, overlapping another object', 'warn');
       return;
     }
     if (tool === 'hallway' || tool === 'connect') {
@@ -163,8 +173,13 @@ export function Viewport() {
     }
     if (kind === 'agent') { setUi({ selection: { kind: 'agent', id } }); return; }
     if (kind === 'furniture') {
-      setUi({ selection: { kind: 'furniture', id } });
-      if (construct) setDrag({ type: 'furniture', id, start: world, d: { x: 0, y: 0 } });
+      const cur = selectedFurniture(selection);
+      let ids = [id];
+      if (e.shiftKey) ids = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+      else if (cur.includes(id)) ids = cur;
+      else { const gid = doc.furniture[id]?.groupId; if (gid) ids = Object.values(doc.furniture).filter((f) => f.groupId === gid).map((f) => f.id); }
+      setUi({ selection: ids.length ? { kind: 'furniture', id: ids.includes(id) ? id : ids[0], ids } : { kind: 'none' } });
+      if (construct && ids.includes(id)) setDrag({ type: 'furniture', ids, start: world, d: { x: 0, y: 0 } });
       return;
     }
     if (kind === 'corridor') { setUi({ selection: { kind: 'corridor', id } }); return; }
@@ -176,12 +191,27 @@ export function Viewport() {
       if (construct && ids.includes(id)) setDrag({ type: 'rooms', ids, start: world, d: { x: 0, y: 0 }, moved: false });
       return;
     }
+    if (construct && e.shiftKey) { setDrag({ type: 'marquee', start: world, cur: world, add: selectedFurniture(selection) }); return; }
     setUi({ selection: { kind: 'none' } });
     setDrag({ type: 'pan', sx: e.clientX, sy: e.clientY, cam: { ...camera } });
   };
 
+  /** Where the object being placed would land, snapped to the room, and whether it fits. */
+  const ghostFor = (c: Point) => {
+    if (!(construct && (tool === 'furniture' || tool === 'workstation'))) return null;
+    const room = roomFromPoint({ x: c.x + 0.5, y: c.y + 0.5 }); if (!room) return null;
+    const type = (tool === 'workstation' ? 'desk' : furnitureType) as Furniture['type'];
+    const meta = FURNITURE_META[type]; if (!meta) return null;
+    const fp = footprint({ w: meta.w, h: meta.h, rotation: placeRotation });
+    const x = Math.max(0, Math.min(room.w - fp.w, c.x - room.x)), y = Math.max(0, Math.min(room.h - fp.h, c.y - room.y));
+    return { room, type, x, y, fp, check: checkPlacement(doc, room, { x, y, w: meta.w, h: meta.h, rotation: placeRotation, blocking: meta.blocking }) };
+  };
+
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!drag) return;
+    if (!drag) {
+      if (construct && (tool === 'furniture' || tool === 'workstation')) { const c = toCell(toWorld(e.clientX, e.clientY)); if (!hover || hover.x !== c.x || hover.y !== c.y) setHover(c); }
+      return;
+    }
     const snapOn = useStore.getState().layers.snap;
     if (drag.type === 'pan') { setUi({ camera: { ...camera, x: drag.cam.x + e.clientX - drag.sx, y: drag.cam.y + e.clientY - drag.sy } }); return; }
     const w = toWorld(e.clientX, e.clientY);
@@ -192,6 +222,8 @@ export function Viewport() {
     } else if (drag.type === 'furniture') {
       const d = { x: Math.round(dx), y: Math.round(dy) };
       if (d.x !== drag.d.x || d.y !== drag.d.y) setDrag({ ...drag, d });
+    } else if (drag.type === 'marquee') {
+      setDrag({ ...drag, cur: w });
     } else if (drag.type === 'create') {
       setDrag({ ...drag, cur: toCell(w) });
     } else if (drag.type === 'resize') {
@@ -224,12 +256,6 @@ export function Viewport() {
       return ops;
     }
     if (drag.type === 'door' && drag.offset !== drag.offset0) return [{ op: 'door.update', roomId: drag.roomId, doorId: drag.doorId, patch: { offset: drag.offset } }];
-    if (drag.type === 'furniture' && (drag.d.x || drag.d.y)) {
-      const f = doc.furniture[drag.id]; const room = doc.rooms[f.roomId];
-      const wx = room.x + f.x + drag.d.x, wy = room.y + f.y + drag.d.y;
-      const target = roomFromPoint({ x: wx, y: wy }) ?? room;
-      return [{ op: 'furniture.update', id: f.id, patch: { roomId: target.id, x: wx - target.x, y: wy - target.y } }];
-    }
     return null;
   }, [drag, doc]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -247,6 +273,25 @@ export function Viewport() {
       const id = `room_${Date.now().toString(36)}`;
       const r = commit([{ op: 'room.create', id, type: 'custom', name: `Room ${Object.keys(doc.rooms).length + 1}`, x, y, w, h, preset: false }], 'Create room');
       if (r.ok) setUi({ selection: { kind: 'room', ids: [id] }, tool: 'select' });
+      return;
+    }
+    if (d.type === 'marquee') {
+      const r = { x: Math.min(d.start.x, d.cur.x), y: Math.min(d.start.y, d.cur.y), w: Math.abs(d.cur.x - d.start.x), h: Math.abs(d.cur.y - d.start.y) };
+      const hit = Object.values(doc.furniture).filter((f) => { const rm = doc.rooms[f.roomId]; if (!rm) return false; const fp = footprint(f); return rectsOverlap(r, { x: rm.x + f.x, y: rm.y + f.y, w: fp.w, h: fp.h }); }).map((f) => f.id);
+      const ids = [...new Set([...d.add, ...hit])];
+      setUi({ selection: ids.length ? { kind: 'furniture', id: ids[0], ids } : { kind: 'none' } });
+      if (hit.length) notify(`Selected ${ids.length} object${ids.length > 1 ? 's' : ''}`);
+      return;
+    }
+    if (d.type === 'furniture') {
+      if (!d.d.x && !d.d.y) return;
+      if (d.ids.length === 1) {
+        // a single object may be carried into another room
+        const f = doc.furniture[d.ids[0]]; const room = doc.rooms[f.roomId];
+        const wx = room.x + f.x + d.d.x, wy = room.y + f.y + d.d.y;
+        const target = roomFromPoint({ x: wx, y: wy }) ?? room;
+        commit([{ op: 'furniture.update', id: f.id, patch: { roomId: target.id, x: wx - target.x, y: wy - target.y } }], `Move ${f.label ?? f.workstation?.name ?? FURNITURE_META[f.type]?.label ?? 'object'}`);
+      } else commit([{ op: 'furniture.moveMany', ids: d.ids, dx: d.d.x, dy: d.d.y }], `Move ${d.ids.length} objects`);
       return;
     }
     if (dragOps) {
@@ -284,15 +329,53 @@ export function Viewport() {
     return m;
   }, [runtimeAgents]);
 
+  // only draw what the camera can see
+  const view = { x: -camera.x / (G * camera.zoom) - 2, y: -camera.y / (G * camera.zoom) - 2, w: size.w / (G * camera.zoom) + 4, h: size.h / (G * camera.zoom) + 4 };
+  const visibleRooms = Object.values(shown.rooms).filter((r) => rectsOverlap(r, view));
+  const visibleCorridors = Object.values(shown.corridors).filter((c) => { if (!c.points.length) return false; const b = boundsOf(c.points.map((p) => ({ x: p.x, y: p.y, w: 1, h: 1 })), c.width); return rectsOverlap(b, view); });
+
+  // objects being dragged are drawn from an overlay at a transient offset; nothing is recalculated until drop
+  const moving = drag?.type === 'furniture' ? drag : null;
+  const movingSet = useMemo(() => new Set(moving?.ids ?? []), [moving?.ids]); // eslint-disable-line react-hooks/exhaustive-deps
+  const furnitureFor = useMemo(() => {
+    if (!movingSet.size) return furnitureByRoom;
+    const m: Record<string, Furniture[]> = { ...furnitureByRoom };
+    for (const id of movingSet) { const rid = doc.furniture[id]?.roomId; if (rid && m[rid] === furnitureByRoom[rid]) m[rid] = furnitureByRoom[rid].filter((f) => !movingSet.has(f.id)); }
+    return m;
+  }, [furnitureByRoom, movingSet, doc.furniture]);
+  const movingShapes = moving ? moving.ids.map((id) => {
+    const f = doc.furniture[id]; const r = f && doc.rooms[f.roomId]; if (!r) return null;
+    const fp = footprint(f);
+    const target = moving.ids.length === 1 ? roomFromPoint({ x: r.x + f.x + moving.d.x + 0.5, y: r.y + f.y + moving.d.y + 0.5 }) ?? r : r;
+    const lx = r.x + f.x + moving.d.x - target.x, ly = r.y + f.y + moving.d.y - target.y;
+    const chk = checkPlacement(doc, target, { x: lx, y: ly, w: f.w, h: f.h, rotation: f.rotation, blocking: f.blocking }, movingSet);
+    return { f, x: target.x + lx, y: target.y + ly, fp, ok: chk.ok, room: target };
+  }).filter(Boolean) as { f: Furniture; x: number; y: number; fp: { w: number; h: number }; ok: boolean; room: Room }[] : [];
+  const ghost = !drag && hover ? ghostFor(hover) : null;
+  const guideFor = (x: number, y: number, w: number, h: number, room: Room, ignore: Set<string>) => {
+    const xs = new Set<number>(), ys = new Set<number>();
+    for (const o of furnitureByRoom[room.id] ?? []) {
+      if (ignore.has(o.id)) continue;
+      const fp = footprint(o); const ox = room.x + o.x, oy = room.y + o.y;
+      for (const a of [x, x + w / 2, x + w]) for (const b of [ox, ox + fp.w / 2, ox + fp.w]) if (Math.abs(a - b) < 1e-6) xs.add(a);
+      for (const a of [y, y + h / 2, y + h]) for (const b of [oy, oy + fp.h / 2, oy + fp.h]) if (Math.abs(a - b) < 1e-6) ys.add(a);
+    }
+    return { xs: [...xs], ys: [...ys], room };
+  };
+  const guides = movingShapes.length ? guideFor(Math.min(...movingShapes.map((m) => m.x)), Math.min(...movingShapes.map((m) => m.y)), Math.max(...movingShapes.map((m) => m.x + m.fp.w)) - Math.min(...movingShapes.map((m) => m.x)), Math.max(...movingShapes.map((m) => m.y + m.fp.h)) - Math.min(...movingShapes.map((m) => m.y)), movingShapes[0].room, movingSet)
+    : ghost ? guideFor(ghost.room.x + ghost.x, ghost.room.y + ghost.y, ghost.fp.w, ghost.fp.h, ghost.room, new Set()) : null;
+  const selFurnIds = selectedFurniture(selection);
+
   const selRoom = selection.kind === 'room' && selection.ids.length === 1 ? shown.rooms[selection.ids[0]] : undefined;
   const selCorridor = selection.kind === 'corridor' ? shown.corridors[selection.id] : undefined;
   const selFurniture = selection.kind === 'furniture' ? shown.furniture[selection.id] : undefined;
+  useEffect(() => { markFrame('render', 0, { rooms: visibleRooms.length, totalRooms: Object.keys(doc.rooms).length, objects: Object.keys(doc.furniture).length }); });
   const cursor = drag?.type === 'pan' ? 'grabbing' : construct && tool !== 'select' ? 'crosshair' : 'default';
   const gridPx = G * camera.zoom;
 
   return (
     <div className="viewport" data-mode={mode}>
-      <svg ref={svgRef} width={size.w} height={size.h} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => setDrag(null)} onContextMenu={onContextMenu} style={{ cursor, touchAction: 'none' }} aria-label="Office floor plan" role="application">
+      <svg ref={svgRef} width={size.w} height={size.h} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => setDrag(null)} onPointerLeave={() => hover && setHover(null)} onContextMenu={onContextMenu} style={{ cursor, touchAction: 'none' }} aria-label="Office floor plan" role="application">
         <FloorPatterns />
         {layers.grid && (
           <>
@@ -302,9 +385,9 @@ export function Viewport() {
         )}
         <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.zoom})`}>
           {doc.settings.bounds && <rect x={doc.settings.bounds.x * G} y={doc.settings.bounds.y * G} width={doc.settings.bounds.w * G} height={doc.settings.bounds.h * G} fill="none" stroke="var(--warn)" strokeDasharray="10 6" opacity={0.5} />}
-          <g>{Object.values(shown.corridors).map((c) => <CorridorShape key={c.id} c={c} selected={selCorridor?.id === c.id || affectedCorridors.has(c.id)} />)}</g>
-          <g>{Object.values(shown.rooms).map((r) => (
-            <RoomShape key={r.id} room={r} furniture={live && live.errors.length === 0 ? Object.values(shown.furniture).filter((f) => f.roomId === r.id) : furnitureByRoom[r.id] ?? []}
+          <g>{visibleCorridors.map((c) => <CorridorShape key={c.id} c={c} selected={selCorridor?.id === c.id || affectedCorridors.has(c.id)} />)}</g>
+          <g>{visibleRooms.map((r) => (
+            <RoomShape key={r.id} room={r} furniture={live && live.errors.length === 0 ? Object.values(shown.furniture).filter((f) => f.roomId === r.id) : furnitureFor[r.id] ?? []}
               selected={selectedRoomIds.includes(r.id)} invalid={overlapping.has(r.id) || errorObjects.has(r.id)}
               occupancy={layers.occupancy ? occupancy[r.id] ?? 0 : null} showLabel={layers.labels} showBoundary={layers.boundaries} construct={construct} />
           ))}</g>
@@ -326,7 +409,11 @@ export function Viewport() {
             const sel = selection.kind === 'door' && selection.doorId === d.id;
             return <rect key={d.id} data-kind="door" data-room={r.id} data-door={d.id} x={x} y={y} width={horiz ? dd.width * G : 10} height={horiz ? 10 : dd.width * G} rx={3} className={`door-handle${sel ? ' sel' : ''}`} />;
           }))}
-          {selFurniture && (() => { const r = shown.rooms[selFurniture.roomId]; if (!r) return null; const rot = selFurniture.rotation % 180 !== 0; return <rect x={(r.x + selFurniture.x) * G - 2} y={(r.y + selFurniture.y) * G - 2} width={(rot ? selFurniture.h : selFurniture.w) * G + 4} height={(rot ? selFurniture.w : selFurniture.h) * G + 4} fill="none" stroke="var(--accent)" strokeWidth={2} strokeDasharray="4 3" pointerEvents="none" />; })()}
+          {!moving && selFurnIds.map((id) => { const f = shown.furniture[id]; const r = f && shown.rooms[f.roomId]; if (!r) return null; const fp = footprint(f); return <rect key={id} x={(r.x + f.x) * G - 2} y={(r.y + f.y) * G - 2} width={fp.w * G + 4} height={fp.h * G + 4} fill="none" stroke={id === selFurniture?.id ? 'var(--accent)' : 'var(--accent-blue)'} strokeWidth={2} strokeDasharray="4 3" pointerEvents="none" />; })}
+          {movingShapes.length > 0 && <g pointerEvents="none">{movingShapes.map((m) => <FurnitureShape key={m.f.id} f={m.f} x={m.x} y={m.y} w={m.fp.w} h={m.fp.h} ghost={m.ok ? 'ok' : 'bad'} />)}</g>}
+          {ghost && <g pointerEvents="none"><FurnitureShape f={{ type: ghost.type, color: FURNITURE_META[ghost.type].color }} x={ghost.room.x + ghost.x} y={ghost.room.y + ghost.y} w={ghost.fp.w} h={ghost.fp.h} ghost={ghost.check.ok ? 'ok' : 'bad'} /><text x={(ghost.room.x + ghost.x) * G} y={(ghost.room.y + ghost.y) * G - 5} className="room-label" fill={ghost.check.ok ? 'var(--accent)' : 'var(--danger)'}>{FURNITURE_META[ghost.type].label}{ghost.check.ok ? '' : ghost.check.blocksDoor ? ' · blocks door' : ' · overlaps'}</text></g>}
+          {guides && <g pointerEvents="none" stroke="var(--accent-blue)" strokeWidth={1} strokeDasharray="3 3" opacity={0.8}>{guides.xs.map((x) => <line key={`gx${x}`} x1={x * G} x2={x * G} y1={guides.room.y * G} y2={(guides.room.y + guides.room.h) * G} />)}{guides.ys.map((y) => <line key={`gy${y}`} y1={y * G} y2={y * G} x1={guides.room.x * G} x2={(guides.room.x + guides.room.w) * G} />)}</g>}
+          {drag?.type === 'marquee' && <rect x={Math.min(drag.start.x, drag.cur.x) * G} y={Math.min(drag.start.y, drag.cur.y) * G} width={Math.abs(drag.cur.x - drag.start.x) * G} height={Math.abs(drag.cur.y - drag.start.y) * G} fill="color-mix(in srgb, var(--accent-blue) 10%, transparent)" stroke="var(--accent-blue)" strokeDasharray="5 4" pointerEvents="none" />}
           {construct && selRoom && HANDLES.map((h) => {
             const hx = h.includes('w') ? selRoom.x : h.includes('e') ? selRoom.x + selRoom.w : selRoom.x + selRoom.w / 2;
             const hy = h.includes('n') ? selRoom.y : h.includes('s') ? selRoom.y + selRoom.h : selRoom.y + selRoom.h / 2;
