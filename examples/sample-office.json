@@ -1,0 +1,2392 @@
+{
+  "format": "agent-office",
+  "version": 2,
+  "exportedAt": "2026-10-18T09:01:01.968Z",
+  "office": {
+    "schemaVersion": 2,
+    "id": "office_sample",
+    "name": "NEXUS-7 Agent Office",
+    "settings": {
+      "gridSize": 24,
+      "bounds": null,
+      "hallwayMode": "hybrid",
+      "minCorridorWidth": 1,
+      "defaultCorridorWidth": 2
+    },
+    "rooms": {
+      "room_ops": {
+        "id": "room_ops",
+        "name": "Main Operations",
+        "type": "operations",
+        "x": 18,
+        "y": 12,
+        "w": 18,
+        "h": 11,
+        "rotation": 0,
+        "walls": {
+          "thickness": 2,
+          "style": "solid"
+        },
+        "doors": [
+          {
+            "id": "door_AJ2MmB1T",
+            "side": "w",
+            "offset": 8,
+            "width": 2
+          },
+          {
+            "id": "door_-O4gJb9O",
+            "side": "e",
+            "offset": 3,
+            "width": 2
+          },
+          {
+            "id": "door_tslJBCTn",
+            "side": "n",
+            "offset": 8,
+            "width": 2
+          },
+          {
+            "id": "door_wcB7Y-R8",
+            "side": "s",
+            "offset": 7,
+            "width": 2
+          }
+        ],
+        "appearance": {
+          "floor": "grid",
+          "wallColor": "#1f6f45",
+          "accent": "#39ff88",
+          "lighting": 0.6
+        },
+        "furnitureIds": [
+          "fur_1KkTBKL_",
+          "fur_lFos-RQT",
+          "fur_-79lpMHO",
+          "fur_7KFhWRqX",
+          "fur_F7EvEmst",
+          "fur_dNx3DIf0"
+        ],
+        "assignedAgentIds": [
+          "agent_pixel"
+        ],
+        "purpose": "Main operations"
+      },
+      "room_lab": {
+        "id": "room_lab",
+        "name": "Research Lab",
+        "type": "research",
+        "x": 0,
+        "y": 12,
+        "w": 11,
+        "h": 8,
+        "rotation": 0,
+        "walls": {
+          "thickness": 2,
+          "style": "solid"
+        },
+        "doors": [
+          {
+            "id": "door_CI6gtuL5",
+            "side": "e",
+            "offset": 4,
+            "width": 2
+          },
+          {
+            "id": "door__77HgwvP",
+            "side": "n",
+            "offset": 4,
+            "width": 2
+          }
+        ],
+        "appearance": {
+          "floor": "tile",
+          "wallColor": "#1f6f45",
+          "accent": "#b57bff",
+          "lighting": 0.6
+        },
+        "furnitureIds": [
+          "fur__C5-87R0",
+          "fur_B3lZg_c8",
+          "fur_OhHoSky_",
+          "fur_ppKq0BAt"
+        ],
+        "assignedAgentIds": [
+          "agent_atlas"
+        ],
+        "purpose": "Research lab"
+      },
+      "room_srv": {
+        "id": "room_srv",
+        "name": "Server Room",
+        "type": "server",
+        "x": 44,
+        "y": 12,
+        "w": 9,
+        "h": 7,
+        "rotation": 0,
+        "walls": {
+          "thickness": 2,
+          "style": "solid"
+        },
+        "doors": [
+          {
+            "id": "door_JPgDLX8k",
+            "side": "w",
+            "offset": 3,
+            "width": 2
+          },
+          {
+            "id": "door_o1pC5SAp",
+            "side": "s",
+            "offset": 4,
+            "width": 2
+          }
+        ],
+        "appearance": {
+          "floor": "metal",
+          "wallColor": "#1f6f45",
+          "accent": "#ff9f43",
+          "lighting": 0.6
+        },
+        "furnitureIds": [
+          "fur_4ackgjyH",
+          "fur_jqpMADK5",
+          "fur_9phJjDw3"
+        ],
+        "assignedAgentIds": [
+          "agent_volt"
+        ],
+        "purpose": "Server room"
+      },
+      "room_meet": {
+        "id": "room_meet",
+        "name": "Conference Room",
+        "type": "meeting",
+        "x": 20,
+        "y": 0,
+        "w": 13,
+        "h": 7,
+        "rotation": 0,
+        "walls": {
+          "thickness": 2,
+          "style": "solid"
+        },
+        "doors": [
+          {
+            "id": "door_4N636MPL",
+            "side": "s",
+            "offset": 6,
+            "width": 2
+          }
+        ],
+        "appearance": {
+          "floor": "wood",
+          "wallColor": "#1f6f45",
+          "accent": "#4cc9ff",
+          "lighting": 0.6
+        },
+        "furnitureIds": [
+          "fur_4PFU4rMn",
+          "fur_QUA_s86G"
+        ],
+        "assignedAgentIds": [],
+        "purpose": "Meeting room"
+      },
+      "room_break": {
+        "id": "room_break",
+        "name": "Break Room",
+        "type": "break",
+        "x": 44,
+        "y": 26,
+        "w": 9,
+        "h": 6,
+        "rotation": 0,
+        "walls": {
+          "thickness": 2,
+          "style": "solid"
+        },
+        "doors": [
+          {
+            "id": "door_PYJUIF2d",
+            "side": "n",
+            "offset": 4,
+            "width": 2
+          }
+        ],
+        "appearance": {
+          "floor": "wood",
+          "wallColor": "#1f6f45",
+          "accent": "#ffd166",
+          "lighting": 0.6
+        },
+        "furnitureIds": [
+          "fur_SwuZqCMY",
+          "fur_BQSHP16T",
+          "fur_pjpVnGpm"
+        ],
+        "assignedAgentIds": [],
+        "purpose": "Break room",
+        "special": "restores-energy"
+      },
+      "room_shop": {
+        "id": "room_shop",
+        "name": "Workshop",
+        "type": "workshop",
+        "x": 20,
+        "y": 29,
+        "w": 11,
+        "h": 7,
+        "rotation": 0,
+        "walls": {
+          "thickness": 2,
+          "style": "solid"
+        },
+        "doors": [
+          {
+            "id": "door_Uai8h59-",
+            "side": "n",
+            "offset": 5,
+            "width": 2
+          }
+        ],
+        "appearance": {
+          "floor": "metal",
+          "wallColor": "#1f6f45",
+          "accent": "#ff9f43",
+          "lighting": 0.6
+        },
+        "furnitureIds": [
+          "fur_p8FLRbOS",
+          "fur_wY3qU5fU"
+        ],
+        "assignedAgentIds": [
+          "agent_rusty"
+        ],
+        "purpose": "Workshop"
+      },
+      "room_rec": {
+        "id": "room_rec",
+        "name": "Reception",
+        "type": "reception",
+        "x": 0,
+        "y": 27,
+        "w": 11,
+        "h": 6,
+        "rotation": 0,
+        "walls": {
+          "thickness": 2,
+          "style": "solid"
+        },
+        "doors": [
+          {
+            "id": "door_FLQmTcHI",
+            "side": "n",
+            "offset": 8,
+            "width": 2
+          }
+        ],
+        "appearance": {
+          "floor": "tile",
+          "wallColor": "#1f6f45",
+          "accent": "#39ff88",
+          "lighting": 0.6
+        },
+        "furnitureIds": [
+          "fur_OMteubAj",
+          "fur_mMnmKxdB"
+        ],
+        "assignedAgentIds": [
+          "agent_echo"
+        ],
+        "purpose": "Reception"
+      },
+      "room_lead": {
+        "id": "room_lead",
+        "name": "Lead Office",
+        "type": "office",
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 6,
+        "rotation": 0,
+        "walls": {
+          "thickness": 2,
+          "style": "solid"
+        },
+        "doors": [
+          {
+            "id": "door_7ZxiTTnx",
+            "side": "s",
+            "offset": 4,
+            "width": 2
+          }
+        ],
+        "appearance": {
+          "floor": "carpet",
+          "wallColor": "#1f6f45",
+          "accent": "#4cc9ff",
+          "lighting": 0.6
+        },
+        "furnitureIds": [
+          "fur_qtDJYTyi",
+          "fur_s7RLsV-d",
+          "fur_sTign9dv"
+        ],
+        "assignedAgentIds": [
+          "agent_nova"
+        ],
+        "purpose": "Agent office"
+      }
+    },
+    "corridors": {
+      "hall_main": {
+        "id": "hall_main",
+        "name": "Main Corridor",
+        "width": 3,
+        "points": [
+          {
+            "x": 8,
+            "y": 26
+          },
+          {
+            "x": 8,
+            "y": 21
+          },
+          {
+            "x": 17,
+            "y": 21
+          },
+          {
+            "x": 17,
+            "y": 20
+          }
+        ],
+        "start": {
+          "kind": "door",
+          "roomId": "room_rec",
+          "doorId": "door_FLQmTcHI"
+        },
+        "end": {
+          "kind": "door",
+          "roomId": "room_ops",
+          "doorId": "door_AJ2MmB1T"
+        },
+        "routing": "auto",
+        "isMain": false,
+        "blocked": false,
+        "status": "ok"
+      },
+      "hall_lab": {
+        "id": "hall_lab",
+        "name": "Lab Wing",
+        "width": 2,
+        "points": [
+          {
+            "x": 17,
+            "y": 20
+          },
+          {
+            "x": 11,
+            "y": 20
+          },
+          {
+            "x": 11,
+            "y": 16
+          }
+        ],
+        "start": {
+          "kind": "door",
+          "roomId": "room_ops",
+          "doorId": "door_AJ2MmB1T"
+        },
+        "end": {
+          "kind": "door",
+          "roomId": "room_lab",
+          "doorId": "door_CI6gtuL5"
+        },
+        "routing": "auto",
+        "isMain": false,
+        "blocked": false,
+        "status": "ok"
+      },
+      "hall_srv": {
+        "id": "hall_srv",
+        "name": "East Wing",
+        "width": 2,
+        "points": [
+          {
+            "x": 36,
+            "y": 15
+          },
+          {
+            "x": 43,
+            "y": 15
+          }
+        ],
+        "start": {
+          "kind": "door",
+          "roomId": "room_ops",
+          "doorId": "door_-O4gJb9O"
+        },
+        "end": {
+          "kind": "door",
+          "roomId": "room_srv",
+          "doorId": "door_JPgDLX8k"
+        },
+        "routing": "auto",
+        "isMain": false,
+        "blocked": false,
+        "status": "ok"
+      },
+      "hall_meet": {
+        "id": "hall_meet",
+        "name": "North Hall",
+        "width": 2,
+        "points": [
+          {
+            "x": 26,
+            "y": 11
+          },
+          {
+            "x": 26,
+            "y": 7
+          }
+        ],
+        "start": {
+          "kind": "door",
+          "roomId": "room_ops",
+          "doorId": "door_tslJBCTn"
+        },
+        "end": {
+          "kind": "door",
+          "roomId": "room_meet",
+          "doorId": "door_4N636MPL"
+        },
+        "routing": "auto",
+        "isMain": false,
+        "blocked": false,
+        "status": "ok"
+      },
+      "hall_shop": {
+        "id": "hall_shop",
+        "name": "South Hall",
+        "width": 2,
+        "points": [
+          {
+            "x": 25,
+            "y": 23
+          },
+          {
+            "x": 25,
+            "y": 28
+          }
+        ],
+        "start": {
+          "kind": "door",
+          "roomId": "room_ops",
+          "doorId": "door_wcB7Y-R8"
+        },
+        "end": {
+          "kind": "door",
+          "roomId": "room_shop",
+          "doorId": "door_Uai8h59-"
+        },
+        "routing": "auto",
+        "isMain": false,
+        "blocked": false,
+        "status": "ok"
+      },
+      "hall_break": {
+        "id": "hall_break",
+        "name": "Service Hall",
+        "width": 2,
+        "points": [
+          {
+            "x": 48,
+            "y": 19
+          },
+          {
+            "x": 48,
+            "y": 25
+          }
+        ],
+        "start": {
+          "kind": "door",
+          "roomId": "room_srv",
+          "doorId": "door_o1pC5SAp"
+        },
+        "end": {
+          "kind": "door",
+          "roomId": "room_break",
+          "doorId": "door_PYJUIF2d"
+        },
+        "routing": "auto",
+        "isMain": false,
+        "blocked": false,
+        "status": "ok"
+      },
+      "hall_lead": {
+        "id": "hall_lead",
+        "name": "Lead Hall",
+        "width": 2,
+        "points": [
+          {
+            "x": 4,
+            "y": 11
+          },
+          {
+            "x": 4,
+            "y": 6
+          }
+        ],
+        "start": {
+          "kind": "door",
+          "roomId": "room_lab",
+          "doorId": "door__77HgwvP"
+        },
+        "end": {
+          "kind": "door",
+          "roomId": "room_lead",
+          "doorId": "door_7ZxiTTnx"
+        },
+        "routing": "auto",
+        "isMain": false,
+        "blocked": false,
+        "status": "ok"
+      }
+    },
+    "furniture": {
+      "fur_1KkTBKL_": {
+        "type": "monitors",
+        "x": 8,
+        "y": 1,
+        "w": 3,
+        "h": 1,
+        "rotation": 0,
+        "color": "#0f2a1f",
+        "blocking": true,
+        "id": "fur_1KkTBKL_",
+        "roomId": "room_ops"
+      },
+      "fur_lFos-RQT": {
+        "type": "desk",
+        "x": 1,
+        "y": 4,
+        "w": 2,
+        "h": 1,
+        "rotation": 0,
+        "color": "#1d3b2a",
+        "blocking": true,
+        "workstation": {
+          "name": "Ops Station 1",
+          "assignedAgentId": "agent_pixel",
+          "equipment": [
+            "terminal",
+            "dual monitors"
+          ],
+          "status": "online",
+          "services": [
+            "telemetry"
+          ]
+        },
+        "id": "fur_lFos-RQT",
+        "roomId": "room_ops"
+      },
+      "fur_-79lpMHO": {
+        "type": "desk",
+        "x": 5,
+        "y": 4,
+        "w": 2,
+        "h": 1,
+        "rotation": 0,
+        "color": "#1d3b2a",
+        "blocking": true,
+        "workstation": {
+          "name": "Ops Station 2",
+          "assignedAgentId": null,
+          "equipment": [
+            "terminal",
+            "dual monitors"
+          ],
+          "status": "online",
+          "services": [
+            "telemetry"
+          ]
+        },
+        "id": "fur_-79lpMHO",
+        "roomId": "room_ops"
+      },
+      "fur_7KFhWRqX": {
+        "type": "desk",
+        "x": 9,
+        "y": 4,
+        "w": 2,
+        "h": 1,
+        "rotation": 0,
+        "color": "#1d3b2a",
+        "blocking": true,
+        "workstation": {
+          "name": "Ops Station 3",
+          "assignedAgentId": null,
+          "equipment": [
+            "terminal",
+            "dual monitors"
+          ],
+          "status": "online",
+          "services": [
+            "telemetry"
+          ]
+        },
+        "id": "fur_7KFhWRqX",
+        "roomId": "room_ops"
+      },
+      "fur_F7EvEmst": {
+        "type": "desk",
+        "x": 13,
+        "y": 4,
+        "w": 2,
+        "h": 1,
+        "rotation": 0,
+        "color": "#1d3b2a",
+        "blocking": true,
+        "workstation": {
+          "name": "Ops Station 4",
+          "assignedAgentId": null,
+          "equipment": [
+            "terminal",
+            "dual monitors"
+          ],
+          "status": "online",
+          "services": [
+            "telemetry"
+          ]
+        },
+        "id": "fur_F7EvEmst",
+        "roomId": "room_ops"
+      },
+      "fur_dNx3DIf0": {
+        "type": "plant",
+        "x": 16,
+        "y": 9,
+        "w": 1,
+        "h": 1,
+        "rotation": 0,
+        "color": "#1e5a32",
+        "blocking": true,
+        "id": "fur_dNx3DIf0",
+        "roomId": "room_ops"
+      },
+      "fur__C5-87R0": {
+        "type": "desk",
+        "x": 1,
+        "y": 1,
+        "w": 2,
+        "h": 1,
+        "rotation": 0,
+        "color": "#1d3b2a",
+        "blocking": true,
+        "workstation": {
+          "name": "Lab Bench A",
+          "assignedAgentId": "agent_atlas",
+          "equipment": [
+            "microscope",
+            "terminal"
+          ],
+          "status": "online",
+          "services": [
+            "dataset store"
+          ]
+        },
+        "id": "fur__C5-87R0",
+        "roomId": "room_lab"
+      },
+      "fur_B3lZg_c8": {
+        "type": "desk",
+        "x": 4,
+        "y": 1,
+        "w": 2,
+        "h": 1,
+        "rotation": 0,
+        "color": "#1d3b2a",
+        "blocking": true,
+        "workstation": {
+          "name": "Lab Bench B",
+          "assignedAgentId": null,
+          "equipment": [
+            "terminal"
+          ],
+          "status": "online",
+          "services": [
+            "compute"
+          ]
+        },
+        "id": "fur_B3lZg_c8",
+        "roomId": "room_lab"
+      },
+      "fur_OhHoSky_": {
+        "type": "whiteboard",
+        "x": 1,
+        "y": 6,
+        "w": 3,
+        "h": 1,
+        "rotation": 0,
+        "color": "#2b3a3a",
+        "blocking": true,
+        "id": "fur_OhHoSky_",
+        "roomId": "room_lab"
+      },
+      "fur_ppKq0BAt": {
+        "type": "shelf",
+        "x": 8,
+        "y": 6,
+        "w": 2,
+        "h": 1,
+        "rotation": 0,
+        "color": "#2a2a22",
+        "blocking": true,
+        "id": "fur_ppKq0BAt",
+        "roomId": "room_lab"
+      },
+      "fur_4ackgjyH": {
+        "type": "server-rack",
+        "x": 1,
+        "y": 1,
+        "w": 1,
+        "h": 2,
+        "rotation": 0,
+        "color": "#2a1e10",
+        "blocking": true,
+        "id": "fur_4ackgjyH",
+        "roomId": "room_srv"
+      },
+      "fur_jqpMADK5": {
+        "type": "server-rack",
+        "x": 3,
+        "y": 1,
+        "w": 1,
+        "h": 2,
+        "rotation": 0,
+        "color": "#2a1e10",
+        "blocking": true,
+        "id": "fur_jqpMADK5",
+        "roomId": "room_srv"
+      },
+      "fur_9phJjDw3": {
+        "type": "desk",
+        "x": 6,
+        "y": 5,
+        "w": 2,
+        "h": 1,
+        "rotation": 0,
+        "color": "#1d3b2a",
+        "blocking": true,
+        "workstation": {
+          "name": "Rack Console",
+          "assignedAgentId": "agent_volt",
+          "equipment": [
+            "terminal"
+          ],
+          "status": "online",
+          "services": [
+            "cluster mgmt"
+          ]
+        },
+        "id": "fur_9phJjDw3",
+        "roomId": "room_srv"
+      },
+      "fur_4PFU4rMn": {
+        "type": "conference-table",
+        "x": 4,
+        "y": 2,
+        "w": 4,
+        "h": 2,
+        "rotation": 0,
+        "color": "#1f2d3b",
+        "blocking": true,
+        "id": "fur_4PFU4rMn",
+        "roomId": "room_meet"
+      },
+      "fur_QUA_s86G": {
+        "type": "whiteboard",
+        "x": 1,
+        "y": 1,
+        "w": 3,
+        "h": 1,
+        "rotation": 0,
+        "color": "#2b3a3a",
+        "blocking": true,
+        "id": "fur_QUA_s86G",
+        "roomId": "room_meet"
+      },
+      "fur_SwuZqCMY": {
+        "type": "sofa",
+        "x": 1,
+        "y": 4,
+        "w": 3,
+        "h": 1,
+        "rotation": 0,
+        "color": "#2a2440",
+        "blocking": true,
+        "id": "fur_SwuZqCMY",
+        "roomId": "room_break"
+      },
+      "fur_BQSHP16T": {
+        "type": "plant",
+        "x": 7,
+        "y": 1,
+        "w": 1,
+        "h": 1,
+        "rotation": 0,
+        "color": "#1e5a32",
+        "blocking": true,
+        "id": "fur_BQSHP16T",
+        "roomId": "room_break"
+      },
+      "fur_pjpVnGpm": {
+        "type": "lamp",
+        "x": 1,
+        "y": 1,
+        "w": 1,
+        "h": 1,
+        "rotation": 0,
+        "color": "#5a5a20",
+        "blocking": false,
+        "id": "fur_pjpVnGpm",
+        "roomId": "room_break"
+      },
+      "fur_p8FLRbOS": {
+        "type": "workbench",
+        "x": 1,
+        "y": 1,
+        "w": 3,
+        "h": 1,
+        "rotation": 0,
+        "color": "#3a2a14",
+        "blocking": true,
+        "workstation": {
+          "name": "Workbench",
+          "assignedAgentId": "agent_rusty",
+          "equipment": [
+            "tools",
+            "soldering"
+          ],
+          "status": "online",
+          "services": [
+            "fabrication"
+          ]
+        },
+        "id": "fur_p8FLRbOS",
+        "roomId": "room_shop"
+      },
+      "fur_wY3qU5fU": {
+        "type": "container",
+        "x": 8,
+        "y": 4,
+        "w": 2,
+        "h": 2,
+        "rotation": 0,
+        "color": "#33281a",
+        "blocking": true,
+        "id": "fur_wY3qU5fU",
+        "roomId": "room_shop"
+      },
+      "fur_OMteubAj": {
+        "type": "desk",
+        "x": 4,
+        "y": 2,
+        "w": 2,
+        "h": 1,
+        "rotation": 0,
+        "color": "#1d3b2a",
+        "blocking": true,
+        "workstation": {
+          "name": "Front Desk",
+          "assignedAgentId": "agent_echo",
+          "equipment": [
+            "terminal"
+          ],
+          "status": "online",
+          "services": [
+            "visitor log"
+          ]
+        },
+        "id": "fur_OMteubAj",
+        "roomId": "room_rec"
+      },
+      "fur_mMnmKxdB": {
+        "type": "plant",
+        "x": 1,
+        "y": 1,
+        "w": 1,
+        "h": 1,
+        "rotation": 0,
+        "color": "#1e5a32",
+        "blocking": true,
+        "id": "fur_mMnmKxdB",
+        "roomId": "room_rec"
+      },
+      "fur_qtDJYTyi": {
+        "type": "desk",
+        "x": 1,
+        "y": 1,
+        "w": 2,
+        "h": 1,
+        "rotation": 0,
+        "color": "#1d3b2a",
+        "blocking": true,
+        "workstation": {
+          "name": "Private Desk",
+          "assignedAgentId": "agent_nova",
+          "equipment": [
+            "terminal"
+          ],
+          "status": "online",
+          "services": [
+            "mail"
+          ]
+        },
+        "id": "fur_qtDJYTyi",
+        "roomId": "room_lead"
+      },
+      "fur_s7RLsV-d": {
+        "type": "cabinet",
+        "x": 6,
+        "y": 1,
+        "w": 1,
+        "h": 1,
+        "rotation": 0,
+        "color": "#2a2f2c",
+        "blocking": true,
+        "id": "fur_s7RLsV-d",
+        "roomId": "room_lead"
+      },
+      "fur_sTign9dv": {
+        "type": "plant",
+        "x": 6,
+        "y": 4,
+        "w": 1,
+        "h": 1,
+        "rotation": 0,
+        "color": "#1e5a32",
+        "blocking": true,
+        "id": "fur_sTign9dv",
+        "roomId": "room_lead"
+      }
+    },
+    "agents": {
+      "agent_nova": {
+        "id": "agent_nova",
+        "enabled": true,
+        "identity": {
+          "name": "NOVA",
+          "title": "Lead Coordinator",
+          "department": "Command",
+          "roleDescription": "Lead Coordinator in Command.",
+          "bio": "Coordinates the office, routes tasks, and resolves conflicts between agents.",
+          "createdAt": "2026-10-18T09:01:01.961Z",
+          "profileImageAssetId": null,
+          "status": "active"
+        },
+        "personality": {
+          "traits": [
+            "decisive",
+            "calm",
+            "strategic"
+          ],
+          "communicationStyle": "concise",
+          "formality": 70,
+          "humor": 30,
+          "creativity": 50,
+          "detail": 60,
+          "riskTolerance": 40,
+          "initiative": 85,
+          "collaboration": "team",
+          "decisionMaking": "data-driven",
+          "workHabits": "Works in focused blocks and reports progress at milestones.",
+          "workingHours": {
+            "start": "09:00",
+            "end": "17:00"
+          },
+          "responseStyle": "Short status updates with evidence."
+        },
+        "skills": {
+          "primaryRole": "Lead Coordinator",
+          "secondaryRoles": [],
+          "skills": [
+            "planning",
+            "delegation",
+            "reporting"
+          ],
+          "tools": [
+            "terminal"
+          ],
+          "expertise": [],
+          "taskPermissions": [
+            "assign-tasks",
+            "execute-assigned"
+          ],
+          "workloadLimit": 5,
+          "priorityRules": "Critical first, then FIFO.",
+          "escalationRules": "Escalate to supervisor after 2 failed attempts.",
+          "teams": [
+            "Command"
+          ],
+          "supervisorId": null
+        },
+        "ai": {
+          "provider": "simulated",
+          "model": "simulated-local",
+          "systemInstructions": "You are an agent working inside Agent Office.",
+          "agentInstructions": "",
+          "toolPermissions": [
+            "terminal"
+          ],
+          "contextLimit": 32000,
+          "responseConstraints": "Plain text, under 200 words.",
+          "executionMode": "manual-approval",
+          "errorHandling": "retry",
+          "maxRetries": 2
+        },
+        "memory": [],
+        "schedule": {
+          "assignedRoomId": "room_lead",
+          "preferredWorkstationId": "fur_qtDJYTyi",
+          "workStart": "09:00",
+          "workEnd": "17:00",
+          "breakEveryMin": 120,
+          "breakLengthMin": 15
+        },
+        "permissions": {
+          "allowedTools": [
+            "terminal"
+          ],
+          "contactableAgentIds": "all",
+          "requireApprovalFor": [
+            "delete",
+            "external-message"
+          ],
+          "canMoveRooms": false,
+          "canEditOthers": false
+        },
+        "appearance": {
+          "height": 1,
+          "build": "average",
+          "skinTone": "#a0663f",
+          "faceShape": "oval",
+          "eyeStyle": "almond",
+          "eyeColor": "#2b1d10",
+          "brows": "thin",
+          "hairStyle": "bun",
+          "hairColor": "#e8e2d0",
+          "facialHair": "none",
+          "top": "suit",
+          "topColor": "#13402a",
+          "bottom": "pants",
+          "bottomColor": "#1b1f24",
+          "shoes": "sneakers",
+          "shoeColor": "#d8dde0",
+          "headwear": "headset",
+          "headwearColor": "#39ff88",
+          "glasses": "none",
+          "jewelry": "badge",
+          "equipment": "none",
+          "accent": "#39ff88",
+          "idlePose": "stand",
+          "walkPose": "normal",
+          "workPose": "typing",
+          "facing": "right",
+          "artStyle": "flat",
+          "outline": 1.5,
+          "shading": "soft",
+          "animationSpeed": 1,
+          "preferredView": "top"
+        },
+        "assets": {}
+      },
+      "agent_atlas": {
+        "id": "agent_atlas",
+        "enabled": true,
+        "identity": {
+          "name": "ATLAS",
+          "title": "Research Analyst",
+          "department": "Research",
+          "roleDescription": "Research Analyst in Research.",
+          "bio": "Digs through datasets and literature, then writes concise briefs.",
+          "createdAt": "2026-10-18T09:01:01.961Z",
+          "profileImageAssetId": null,
+          "status": "active"
+        },
+        "personality": {
+          "traits": [
+            "curious",
+            "meticulous"
+          ],
+          "communicationStyle": "detailed",
+          "formality": 50,
+          "humor": 30,
+          "creativity": 50,
+          "detail": 90,
+          "riskTolerance": 40,
+          "initiative": 55,
+          "collaboration": "team",
+          "decisionMaking": "data-driven",
+          "workHabits": "Works in focused blocks and reports progress at milestones.",
+          "workingHours": {
+            "start": "09:00",
+            "end": "17:00"
+          },
+          "responseStyle": "Short status updates with evidence."
+        },
+        "skills": {
+          "primaryRole": "Research Analyst",
+          "secondaryRoles": [],
+          "skills": [
+            "literature review",
+            "data analysis",
+            "summarisation"
+          ],
+          "tools": [
+            "terminal",
+            "search",
+            "notebook"
+          ],
+          "expertise": [],
+          "taskPermissions": [
+            "execute-assigned"
+          ],
+          "workloadLimit": 5,
+          "priorityRules": "Critical first, then FIFO.",
+          "escalationRules": "Escalate to supervisor after 2 failed attempts.",
+          "teams": [
+            "Research"
+          ],
+          "supervisorId": "agent_nova"
+        },
+        "ai": {
+          "provider": "simulated",
+          "model": "simulated-local",
+          "systemInstructions": "You are an agent working inside Agent Office.",
+          "agentInstructions": "",
+          "toolPermissions": [
+            "terminal"
+          ],
+          "contextLimit": 32000,
+          "responseConstraints": "Plain text, under 200 words.",
+          "executionMode": "manual-approval",
+          "errorHandling": "retry",
+          "maxRetries": 2
+        },
+        "memory": [
+          {
+            "id": "mem_1",
+            "kind": "project",
+            "persistent": true,
+            "title": "Current focus",
+            "content": "Benchmarking routing algorithms for the office nav graph.",
+            "createdAt": "2026-10-18T09:01:01.961Z"
+          }
+        ],
+        "schedule": {
+          "assignedRoomId": "room_lab",
+          "preferredWorkstationId": "fur__C5-87R0",
+          "workStart": "09:00",
+          "workEnd": "17:00",
+          "breakEveryMin": 120,
+          "breakLengthMin": 15
+        },
+        "permissions": {
+          "allowedTools": [
+            "terminal"
+          ],
+          "contactableAgentIds": "all",
+          "requireApprovalFor": [
+            "delete",
+            "external-message"
+          ],
+          "canMoveRooms": false,
+          "canEditOthers": false
+        },
+        "appearance": {
+          "height": 1,
+          "build": "average",
+          "skinTone": "#7a4a2a",
+          "faceShape": "oval",
+          "eyeStyle": "almond",
+          "eyeColor": "#2b1d10",
+          "brows": "thin",
+          "hairStyle": "curly",
+          "hairColor": "#1a1410",
+          "facialHair": "none",
+          "top": "labcoat",
+          "topColor": "#e6eef0",
+          "bottom": "pants",
+          "bottomColor": "#1b1f24",
+          "shoes": "sneakers",
+          "shoeColor": "#d8dde0",
+          "headwear": "none",
+          "headwearColor": "#f2c230",
+          "glasses": "round",
+          "jewelry": "none",
+          "equipment": "clipboard",
+          "accent": "#b57bff",
+          "idlePose": "stand",
+          "walkPose": "normal",
+          "workPose": "typing",
+          "facing": "right",
+          "artStyle": "flat",
+          "outline": 1.5,
+          "shading": "soft",
+          "animationSpeed": 1,
+          "preferredView": "top"
+        },
+        "assets": {}
+      },
+      "agent_volt": {
+        "id": "agent_volt",
+        "enabled": true,
+        "identity": {
+          "name": "VOLT",
+          "title": "Systems Engineer",
+          "department": "Infrastructure",
+          "roleDescription": "Systems Engineer in Infrastructure.",
+          "bio": "Keeps the cluster healthy and the racks cool.",
+          "createdAt": "2026-10-18T09:01:01.961Z",
+          "profileImageAssetId": null,
+          "status": "active"
+        },
+        "personality": {
+          "traits": [
+            "pragmatic",
+            "fast"
+          ],
+          "communicationStyle": "concise",
+          "formality": 50,
+          "humor": 60,
+          "creativity": 50,
+          "detail": 60,
+          "riskTolerance": 65,
+          "initiative": 55,
+          "collaboration": "team",
+          "decisionMaking": "data-driven",
+          "workHabits": "Works in focused blocks and reports progress at milestones.",
+          "workingHours": {
+            "start": "09:00",
+            "end": "17:00"
+          },
+          "responseStyle": "Short status updates with evidence."
+        },
+        "skills": {
+          "primaryRole": "Systems Engineer",
+          "secondaryRoles": [],
+          "skills": [
+            "linux",
+            "networking",
+            "monitoring"
+          ],
+          "tools": [
+            "terminal",
+            "ssh",
+            "metrics"
+          ],
+          "expertise": [],
+          "taskPermissions": [
+            "execute-assigned"
+          ],
+          "workloadLimit": 5,
+          "priorityRules": "Critical first, then FIFO.",
+          "escalationRules": "Escalate to supervisor after 2 failed attempts.",
+          "teams": [
+            "Infrastructure"
+          ],
+          "supervisorId": "agent_nova"
+        },
+        "ai": {
+          "provider": "simulated",
+          "model": "simulated-local",
+          "systemInstructions": "You are an agent working inside Agent Office.",
+          "agentInstructions": "",
+          "toolPermissions": [
+            "terminal"
+          ],
+          "contextLimit": 32000,
+          "responseConstraints": "Plain text, under 200 words.",
+          "executionMode": "manual-approval",
+          "errorHandling": "retry",
+          "maxRetries": 2
+        },
+        "memory": [],
+        "schedule": {
+          "assignedRoomId": "room_srv",
+          "preferredWorkstationId": "fur_9phJjDw3",
+          "workStart": "09:00",
+          "workEnd": "17:00",
+          "breakEveryMin": 120,
+          "breakLengthMin": 15
+        },
+        "permissions": {
+          "allowedTools": [
+            "terminal"
+          ],
+          "contactableAgentIds": "all",
+          "requireApprovalFor": [
+            "delete",
+            "external-message"
+          ],
+          "canMoveRooms": false,
+          "canEditOthers": false
+        },
+        "appearance": {
+          "height": 1,
+          "build": "average",
+          "skinTone": "#e8b897",
+          "faceShape": "oval",
+          "eyeStyle": "almond",
+          "eyeColor": "#2b1d10",
+          "brows": "thin",
+          "hairStyle": "mohawk",
+          "hairColor": "#ff9f43",
+          "facialHair": "none",
+          "top": "hoodie",
+          "topColor": "#2a1e10",
+          "bottom": "pants",
+          "bottomColor": "#1b1f24",
+          "shoes": "sneakers",
+          "shoeColor": "#d8dde0",
+          "headwear": "none",
+          "headwearColor": "#f2c230",
+          "glasses": "visor",
+          "jewelry": "none",
+          "equipment": "none",
+          "accent": "#ff9f43",
+          "idlePose": "stand",
+          "walkPose": "normal",
+          "workPose": "typing",
+          "facing": "right",
+          "artStyle": "neon",
+          "outline": 1.5,
+          "shading": "soft",
+          "animationSpeed": 1,
+          "preferredView": "top"
+        },
+        "assets": {}
+      },
+      "agent_pixel": {
+        "id": "agent_pixel",
+        "enabled": true,
+        "identity": {
+          "name": "PIXEL",
+          "title": "Interface Designer",
+          "department": "Product",
+          "roleDescription": "Interface Designer in Product.",
+          "bio": "Designs dashboards and control surfaces for the other agents.",
+          "createdAt": "2026-10-18T09:01:01.961Z",
+          "profileImageAssetId": null,
+          "status": "active"
+        },
+        "personality": {
+          "traits": [
+            "creative",
+            "empathetic"
+          ],
+          "communicationStyle": "friendly",
+          "formality": 50,
+          "humor": 30,
+          "creativity": 90,
+          "detail": 60,
+          "riskTolerance": 40,
+          "initiative": 55,
+          "collaboration": "team",
+          "decisionMaking": "data-driven",
+          "workHabits": "Works in focused blocks and reports progress at milestones.",
+          "workingHours": {
+            "start": "09:00",
+            "end": "17:00"
+          },
+          "responseStyle": "Short status updates with evidence."
+        },
+        "skills": {
+          "primaryRole": "Interface Designer",
+          "secondaryRoles": [],
+          "skills": [
+            "ui design",
+            "prototyping",
+            "accessibility"
+          ],
+          "tools": [
+            "terminal"
+          ],
+          "expertise": [],
+          "taskPermissions": [
+            "execute-assigned"
+          ],
+          "workloadLimit": 5,
+          "priorityRules": "Critical first, then FIFO.",
+          "escalationRules": "Escalate to supervisor after 2 failed attempts.",
+          "teams": [
+            "Product"
+          ],
+          "supervisorId": "agent_nova"
+        },
+        "ai": {
+          "provider": "simulated",
+          "model": "simulated-local",
+          "systemInstructions": "You are an agent working inside Agent Office.",
+          "agentInstructions": "",
+          "toolPermissions": [
+            "terminal"
+          ],
+          "contextLimit": 32000,
+          "responseConstraints": "Plain text, under 200 words.",
+          "executionMode": "manual-approval",
+          "errorHandling": "retry",
+          "maxRetries": 2
+        },
+        "memory": [],
+        "schedule": {
+          "assignedRoomId": "room_ops",
+          "preferredWorkstationId": "fur_lFos-RQT",
+          "workStart": "09:00",
+          "workEnd": "17:00",
+          "breakEveryMin": 120,
+          "breakLengthMin": 15
+        },
+        "permissions": {
+          "allowedTools": [
+            "terminal"
+          ],
+          "contactableAgentIds": "all",
+          "requireApprovalFor": [
+            "delete",
+            "external-message"
+          ],
+          "canMoveRooms": false,
+          "canEditOthers": false
+        },
+        "appearance": {
+          "height": 1,
+          "build": "average",
+          "skinTone": "#f6d7c3",
+          "faceShape": "oval",
+          "eyeStyle": "almond",
+          "eyeColor": "#2b1d10",
+          "brows": "thin",
+          "hairStyle": "long",
+          "hairColor": "#4cc9ff",
+          "facialHair": "none",
+          "top": "tshirt",
+          "topColor": "#103a4a",
+          "bottom": "pants",
+          "bottomColor": "#1b1f24",
+          "shoes": "sneakers",
+          "shoeColor": "#d8dde0",
+          "headwear": "none",
+          "headwearColor": "#f2c230",
+          "glasses": "none",
+          "jewelry": "earrings",
+          "equipment": "tablet",
+          "accent": "#4cc9ff",
+          "idlePose": "stand",
+          "walkPose": "normal",
+          "workPose": "typing",
+          "facing": "right",
+          "artStyle": "flat",
+          "outline": 1.5,
+          "shading": "soft",
+          "animationSpeed": 1,
+          "preferredView": "top"
+        },
+        "assets": {}
+      },
+      "agent_rusty": {
+        "id": "agent_rusty",
+        "enabled": true,
+        "identity": {
+          "name": "RUSTY",
+          "title": "Field Mechanic",
+          "department": "Facilities",
+          "roleDescription": "Field Mechanic in Facilities.",
+          "bio": "Fixes anything with bolts. Prefers the workshop to meetings.",
+          "createdAt": "2026-10-18T09:01:01.961Z",
+          "profileImageAssetId": null,
+          "status": "active"
+        },
+        "personality": {
+          "traits": [
+            "rugged",
+            "reliable",
+            "blunt"
+          ],
+          "communicationStyle": "concise",
+          "formality": 20,
+          "humor": 70,
+          "creativity": 50,
+          "detail": 60,
+          "riskTolerance": 40,
+          "initiative": 55,
+          "collaboration": "team",
+          "decisionMaking": "data-driven",
+          "workHabits": "Works in focused blocks and reports progress at milestones.",
+          "workingHours": {
+            "start": "09:00",
+            "end": "17:00"
+          },
+          "responseStyle": "Short status updates with evidence."
+        },
+        "skills": {
+          "primaryRole": "Field Mechanic",
+          "secondaryRoles": [],
+          "skills": [
+            "repairs",
+            "fabrication",
+            "hvac"
+          ],
+          "tools": [
+            "wrench",
+            "multimeter"
+          ],
+          "expertise": [],
+          "taskPermissions": [
+            "execute-assigned"
+          ],
+          "workloadLimit": 5,
+          "priorityRules": "Critical first, then FIFO.",
+          "escalationRules": "Escalate to supervisor after 2 failed attempts.",
+          "teams": [
+            "Facilities"
+          ],
+          "supervisorId": "agent_nova"
+        },
+        "ai": {
+          "provider": "simulated",
+          "model": "simulated-local",
+          "systemInstructions": "You are an agent working inside Agent Office.",
+          "agentInstructions": "",
+          "toolPermissions": [
+            "terminal"
+          ],
+          "contextLimit": 32000,
+          "responseConstraints": "Plain text, under 200 words.",
+          "executionMode": "manual-approval",
+          "errorHandling": "retry",
+          "maxRetries": 2
+        },
+        "memory": [],
+        "schedule": {
+          "assignedRoomId": "room_shop",
+          "preferredWorkstationId": "fur_p8FLRbOS",
+          "workStart": "09:00",
+          "workEnd": "17:00",
+          "breakEveryMin": 120,
+          "breakLengthMin": 15
+        },
+        "permissions": {
+          "allowedTools": [
+            "terminal"
+          ],
+          "contactableAgentIds": "all",
+          "requireApprovalFor": [
+            "delete",
+            "external-message"
+          ],
+          "canMoveRooms": false,
+          "canEditOthers": false
+        },
+        "appearance": {
+          "height": 1,
+          "build": "broad",
+          "skinTone": "#c68a64",
+          "faceShape": "oval",
+          "eyeStyle": "almond",
+          "eyeColor": "#2b1d10",
+          "brows": "thin",
+          "hairStyle": "short",
+          "hairColor": "#5a3a20",
+          "facialHair": "beard",
+          "top": "coverall",
+          "topColor": "#d9772b",
+          "bottom": "pants",
+          "bottomColor": "#1b1f24",
+          "shoes": "boots",
+          "shoeColor": "#4a3020",
+          "headwear": "hardhat",
+          "headwearColor": "#f2c230",
+          "glasses": "none",
+          "jewelry": "none",
+          "equipment": "wrench",
+          "accent": "#39ff88",
+          "idlePose": "stand",
+          "walkPose": "normal",
+          "workPose": "typing",
+          "facing": "right",
+          "artStyle": "realistic",
+          "outline": 1.5,
+          "shading": "soft",
+          "animationSpeed": 1,
+          "preferredView": "side"
+        },
+        "assets": {}
+      },
+      "agent_echo": {
+        "id": "agent_echo",
+        "enabled": true,
+        "identity": {
+          "name": "ECHO",
+          "title": "Communications Officer",
+          "department": "Front Office",
+          "roleDescription": "Communications Officer in Front Office.",
+          "bio": "Handles visitors, inbound requests, and inter-agent messaging.",
+          "createdAt": "2026-10-18T09:01:01.962Z",
+          "profileImageAssetId": null,
+          "status": "active"
+        },
+        "personality": {
+          "traits": [
+            "warm",
+            "organised"
+          ],
+          "communicationStyle": "friendly",
+          "formality": 50,
+          "humor": 30,
+          "creativity": 50,
+          "detail": 60,
+          "riskTolerance": 40,
+          "initiative": 55,
+          "collaboration": "team",
+          "decisionMaking": "data-driven",
+          "workHabits": "Works in focused blocks and reports progress at milestones.",
+          "workingHours": {
+            "start": "09:00",
+            "end": "17:00"
+          },
+          "responseStyle": "Short status updates with evidence."
+        },
+        "skills": {
+          "primaryRole": "Communications Officer",
+          "secondaryRoles": [],
+          "skills": [
+            "triage",
+            "scheduling",
+            "messaging"
+          ],
+          "tools": [
+            "terminal"
+          ],
+          "expertise": [],
+          "taskPermissions": [
+            "execute-assigned"
+          ],
+          "workloadLimit": 5,
+          "priorityRules": "Critical first, then FIFO.",
+          "escalationRules": "Escalate to supervisor after 2 failed attempts.",
+          "teams": [
+            "Front Office"
+          ],
+          "supervisorId": "agent_nova"
+        },
+        "ai": {
+          "provider": "simulated",
+          "model": "simulated-local",
+          "systemInstructions": "You are an agent working inside Agent Office.",
+          "agentInstructions": "",
+          "toolPermissions": [
+            "terminal"
+          ],
+          "contextLimit": 32000,
+          "responseConstraints": "Plain text, under 200 words.",
+          "executionMode": "manual-approval",
+          "errorHandling": "retry",
+          "maxRetries": 2
+        },
+        "memory": [],
+        "schedule": {
+          "assignedRoomId": "room_rec",
+          "preferredWorkstationId": "fur_OMteubAj",
+          "workStart": "09:00",
+          "workEnd": "17:00",
+          "breakEveryMin": 120,
+          "breakLengthMin": 15
+        },
+        "permissions": {
+          "allowedTools": [
+            "terminal"
+          ],
+          "contactableAgentIds": "all",
+          "requireApprovalFor": [
+            "delete",
+            "external-message"
+          ],
+          "canMoveRooms": false,
+          "canEditOthers": false
+        },
+        "appearance": {
+          "height": 1,
+          "build": "average",
+          "skinTone": "#4f3020",
+          "faceShape": "oval",
+          "eyeStyle": "almond",
+          "eyeColor": "#2b1d10",
+          "brows": "thin",
+          "hairStyle": "ponytail",
+          "hairColor": "#2a1d14",
+          "facialHair": "none",
+          "top": "uniform",
+          "topColor": "#1f3d2e",
+          "bottom": "pants",
+          "bottomColor": "#1b1f24",
+          "shoes": "sneakers",
+          "shoeColor": "#d8dde0",
+          "headwear": "headset",
+          "headwearColor": "#39ff88",
+          "glasses": "none",
+          "jewelry": "none",
+          "equipment": "none",
+          "accent": "#39ff88",
+          "idlePose": "stand",
+          "walkPose": "normal",
+          "workPose": "typing",
+          "facing": "right",
+          "artStyle": "flat",
+          "outline": 1.5,
+          "shading": "soft",
+          "animationSpeed": 1,
+          "preferredView": "top"
+        },
+        "assets": {}
+      }
+    },
+    "outfitTemplates": [
+      {
+        "id": "outfit_0",
+        "name": "Ops operator",
+        "patch": {
+          "top": "uniform",
+          "topColor": "#13402a",
+          "headwear": "headset",
+          "headwearColor": "#39ff88",
+          "equipment": "tablet"
+        }
+      },
+      {
+        "id": "outfit_1",
+        "name": "Lab researcher",
+        "patch": {
+          "top": "labcoat",
+          "topColor": "#e8eef0",
+          "glasses": "round",
+          "equipment": "clipboard"
+        }
+      },
+      {
+        "id": "outfit_2",
+        "name": "Field mechanic",
+        "patch": {
+          "top": "coverall",
+          "topColor": "#d9772b",
+          "headwear": "hardhat",
+          "headwearColor": "#f2c230",
+          "shoes": "boots",
+          "shoeColor": "#4a3020",
+          "equipment": "wrench",
+          "artStyle": "realistic",
+          "preferredView": "side"
+        }
+      },
+      {
+        "id": "outfit_3",
+        "name": "Executive",
+        "patch": {
+          "top": "suit",
+          "topColor": "#1c2230",
+          "bottomColor": "#1c2230",
+          "shoes": "dress",
+          "shoeColor": "#111",
+          "jewelry": "badge"
+        }
+      },
+      {
+        "id": "outfit_4",
+        "name": "Netrunner",
+        "patch": {
+          "top": "hoodie",
+          "topColor": "#2a1440",
+          "glasses": "visor",
+          "accent": "#b57bff",
+          "artStyle": "neon",
+          "hairStyle": "mohawk",
+          "hairColor": "#b57bff"
+        }
+      },
+      {
+        "id": "outfit_5",
+        "name": "Security",
+        "patch": {
+          "top": "vest",
+          "topColor": "#26313a",
+          "headwear": "helmet",
+          "headwearColor": "#26313a",
+          "shoes": "boots",
+          "equipment": "tablet"
+        }
+      }
+    ],
+    "roomTemplates": [
+      {
+        "id": "tpl_office",
+        "name": "Agent office",
+        "type": "office",
+        "w": 7,
+        "h": 6,
+        "appearance": {
+          "floor": "carpet",
+          "wallColor": "#1f6f45",
+          "accent": "#4cc9ff",
+          "lighting": 0.6
+        },
+        "furniture": [
+          {
+            "type": "desk",
+            "x": 1,
+            "y": 1,
+            "w": 2,
+            "h": 1,
+            "rotation": 0,
+            "color": "#1d3b2a",
+            "blocking": true,
+            "workstation": {
+              "name": "Private Desk",
+              "assignedAgentId": null,
+              "equipment": [
+                "terminal"
+              ],
+              "status": "online",
+              "services": [
+                "mail"
+              ]
+            }
+          },
+          {
+            "type": "cabinet",
+            "x": 5,
+            "y": 1,
+            "w": 1,
+            "h": 1,
+            "rotation": 0,
+            "color": "#2a2f2c",
+            "blocking": true
+          },
+          {
+            "type": "plant",
+            "x": 5,
+            "y": 4,
+            "w": 1,
+            "h": 1,
+            "rotation": 0,
+            "color": "#1e5a32",
+            "blocking": true
+          }
+        ]
+      },
+      {
+        "id": "tpl_research",
+        "name": "Research lab",
+        "type": "research",
+        "w": 10,
+        "h": 7,
+        "appearance": {
+          "floor": "tile",
+          "wallColor": "#1f6f45",
+          "accent": "#b57bff",
+          "lighting": 0.6
+        },
+        "furniture": [
+          {
+            "type": "desk",
+            "x": 1,
+            "y": 1,
+            "w": 2,
+            "h": 1,
+            "rotation": 0,
+            "color": "#1d3b2a",
+            "blocking": true,
+            "workstation": {
+              "name": "Lab Bench A",
+              "assignedAgentId": null,
+              "equipment": [
+                "microscope",
+                "terminal"
+              ],
+              "status": "online",
+              "services": [
+                "dataset store"
+              ]
+            }
+          },
+          {
+            "type": "desk",
+            "x": 4,
+            "y": 1,
+            "w": 2,
+            "h": 1,
+            "rotation": 0,
+            "color": "#1d3b2a",
+            "blocking": true,
+            "workstation": {
+              "name": "Lab Bench B",
+              "assignedAgentId": null,
+              "equipment": [
+                "terminal"
+              ],
+              "status": "online",
+              "services": [
+                "compute"
+              ]
+            }
+          },
+          {
+            "type": "whiteboard",
+            "x": 1,
+            "y": 5,
+            "w": 3,
+            "h": 1,
+            "rotation": 0,
+            "color": "#2b3a3a",
+            "blocking": true
+          },
+          {
+            "type": "shelf",
+            "x": 7,
+            "y": 5,
+            "w": 2,
+            "h": 1,
+            "rotation": 0,
+            "color": "#2a2a22",
+            "blocking": true
+          }
+        ]
+      },
+      {
+        "id": "tpl_server",
+        "name": "Server room",
+        "type": "server",
+        "w": 8,
+        "h": 6,
+        "appearance": {
+          "floor": "metal",
+          "wallColor": "#1f6f45",
+          "accent": "#ff9f43",
+          "lighting": 0.6
+        },
+        "furniture": [
+          {
+            "type": "server-rack",
+            "x": 1,
+            "y": 1,
+            "w": 1,
+            "h": 2,
+            "rotation": 0,
+            "color": "#2a1e10",
+            "blocking": true
+          },
+          {
+            "type": "server-rack",
+            "x": 3,
+            "y": 1,
+            "w": 1,
+            "h": 2,
+            "rotation": 0,
+            "color": "#2a1e10",
+            "blocking": true
+          },
+          {
+            "type": "desk",
+            "x": 5,
+            "y": 4,
+            "w": 2,
+            "h": 1,
+            "rotation": 0,
+            "color": "#1d3b2a",
+            "blocking": true,
+            "workstation": {
+              "name": "Rack Console",
+              "assignedAgentId": null,
+              "equipment": [
+                "terminal"
+              ],
+              "status": "online",
+              "services": [
+                "cluster mgmt"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "tpl_meeting",
+        "name": "Meeting room",
+        "type": "meeting",
+        "w": 9,
+        "h": 7,
+        "appearance": {
+          "floor": "wood",
+          "wallColor": "#1f6f45",
+          "accent": "#4cc9ff",
+          "lighting": 0.6
+        },
+        "furniture": [
+          {
+            "type": "conference-table",
+            "x": 2,
+            "y": 2,
+            "w": 4,
+            "h": 2,
+            "rotation": 0,
+            "color": "#1f2d3b",
+            "blocking": true
+          },
+          {
+            "type": "whiteboard",
+            "x": 1,
+            "y": 1,
+            "w": 3,
+            "h": 1,
+            "rotation": 0,
+            "color": "#2b3a3a",
+            "blocking": true
+          }
+        ]
+      },
+      {
+        "id": "tpl_workshop",
+        "name": "Workshop",
+        "type": "workshop",
+        "w": 9,
+        "h": 7,
+        "appearance": {
+          "floor": "metal",
+          "wallColor": "#1f6f45",
+          "accent": "#ff9f43",
+          "lighting": 0.6
+        },
+        "furniture": [
+          {
+            "type": "workbench",
+            "x": 1,
+            "y": 1,
+            "w": 3,
+            "h": 1,
+            "rotation": 0,
+            "color": "#3a2a14",
+            "blocking": true,
+            "workstation": {
+              "name": "Workbench",
+              "assignedAgentId": null,
+              "equipment": [
+                "tools",
+                "soldering"
+              ],
+              "status": "online",
+              "services": [
+                "fabrication"
+              ]
+            }
+          },
+          {
+            "type": "container",
+            "x": 6,
+            "y": 4,
+            "w": 2,
+            "h": 2,
+            "rotation": 0,
+            "color": "#33281a",
+            "blocking": true
+          }
+        ]
+      },
+      {
+        "id": "tpl_storage",
+        "name": "Storage",
+        "type": "storage",
+        "w": 6,
+        "h": 5,
+        "appearance": {
+          "floor": "plain",
+          "wallColor": "#1f6f45",
+          "accent": "#8a9a8f",
+          "lighting": 0.6
+        },
+        "furniture": [
+          {
+            "type": "shelf",
+            "x": 1,
+            "y": 1,
+            "w": 2,
+            "h": 1,
+            "rotation": 0,
+            "color": "#2a2a22",
+            "blocking": true
+          },
+          {
+            "type": "shelf",
+            "x": 1,
+            "y": 3,
+            "w": 2,
+            "h": 1,
+            "rotation": 0,
+            "color": "#2a2a22",
+            "blocking": true
+          },
+          {
+            "type": "container",
+            "x": 3,
+            "y": 1,
+            "w": 2,
+            "h": 2,
+            "rotation": 0,
+            "color": "#33281a",
+            "blocking": true
+          }
+        ]
+      },
+      {
+        "id": "tpl_break",
+        "name": "Break room",
+        "type": "break",
+        "w": 8,
+        "h": 6,
+        "appearance": {
+          "floor": "wood",
+          "wallColor": "#1f6f45",
+          "accent": "#ffd166",
+          "lighting": 0.6
+        },
+        "furniture": [
+          {
+            "type": "sofa",
+            "x": 1,
+            "y": 4,
+            "w": 3,
+            "h": 1,
+            "rotation": 0,
+            "color": "#2a2440",
+            "blocking": true
+          },
+          {
+            "type": "plant",
+            "x": 6,
+            "y": 1,
+            "w": 1,
+            "h": 1,
+            "rotation": 0,
+            "color": "#1e5a32",
+            "blocking": true
+          },
+          {
+            "type": "lamp",
+            "x": 1,
+            "y": 1,
+            "w": 1,
+            "h": 1,
+            "rotation": 0,
+            "color": "#5a5a20",
+            "blocking": false
+          }
+        ]
+      },
+      {
+        "id": "tpl_security",
+        "name": "Security",
+        "type": "security",
+        "w": 7,
+        "h": 6,
+        "appearance": {
+          "floor": "metal",
+          "wallColor": "#1f6f45",
+          "accent": "#ff5d73",
+          "lighting": 0.6
+        },
+        "furniture": [
+          {
+            "type": "monitors",
+            "x": 1,
+            "y": 1,
+            "w": 3,
+            "h": 1,
+            "rotation": 0,
+            "color": "#0f2a1f",
+            "blocking": true
+          },
+          {
+            "type": "desk",
+            "x": 1,
+            "y": 3,
+            "w": 2,
+            "h": 1,
+            "rotation": 0,
+            "color": "#1d3b2a",
+            "blocking": true,
+            "workstation": {
+              "name": "Security Console",
+              "assignedAgentId": null,
+              "equipment": [
+                "cameras",
+                "badge reader"
+              ],
+              "status": "online",
+              "services": [
+                "access control"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "tpl_reception",
+        "name": "Reception",
+        "type": "reception",
+        "w": 9,
+        "h": 6,
+        "appearance": {
+          "floor": "tile",
+          "wallColor": "#1f6f45",
+          "accent": "#39ff88",
+          "lighting": 0.6
+        },
+        "furniture": [
+          {
+            "type": "desk",
+            "x": 3,
+            "y": 2,
+            "w": 2,
+            "h": 1,
+            "rotation": 0,
+            "color": "#1d3b2a",
+            "blocking": true,
+            "workstation": {
+              "name": "Front Desk",
+              "assignedAgentId": null,
+              "equipment": [
+                "terminal"
+              ],
+              "status": "online",
+              "services": [
+                "visitor log"
+              ]
+            }
+          },
+          {
+            "type": "plant",
+            "x": 1,
+            "y": 1,
+            "w": 1,
+            "h": 1,
+            "rotation": 0,
+            "color": "#1e5a32",
+            "blocking": true
+          }
+        ]
+      },
+      {
+        "id": "tpl_operations",
+        "name": "Main operations",
+        "type": "operations",
+        "w": 16,
+        "h": 10,
+        "appearance": {
+          "floor": "grid",
+          "wallColor": "#1f6f45",
+          "accent": "#39ff88",
+          "lighting": 0.6
+        },
+        "furniture": [
+          {
+            "type": "monitors",
+            "x": 7,
+            "y": 1,
+            "w": 3,
+            "h": 1,
+            "rotation": 0,
+            "color": "#0f2a1f",
+            "blocking": true
+          },
+          {
+            "type": "desk",
+            "x": 1,
+            "y": 4,
+            "w": 2,
+            "h": 1,
+            "rotation": 0,
+            "color": "#1d3b2a",
+            "blocking": true,
+            "workstation": {
+              "name": "Ops Station 1",
+              "assignedAgentId": null,
+              "equipment": [
+                "terminal",
+                "dual monitors"
+              ],
+              "status": "online",
+              "services": [
+                "telemetry"
+              ]
+            }
+          },
+          {
+            "type": "desk",
+            "x": 5,
+            "y": 4,
+            "w": 2,
+            "h": 1,
+            "rotation": 0,
+            "color": "#1d3b2a",
+            "blocking": true,
+            "workstation": {
+              "name": "Ops Station 2",
+              "assignedAgentId": null,
+              "equipment": [
+                "terminal",
+                "dual monitors"
+              ],
+              "status": "online",
+              "services": [
+                "telemetry"
+              ]
+            }
+          },
+          {
+            "type": "desk",
+            "x": 9,
+            "y": 4,
+            "w": 2,
+            "h": 1,
+            "rotation": 0,
+            "color": "#1d3b2a",
+            "blocking": true,
+            "workstation": {
+              "name": "Ops Station 3",
+              "assignedAgentId": null,
+              "equipment": [
+                "terminal",
+                "dual monitors"
+              ],
+              "status": "online",
+              "services": [
+                "telemetry"
+              ]
+            }
+          },
+          {
+            "type": "plant",
+            "x": 14,
+            "y": 8,
+            "w": 1,
+            "h": 1,
+            "rotation": 0,
+            "color": "#1e5a32",
+            "blocking": true
+          }
+        ]
+      }
+    ]
+  }
+}

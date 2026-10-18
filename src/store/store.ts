@@ -1,0 +1,285 @@
+// Application state. Three layers, kept deliberately separate:
+//  - doc      : persistent, undoable office (layout, agents' profiles/appearance)
+//  - runtime  : persistent simulation state (tasks, positions, activity log); not undoable
+//  - ui       : ephemeral view state (selection, camera, tools) — never saved
+import { create } from 'zustand';
+import type { OfficeDoc, RuntimeState, Task } from '../model/types';
+import { applyOps, type DocOp } from '../engine/ops';
+import { newErrors, validate, type Issue } from '../engine/validate';
+import { buildNav, type NavGraph } from '../engine/navigation';
+import { createTask, emptyRuntime, goTo, log, reconcileLayout, step, syncRuntime } from '../engine/simulation';
+import { sampleOffice } from '../model/sample';
+import { emptyOffice } from '../model/defaults';
+import { LocalStorageRepository, type OfficeRepository, type Preferences } from '../persistence/repository';
+import { exportOffice, parseOffice } from '../model/schema';
+
+export type Selection =
+  | { kind: 'none' }
+  | { kind: 'room'; ids: string[] }
+  | { kind: 'corridor'; id: string }
+  | { kind: 'furniture'; id: string }
+  | { kind: 'door'; roomId: string; doorId: string }
+  | { kind: 'agent'; id: string };
+
+export type Tool = 'select' | 'room' | 'hallway' | 'door' | 'furniture' | 'workstation' | 'agent' | 'connect' | 'pan';
+export type GlobalView = 'auto' | 'top' | 'front' | 'side' | 'three-quarter';
+
+export interface HistoryEntry { doc: OfficeDoc; label: string }
+
+export interface CommitResult { ok: boolean; summary: string[]; errors: string[]; conflicts: Issue[]; doc?: OfficeDoc }
+
+export interface Preview { doc: OfficeDoc; ops: DocOp[]; runtimeOps: RuntimeOp[]; label: string; summary: string[]; issues: Issue[]; source: 'ai' | 'conflict' }
+
+export type RuntimeOp =
+  | { op: 'agent.goTo'; agentId: string; roomId: string | null; workstationId?: string | null }
+  | { op: 'task.create'; agentId: string | null; name: string; description?: string; priority?: Task['priority']; roomId?: string | null; workstationId?: string | null; simulated?: boolean; deadline?: string; dependencies?: string[] }
+  | { op: 'task.update'; id: string; patch: Partial<Pick<Task, 'priority' | 'status' | 'agentId' | 'name' | 'description' | 'deadline'>> }
+  | { op: 'history.undo' } | { op: 'history.redo' };
+
+interface State {
+  doc: OfficeDoc;
+  past: HistoryEntry[];
+  future: HistoryEntry[];
+  lastSaved: { doc: OfficeDoc; at: string } | null;
+  dirty: boolean;
+  runtime: RuntimeState;
+  nav: NavGraph;
+  issues: Issue[];
+  prefs: Preferences;
+  // ui
+  mode: 'simulate' | 'construct';
+  tool: Tool;
+  furnitureType: string;
+  selection: Selection;
+  camera: { x: number; y: number; zoom: number };
+  view: GlobalView;
+  layers: { grid: boolean; snap: boolean; boundaries: boolean; paths: boolean; occupancy: boolean; labels: boolean };
+  preview: Preview | null;
+  conflict: { ops: DocOp[]; label: string; issues: Issue[] } | null;
+  profileAgentId: string | null;
+  profileTab: string;
+  page: 'office' | 'dashboard' | 'settings';
+  toast: { id: number; text: string; level: 'info' | 'warn' | 'error' } | null;
+  hallwayDraft: { roomId: string; doorId: string } | null;
+
+  commit(ops: DocOp[], label: string, opts?: { force?: boolean; silent?: boolean }): CommitResult;
+  dryRun(ops: DocOp[]): CommitResult;
+  runRuntimeOps(ops: RuntimeOp[]): string[];
+  undo(): void; redo(): void;
+  setUi(p: Partial<Pick<State, 'mode' | 'tool' | 'selection' | 'camera' | 'view' | 'preview' | 'conflict' | 'profileAgentId' | 'profileTab' | 'page' | 'furnitureType' | 'hallwayDraft'>>): void;
+  setLayer(k: keyof State['layers'], v: boolean): void;
+  setPrefs(p: Partial<Preferences>): void;
+  notify(text: string, level?: 'info' | 'warn' | 'error'): void;
+  tick(): void;
+  save(): void;
+  saveVersion(name: string): void;
+  restoreVersion(id: string): boolean;
+  resetToSaved(): void;
+  loadDoc(doc: OfficeDoc, label: string, runtime?: Partial<RuntimeState> | null): void;
+  importText(text: string): { ok: boolean; errors: string[]; warnings: string[] };
+  exportText(): string;
+  newOffice(sample: boolean): void;
+}
+
+export const repo: OfficeRepository = new LocalStorageRepository();
+
+const DEFAULT_PREFS: Preferences = { autosave: true, viewMode: 'auto', showDashboard: true, aiProvider: 'mock', autoApplySafe: true, simSpeed: 1, simRunning: true, demoTasks: true };
+
+function initial() {
+  const saved = repo.loadCurrent();
+  const doc = saved?.doc ?? sampleOffice();
+  const runtime: RuntimeState = { ...emptyRuntime(), ...(saved?.runtime ?? {}) } as RuntimeState;
+  runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {};
+  const nav = buildNav(doc);
+  syncRuntime(doc, runtime, nav);
+  if (!saved) log(runtime, { kind: 'system', agentId: null, simulated: false, message: 'Loaded sample office. Agents are simulated; no AI model is connected.' });
+  let lastSaved = saved ? { doc, at: saved.savedAt } : null;
+  if (!saved) { try { lastSaved = { doc, at: repo.saveCurrent(doc, runtime) }; } catch { /* storage unavailable: stay unsaved */ } }
+  return { doc, runtime, nav, lastSaved };
+}
+
+function cloneRuntime(rt: RuntimeState): RuntimeState {
+  const agents: RuntimeState['agents'] = {};
+  for (const [k, a] of Object.entries(rt.agents)) agents[k] = { ...a, pos: { ...a.pos }, path: a.path.slice() };
+  const tasks: RuntimeState['tasks'] = {};
+  for (const [k, t] of Object.entries(rt.tasks)) tasks[k] = { ...t };
+  return { ...rt, agents, tasks, events: rt.events.slice() };
+}
+
+function pruneTasks(rt: RuntimeState) {
+  const finished = Object.values(rt.tasks).filter((t) => t.status === 'done' || t.status === 'cancelled').sort((a, b) => (a.completedAt ?? '').localeCompare(b.completedAt ?? ''));
+  for (const t of finished.slice(0, Math.max(0, finished.length - 150))) delete rt.tasks[t.id];
+}
+
+export const useStore = create<State>((set, get) => {
+  const init = initial();
+  const prefs = { ...DEFAULT_PREFS, ...repo.loadPrefs() };
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleSave = () => {
+    if (!get().prefs.autosave) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => get().save(), 800);
+  };
+
+  const setDoc = (doc: OfficeDoc, prevDoc: OfficeDoc, patch: Partial<State> = {}) => {
+    const runtime = cloneRuntime(get().runtime);
+    const nav = reconcileLayout(prevDoc, doc, runtime);
+    set({ doc, runtime, nav, issues: validate(doc), dirty: true, ...patch });
+    scheduleSave();
+  };
+
+  return {
+    ...init,
+    past: [], future: [], dirty: false,
+    issues: validate(init.doc),
+    prefs,
+    mode: 'simulate', tool: 'select', furnitureType: 'desk', selection: { kind: 'none' },
+    camera: { x: -40, y: -40, zoom: 0.8 },
+    view: (prefs.viewMode as GlobalView) ?? 'auto',
+    layers: { grid: true, snap: true, boundaries: true, paths: false, occupancy: true, labels: true },
+    preview: null, conflict: null, profileAgentId: null, profileTab: 'identity', page: 'office', toast: null, hallwayDraft: null,
+
+    dryRun(ops) {
+      const { doc, issues } = get();
+      const r = applyOps(doc, ops);
+      if (r.errors.length) return { ok: false, summary: [], errors: r.errors, conflicts: [] };
+      const after = validate(r.doc);
+      return { ok: true, summary: r.summary, errors: [], conflicts: newErrors(issues, after), doc: r.doc };
+    },
+
+    commit(ops, label, opts = {}) {
+      const { doc, past } = get();
+      const res = get().dryRun(ops);
+      if (!res.ok) { if (!opts.silent) get().notify(res.errors[0], 'error'); return res; }
+      if (res.conflicts.length && !opts.force) {
+        set({ conflict: { ops, label, issues: res.conflicts } });
+        return { ...res, ok: false };
+      }
+      setDoc(res.doc!, doc, { past: [...past, { doc, label }].slice(-100), future: [], conflict: null });
+      const rt = cloneRuntime(get().runtime);
+      log(rt, { kind: 'layout', agentId: null, simulated: false, message: `${label}: ${res.summary.join('; ') || 'no changes'}` });
+      set({ runtime: rt });
+      return res;
+    },
+
+    runRuntimeOps(ops) {
+      const out: string[] = [];
+      for (const o of ops) {
+        if (o.op === 'history.undo') { get().undo(); out.push('Undid last change'); continue; }
+        if (o.op === 'history.redo') { get().redo(); out.push('Redid change'); continue; }
+        const { doc, nav } = get();
+        const rt = cloneRuntime(get().runtime);
+        if (o.op === 'agent.goTo') out.push(goTo(doc, rt, nav, o.agentId, o.roomId, o.workstationId ?? null).message);
+        if (o.op === 'task.create') {
+          const t = createTask(rt, { name: o.name, description: o.description ?? '', agentId: o.agentId, priority: o.priority ?? 'normal', destination: { roomId: o.roomId ?? null, workstationId: o.workstationId ?? null }, simulated: o.simulated ?? true, deadline: o.deadline, dependencies: o.dependencies ?? [] });
+          log(rt, { kind: 'system', agentId: o.agentId, simulated: false, message: `Task “${t.name}” queued${o.agentId ? ` for ${doc.agents[o.agentId]?.identity.name}` : ''}` });
+          out.push(`Queued task ${t.name}`);
+        }
+        if (o.op === 'task.update') {
+          const t = rt.tasks[o.id];
+          if (t) {
+            const wasAgent = t.agentId;
+            Object.assign(t, o.patch);
+            if (o.patch.status === 'queued' && t.progress >= 100) t.progress = 0;
+            if (wasAgent && (o.patch.agentId !== undefined && o.patch.agentId !== wasAgent || o.patch.status === 'cancelled' || o.patch.status === 'paused')) {
+              const ar = rt.agents[wasAgent]; if (ar?.currentTaskId === t.id) { ar.currentTaskId = null; ar.status = 'idle'; ar.path = []; ar.destination = null; }
+              if (o.patch.agentId) t.status = 'queued';
+            }
+            log(rt, { kind: 'config', agentId: t.agentId, simulated: false, message: `Task “${t.name}” updated: ${Object.entries(o.patch).map(([k, v]) => `${k}=${v}`).join(', ')}` });
+            out.push(`Updated task ${t.name}`);
+          }
+        }
+        set({ runtime: rt });
+      }
+      scheduleSave();
+      return out;
+    },
+
+    undo() {
+      const { past, doc, future } = get();
+      const e = past[past.length - 1];
+      if (!e) { get().notify('Nothing to undo'); return; }
+      setDoc(e.doc, doc, { past: past.slice(0, -1), future: [{ doc, label: e.label }, ...future] });
+      get().notify(`Undid: ${e.label}`);
+    },
+    redo() {
+      const { past, doc, future } = get();
+      const e = future[0];
+      if (!e) { get().notify('Nothing to redo'); return; }
+      setDoc(e.doc, doc, { past: [...past, { doc, label: e.label }], future: future.slice(1) });
+      get().notify(`Redid: ${e.label}`);
+    },
+
+    setUi(p) { set(p as Partial<State>); },
+    setLayer(k, v) { set({ layers: { ...get().layers, [k]: v } }); },
+    setPrefs(p) { const prefs = { ...get().prefs, ...p }; repo.savePrefs(prefs); set({ prefs }); },
+    notify(text, level = 'info') { set({ toast: { id: Date.now(), text, level } }); },
+
+    tick() {
+      const { doc, nav, prefs } = get();
+      const rt = cloneRuntime(get().runtime);
+      step(doc, rt, nav, { demoTasks: prefs.demoTasks });
+      if (rt.tick % 100 === 0) pruneTasks(rt);
+      set({ runtime: rt });
+      if (rt.tick % 50 === 0) scheduleSave();
+    },
+
+    save() {
+      const { doc, runtime } = get();
+      try {
+        const at = repo.saveCurrent(doc, runtime);
+        set({ lastSaved: { doc, at }, dirty: false });
+      } catch (e) { get().notify((e as Error).message, 'error'); }
+    },
+    saveVersion(name) {
+      try { repo.saveVersion(name, get().doc); get().save(); get().notify(`Saved version “${name}”`); }
+      catch (e) { get().notify((e as Error).message, 'error'); }
+    },
+    restoreVersion(id) {
+      const d = repo.loadVersion(id);
+      if (!d) { get().notify('That version could not be loaded', 'error'); return false; }
+      get().loadDoc(d, 'Restore version');
+      return true;
+    },
+    resetToSaved() {
+      const s = get().lastSaved;
+      if (!s) { get().notify('No saved version yet', 'warn'); return; }
+      get().loadDoc(s.doc, 'Reset to last save');
+    },
+    loadDoc(doc, label, runtime) {
+      const prev = get().doc;
+      if (runtime) {
+        const rt = { ...emptyRuntime(), ...runtime } as RuntimeState;
+        const nav = buildNav(doc); syncRuntime(doc, rt, nav);
+        set({ runtime: rt });
+      }
+      setDoc(doc, prev, { past: [...get().past, { doc: prev, label }].slice(-100), future: [], selection: { kind: 'none' } });
+    },
+    importText(text) {
+      let data: unknown;
+      try { data = JSON.parse(text); } catch { return { ok: false, errors: ['Not valid JSON'], warnings: [] }; }
+      const r = parseOffice(data);
+      if (!r.ok) return { ok: false, errors: r.errors, warnings: [] };
+      // imported office gets fresh runtime; agents start at their workstations
+      const prev = get().doc;
+      const rt = emptyRuntime(); const nav = buildNav(r.doc); syncRuntime(r.doc, rt, nav);
+      log(rt, { kind: 'system', agentId: null, simulated: false, message: `Imported office “${r.doc.name}”` });
+      set({ runtime: rt });
+      setDoc(r.doc, prev, { past: [...get().past, { doc: prev, label: 'Import office' }].slice(-100), future: [], selection: { kind: 'none' } });
+      return { ok: true, errors: [], warnings: r.warnings };
+    },
+    exportText() {
+      const { doc, runtime } = get();
+      return exportOffice(doc, { runtime: { tasks: runtime.tasks } });
+    },
+    newOffice(sample) {
+      const doc = sample ? sampleOffice() : emptyOffice('Blank Office');
+      const prev = get().doc;
+      const rt = emptyRuntime(); const nav = buildNav(doc); syncRuntime(doc, rt, nav);
+      set({ runtime: rt });
+      setDoc(doc, prev, { past: [...get().past, { doc: prev, label: 'New office' }].slice(-100), future: [], selection: { kind: 'none' } });
+    },
+  };
+});
+
+export const selectAgents = (s: State) => s.doc.agents;
