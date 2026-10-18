@@ -3,9 +3,14 @@
 // followed by door/furniture clamping and corridor rerouting.
 import { produce, type Draft } from 'immer';
 import type {
-  Agent, Corridor, CorridorEndpoint, Door, Furniture, FurnitureType, OfficeDoc, OfficeSettings, OutfitTemplate, Point, Rect, Room, RoomTemplate, RoomType,
+  Agent, AlertSettings, Appearance, AppearanceSettings, CorridorEndpoint, Corridor, CosmeticItem, Door, Furniture, FurnitureMaterial, FurnitureType,
+  KnowledgeEntry, OfficeDoc, OfficeSettings, OutfitTemplate, Point, Project, Rect, Room, RoomAppearance, RoomTemplate, RoomType, ThemeDef,
 } from '../model/types';
-import { furniturePreset, makeAgent, makeFurniture, makeRoom, uid } from '../model/defaults';
+import { agentFromArchetype, furniturePreset, makeAgent, makeFurniture, makeRoom, uid, withAppearance } from '../model/defaults';
+import { FURNITURE_META } from '../model/catalog';
+import { ACCESSORY, ARCHETYPE, OUTFIT_FIELDS } from '../model/cosmetics';
+import { ROOM_PALETTES } from '../model/themes';
+import { checkPlacement, findObjectSpot, footprint } from './spatial';
 import { clampDoor, doorFacing, manhattan, polylineCells, rectsOverlap, roomCenter } from './geometry';
 import { updateCorridors } from './routing';
 
@@ -30,7 +35,34 @@ export type DocOp =
   | { op: 'corridors.realign' }
   | { op: 'rooms.connect'; a: string; b: string; width?: number; id?: string }
   | { op: 'room.connectToCorridor'; roomId: string; corridorId: string; width?: number; id?: string }
-  | { op: 'furniture.add'; roomId: string; type: FurnitureType; x: number; y: number; id?: string; workstationName?: string }
+  | { op: 'furniture.add'; roomId: string; type: FurnitureType; x: number; y: number; id?: string; workstationName?: string; rotation?: Furniture['rotation']; w?: number; h?: number; color?: string; material?: FurnitureMaterial; label?: string; groupId?: string; strict?: boolean }
+  | { op: 'furniture.moveMany'; ids: string[]; dx: number; dy: number }
+  | { op: 'furniture.duplicateMany'; ids: string[]; dx?: number; dy?: number; newIds?: string[] }
+  | { op: 'furniture.group'; ids: string[]; groupId?: string }
+  | { op: 'furniture.ungroup'; ids: string[] }
+  | { op: 'furniture.copyStyle'; fromId: string; toIds: string[] }
+  | { op: 'furniture.arrange'; ids: string[]; rows: number; gap?: number; margin?: number }
+  | { op: 'furniture.align'; ids: string[]; mode: 'left' | 'right' | 'top' | 'bottom' | 'center-x' | 'center-y' | 'distribute-x' | 'distribute-y' }
+  | { op: 'room.applyPalette'; roomIds: string[]; paletteId?: string; patch?: Partial<RoomAppearance> }
+  | { op: 'agent.createFromArchetype'; archetype: string; name: string; id?: string; roomId?: string | null; workstationId?: string }
+  | { op: 'agent.restoreAppearance'; id: string }
+  | { op: 'cosmetic.upsert'; item: CosmeticItem }
+  | { op: 'cosmetic.delete'; id: string }
+  | { op: 'cosmetic.apply'; itemId: string; agentIds: string[] }
+  | { op: 'cosmetic.remove'; itemId: string; agentId: string }
+  | { op: 'outfit.save'; id?: string; name: string; fromAgentId: string; kind?: 'outfit' | 'uniform'; department?: string; occasion?: string; approved?: boolean }
+  | { op: 'outfit.update'; id: string; patch: Partial<OutfitTemplate> }
+  | { op: 'outfit.duplicate'; id: string; newId?: string }
+  | { op: 'outfit.apply'; outfitId: string; agentIds: string[] }
+  | { op: 'uniform.applyDepartment'; outfitId: string; department: string }
+  | { op: 'appearance.update'; patch: Partial<Pick<AppearanceSettings, 'mode' | 'themeId'>> }
+  | { op: 'theme.upsert'; theme: ThemeDef }
+  | { op: 'theme.delete'; id: string }
+  | { op: 'alerts.update'; patch: DeepPartial<AlertSettings> }
+  | { op: 'project.upsert'; project: Project }
+  | { op: 'project.delete'; id: string }
+  | { op: 'library.upsert'; entry: KnowledgeEntry }
+  | { op: 'library.delete'; id: string }
   | { op: 'furniture.update'; id: string; patch: Partial<Omit<Furniture, 'id' | 'workstation'>> & { workstation?: Partial<NonNullable<Furniture['workstation']>> | null } }
   | { op: 'furniture.delete'; id: string }
   | { op: 'agent.create'; name: string; title?: string; department?: string; id?: string; roomId?: string | null }
@@ -269,12 +301,25 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
     case 'furniture.add': {
       const r = doc.rooms[o.roomId];
       if (!r) { errors.push('Room not found'); return; }
-      const f = makeFurniture(o.type, r.id, Math.round(o.x), Math.round(o.y), o.id ? { id: o.id } : {});
-      if (o.workstationName || o.type === 'desk' || o.type === 'workbench') {
-        f.workstation = { name: o.workstationName ?? `${r.name} Station`, assignedAgentId: null, equipment: ['terminal'], status: 'online', services: [] };
+      const extra: Partial<Furniture> = {};
+      if (o.id) extra.id = o.id;
+      if (o.rotation) extra.rotation = o.rotation;
+      if (o.w) extra.w = Math.max(1, Math.round(o.w));
+      if (o.h) extra.h = Math.max(1, Math.round(o.h));
+      if (o.color) extra.color = o.color;
+      if (o.material) extra.material = o.material;
+      if (o.label) extra.label = o.label;
+      if (o.groupId) extra.groupId = o.groupId;
+      const f = makeFurniture(o.type, r.id, Math.round(o.x), Math.round(o.y), extra);
+      if (o.strict || doc.settings.collisionRule === 'prevent') {
+        const chk = checkPlacement(doc as OfficeDoc, r as Room, f);
+        if (!chk.ok) { errors.push(`Can't place ${FURNITURE_META[o.type].label} there: ${chk.outside ? 'outside the room' : chk.blocksDoor ? 'it would block a door' : 'it overlaps another object'}`); return; }
+      }
+      if (o.workstationName || FURNITURE_META[o.type].fn === 'workstation') {
+        f.workstation = { name: o.workstationName ?? `${r.name} ${FURNITURE_META[o.type].label}`, assignedAgentId: null, equipment: ['terminal'], status: 'online', services: [] };
       }
       doc.furniture[f.id] = f; r.furnitureIds.push(f.id);
-      summary.push(`Added ${f.workstation ? 'workstation' : o.type} to ${r.name}`);
+      summary.push(`Added ${f.workstation ? `workstation (${FURNITURE_META[o.type].label})` : FURNITURE_META[o.type].label} to ${r.name}`);
       return;
     }
     case 'furniture.update': {
@@ -291,6 +336,267 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
       summary.push(`Updated ${f.workstation?.name ?? f.type}`);
       return;
     }
+    case 'furniture.moveMany': {
+      const items = o.ids.map((id) => doc.furniture[id]).filter(Boolean);
+      if (!items.length) { errors.push('Nothing to move'); return; }
+      // keep the group's spacing: clamp the shared offset so every item stays inside its room
+      let dx = Math.round(o.dx), dy = Math.round(o.dy);
+      for (const f of items) {
+        const r = doc.rooms[f.roomId]; if (!r) continue;
+        const fp = footprint(f);
+        dx = Math.max(-f.x, Math.min(dx, r.w - fp.w - f.x));
+        dy = Math.max(-f.y, Math.min(dy, r.h - fp.h - f.y));
+      }
+      for (const f of items) { f.x += dx; f.y += dy; }
+      summary.push(`Moved ${items.length} object${items.length > 1 ? 's' : ''} by (${dx}, ${dy})`);
+      return;
+    }
+    case 'furniture.duplicateMany': {
+      const groupMap = new Map<string, string>();
+      o.ids.forEach((id, i) => {
+        const f = doc.furniture[id]; if (!f) return;
+        const nf: Furniture = JSON.parse(JSON.stringify(f));
+        nf.id = o.newIds?.[i] ?? uid('fur'); nf.x = f.x + (o.dx ?? 1); nf.y = f.y + (o.dy ?? 1);
+        if (nf.workstation) { nf.workstation.assignedAgentId = null; nf.workstation.name = `${nf.workstation.name} (copy)`; }
+        if (f.groupId) { if (!groupMap.has(f.groupId)) groupMap.set(f.groupId, uid('grp')); nf.groupId = groupMap.get(f.groupId); }
+        doc.furniture[nf.id] = nf; doc.rooms[nf.roomId]?.furnitureIds.push(nf.id);
+      });
+      summary.push(`Duplicated ${o.ids.length} object(s)`);
+      return;
+    }
+    case 'furniture.group': {
+      const g = o.groupId ?? uid('grp');
+      for (const id of o.ids) if (doc.furniture[id]) doc.furniture[id].groupId = g;
+      summary.push(`Grouped ${o.ids.length} objects`);
+      return;
+    }
+    case 'furniture.ungroup':
+      for (const id of o.ids) if (doc.furniture[id]) delete doc.furniture[id].groupId;
+      summary.push(`Ungrouped ${o.ids.length} objects`);
+      return;
+    case 'furniture.copyStyle': {
+      const src = doc.furniture[o.fromId];
+      if (!src) { errors.push('Source object not found'); return; }
+      for (const id of o.toIds) { const f = doc.furniture[id]; if (f && f.id !== src.id) { f.color = src.color; f.material = src.material; } }
+      summary.push(`Copied style to ${o.toIds.length} object(s)`);
+      return;
+    }
+    case 'furniture.arrange': {
+      const items = o.ids.map((id) => doc.furniture[id]).filter(Boolean);
+      if (!items.length) { errors.push('Nothing to arrange'); return; }
+      const roomId = items[0].roomId;
+      if (items.some((f) => f.roomId !== roomId)) { errors.push('Arrange works on objects in one room at a time'); return; }
+      const r = doc.rooms[roomId];
+      const rows = Math.max(1, Math.min(o.rows, items.length));
+      const perRow = Math.ceil(items.length / rows);
+      const gap = o.gap ?? 1, margin = o.margin ?? 1;
+      const cw = Math.max(...items.map((f) => footprint(f).w)), ch = Math.max(...items.map((f) => footprint(f).h));
+      const rowGap = Math.max(gap, 1) + 1; // leave a walkway in front of every desk
+      const needW = perRow * cw + (perRow - 1) * gap, needH = rows * ch + (rows - 1) * rowGap;
+      if (needW > r.w - margin * 2 + 2 || needH > r.h - margin) { errors.push(`${r.name} is too small for ${items.length} objects in ${rows} rows`); return; }
+      const x0 = Math.max(0, Math.floor((r.w - needW) / 2)), y0 = Math.max(0, Math.min(margin, r.h - needH));
+      // stable order: current reading order
+      [...items].sort((a, b) => a.y - b.y || a.x - b.x).forEach((f, i) => {
+        const row = Math.floor(i / perRow), col = i % perRow;
+        f.x = x0 + col * (cw + gap); f.y = y0 + row * (ch + rowGap);
+      });
+      summary.push(`Arranged ${items.length} objects in ${rows} aligned row${rows > 1 ? 's' : ''} in ${r.name}`);
+      return;
+    }
+    case 'furniture.align': {
+      const items = o.ids.map((id) => doc.furniture[id]).filter(Boolean);
+      if (items.length < 2) { errors.push('Select at least two objects to align'); return; }
+      const fp = (f: Furniture) => footprint(f);
+      const minX = Math.min(...items.map((f) => f.x)), maxX = Math.max(...items.map((f) => f.x + fp(f).w));
+      const minY = Math.min(...items.map((f) => f.y)), maxY = Math.max(...items.map((f) => f.y + fp(f).h));
+      if (o.mode === 'left') items.forEach((f) => { f.x = minX; });
+      if (o.mode === 'right') items.forEach((f) => { f.x = maxX - fp(f).w; });
+      if (o.mode === 'top') items.forEach((f) => { f.y = minY; });
+      if (o.mode === 'bottom') items.forEach((f) => { f.y = maxY - fp(f).h; });
+      if (o.mode === 'center-x') { const c = Math.round((minX + maxX) / 2); items.forEach((f) => { f.x = c - Math.floor(fp(f).w / 2); }); }
+      if (o.mode === 'center-y') { const c = Math.round((minY + maxY) / 2); items.forEach((f) => { f.y = c - Math.floor(fp(f).h / 2); }); }
+      if (o.mode === 'distribute-x' || o.mode === 'distribute-y') {
+        const horiz = o.mode === 'distribute-x';
+        const sorted = [...items].sort((a, b) => (horiz ? a.x - b.x : a.y - b.y));
+        const total = sorted.reduce((t, f) => t + (horiz ? fp(f).w : fp(f).h), 0);
+        const span = horiz ? maxX - minX : maxY - minY;
+        const gap = Math.max(0, Math.floor((span - total) / (sorted.length - 1)));
+        let cur = horiz ? minX : minY;
+        for (const f of sorted) { if (horiz) f.x = cur; else f.y = cur; cur += (horiz ? fp(f).w : fp(f).h) + gap; }
+      }
+      summary.push(`Aligned ${items.length} objects (${o.mode})`);
+      return;
+    }
+    case 'room.applyPalette': {
+      const pal = o.paletteId ? ROOM_PALETTES.find((p) => p.id === o.paletteId) : undefined;
+      const patch = { ...(pal?.patch ?? {}), ...(o.patch ?? {}), ...(pal ? { theme: pal.name } : {}) };
+      if (!Object.keys(patch).length) { errors.push('Choose a palette'); return; }
+      for (const id of o.roomIds) {
+        const r = doc.rooms[id]; if (!r) { errors.push(`Room ${id} not found`); return; }
+        Object.assign(r.appearance, patch);
+        if (patch.furnitureMaterial) for (const fid of r.furnitureIds) { const f = doc.furniture[fid]; if (f && !f.material) f.material = undefined; }
+      }
+      summary.push(`Applied ${pal ? pal.name : 'room colours'} to ${o.roomIds.map((id) => doc.rooms[id].name).join(', ')}`);
+      return;
+    }
+    case 'agent.createFromArchetype': {
+      if (!ARCHETYPE[o.archetype]) { errors.push(`Unknown archetype ${o.archetype}`); return; }
+      const a = agentFromArchetype(o.archetype, o.name);
+      if (o.id) a.id = o.id;
+      doc.agents[a.id] = a;
+      summary.push(`Created ${ARCHETYPE[o.archetype].label} ${a.identity.name}`);
+      if (o.roomId) {
+        const r = doc.rooms[o.roomId];
+        if (!r) { errors.push('Room not found'); return; }
+        // reuse a free workstation of the right kind, otherwise place one
+        const t = ARCHETYPE[o.archetype];
+        let ws = Object.values(doc.furniture).find((f) => f.roomId === r.id && f.workstation && !f.workstation.assignedAgentId && f.type === t.workstation);
+        if (!ws) {
+          const spot = findObjectSpot(doc as OfficeDoc, r as Room, t.workstation);
+          if (!spot) { errors.push(`No free space for a ${FURNITURE_META[t.workstation].label} in ${r.name}`); return; }
+          applyOne(doc, { op: 'furniture.add', roomId: r.id, type: t.workstation, x: spot.x, y: spot.y, id: o.workstationId, workstationName: `${a.identity.name} · ${t.workstationName}` }, summary, errors);
+          ws = doc.furniture[o.workstationId ?? r.furnitureIds[r.furnitureIds.length - 1]];
+        }
+        if (ws) applyOne(doc, { op: 'workstation.assign', furnitureId: ws.id, agentId: a.id }, summary, errors);
+      }
+      return;
+    }
+    case 'agent.restoreAppearance': {
+      const a = doc.agents[o.id];
+      if (!a) { errors.push('Agent not found'); return; }
+      a.appearance = withAppearance(a.defaultAppearance ?? a.appearance);
+      stripUnauthorisedEquipment(a, summary);
+      summary.push(`Restored ${a.identity.name}'s default appearance`);
+      return;
+    }
+    case 'cosmetic.upsert': {
+      const i = doc.cosmetics.findIndex((c) => c.id === o.item.id);
+      if (i >= 0) doc.cosmetics[i] = o.item; else doc.cosmetics.push(o.item);
+      summary.push(`${i >= 0 ? 'Updated' : 'Added'} cosmetic ${o.item.name}`);
+      return;
+    }
+    case 'cosmetic.delete':
+      doc.cosmetics = doc.cosmetics.filter((c) => c.id !== o.id);
+      summary.push('Removed cosmetic item from the inventory');
+      return;
+    case 'cosmetic.apply': {
+      const it = doc.cosmetics.find((c) => c.id === o.itemId);
+      if (!it) { errors.push('Cosmetic item not found'); return; }
+      for (const id of o.agentIds) {
+        const a = doc.agents[id]; if (!a) { errors.push('Agent not found'); return; }
+        const tool = it.functionalTool ?? (it.accessoryId ? ACCESSORY[it.accessoryId]?.functionalTool : undefined);
+        if (tool && !a.permissions.allowedTools.includes(tool)) {
+          errors.push(`${it.name} represents the “${tool}” tool, which ${a.identity.name} isn't allowed to use. Grant it in Permissions first, or pick a decorative item.`);
+          return;
+        }
+        if (it.accessoryId) { if (!a.appearance.accessories.includes(it.accessoryId)) a.appearance.accessories.push(it.accessoryId); }
+        if (it.patch) a.appearance = withAppearance(a.appearance as Appearance, JSON.parse(JSON.stringify(it.patch)));
+      }
+      summary.push(`Applied ${it.name} to ${o.agentIds.map((id) => doc.agents[id].identity.name).join(', ')}`);
+      return;
+    }
+    case 'cosmetic.remove': {
+      const it = doc.cosmetics.find((c) => c.id === o.itemId); const a = doc.agents[o.agentId];
+      if (!it || !a) { errors.push('Item or agent not found'); return; }
+      const def = a.defaultAppearance ?? a.appearance;
+      if (it.accessoryId) a.appearance.accessories = a.appearance.accessories.filter((x) => x !== it.accessoryId);
+      for (const k of Object.keys(it.patch ?? {}) as (keyof Appearance)[]) {
+        if (k === 'effects') { for (const e of Object.keys(it.patch!.effects ?? {}) as (keyof Appearance['effects'])[]) if (e !== 'intensity') (a.appearance.effects as unknown as Record<string, unknown>)[e] = false; }
+        else (a.appearance as unknown as Record<string, unknown>)[k] = JSON.parse(JSON.stringify((def as unknown as Record<string, unknown>)[k]));
+      }
+      summary.push(`Removed ${it.name} from ${a.identity.name}`);
+      return;
+    }
+    case 'outfit.save': {
+      const a = doc.agents[o.fromAgentId];
+      if (!a) { errors.push('Agent not found'); return; }
+      const patch: Partial<Appearance> = {};
+      for (const k of OUTFIT_FIELDS) (patch as Record<string, unknown>)[k] = JSON.parse(JSON.stringify(a.appearance[k]));
+      const t: OutfitTemplate = { id: o.id ?? uid('outfit'), name: o.name, patch, kind: o.kind ?? 'outfit', department: o.department, occasion: o.occasion, approved: o.approved ?? (o.kind !== 'uniform') };
+      doc.outfitTemplates.push(t);
+      summary.push(`Saved ${t.kind} “${t.name}” from ${a.identity.name}`);
+      return;
+    }
+    case 'outfit.update': {
+      const t = doc.outfitTemplates.find((x) => x.id === o.id);
+      if (!t) { errors.push('Outfit not found'); return; }
+      Object.assign(t, o.patch, { id: t.id });
+      summary.push(`Updated outfit ${t.name}`);
+      return;
+    }
+    case 'outfit.duplicate': {
+      const t = doc.outfitTemplates.find((x) => x.id === o.id);
+      if (!t) { errors.push('Outfit not found'); return; }
+      doc.outfitTemplates.push({ ...JSON.parse(JSON.stringify(t)), id: o.newId ?? uid('outfit'), name: `${t.name} copy` });
+      summary.push(`Duplicated outfit ${t.name}`);
+      return;
+    }
+    case 'outfit.apply': {
+      const t = doc.outfitTemplates.find((x) => x.id === o.outfitId);
+      if (!t) { errors.push('Outfit not found'); return; }
+      for (const id of o.agentIds) {
+        const a = doc.agents[id]; if (!a) { errors.push('Agent not found'); return; }
+        // only outfit fields are applied; face, body and identity are never touched
+        const patch: Partial<Appearance> = {};
+        for (const k of OUTFIT_FIELDS) if (k in t.patch) (patch as Record<string, unknown>)[k] = JSON.parse(JSON.stringify((t.patch as Record<string, unknown>)[k]));
+        const missing = (patch.accessories ?? []).map((x) => ACCESSORY[x]).filter((d) => d?.functionalTool && !a.permissions.allowedTools.includes(d.functionalTool));
+        if (missing.length) {
+          // functional equipment the agent can't use is left off rather than faked
+          patch.accessories = (patch.accessories ?? []).filter((x) => !missing.some((d) => d.id === x));
+          summary.push(`${a.identity.name}: left off ${missing.map((d) => d.label).join(', ')} (needs the ${missing.map((d) => d.functionalTool).join(', ')} tool)`);
+        }
+        a.appearance = withAppearance(a.appearance as Appearance, patch);
+      }
+      summary.push(`Applied outfit “${t.name}” to ${o.agentIds.map((id) => doc.agents[id].identity.name).join(', ')}`);
+      return;
+    }
+    case 'uniform.applyDepartment': {
+      const t = doc.outfitTemplates.find((x) => x.id === o.outfitId);
+      if (!t) { errors.push('Uniform not found'); return; }
+      if (t.kind === 'uniform' && !t.approved) { errors.push(`Uniform “${t.name}” hasn't been approved yet`); return; }
+      const ids = Object.values(doc.agents).filter((a) => a.identity.department === o.department).map((a) => a.id);
+      if (!ids.length) { errors.push(`No agents in ${o.department}`); return; }
+      applyOne(doc, { op: 'outfit.apply', outfitId: t.id, agentIds: ids }, summary, errors);
+      return;
+    }
+    case 'appearance.update':
+      if (o.patch.themeId && !doc.appearance.themes.some((t) => t.id === o.patch.themeId)) { errors.push('Theme not found'); return; }
+      Object.assign(doc.appearance, o.patch);
+      summary.push(o.patch.mode ? `Interface mode: ${o.patch.mode}` : 'Changed interface theme');
+      return;
+    case 'theme.upsert': {
+      const i = doc.appearance.themes.findIndex((t) => t.id === o.theme.id);
+      if (i >= 0) doc.appearance.themes[i] = o.theme; else doc.appearance.themes.push(o.theme);
+      summary.push(`${i >= 0 ? 'Updated' : 'Saved'} theme ${o.theme.name}`);
+      return;
+    }
+    case 'theme.delete': {
+      const t = doc.appearance.themes.find((x) => x.id === o.id);
+      if (!t) { errors.push('Theme not found'); return; }
+      if (doc.appearance.themes.length <= 1) { errors.push('Keep at least one theme'); return; }
+      doc.appearance.themes = doc.appearance.themes.filter((x) => x.id !== o.id);
+      if (doc.appearance.themeId === o.id) doc.appearance.themeId = doc.appearance.themes[0].id;
+      summary.push(`Deleted theme ${t.name}`);
+      return;
+    }
+    case 'alerts.update':
+      deepMerge(doc.alertSettings, o.patch);
+      summary.push('Updated alert settings');
+      return;
+    case 'project.upsert':
+      doc.projects[o.project.id] = o.project; summary.push(`Saved project ${o.project.name}`);
+      return;
+    case 'project.delete':
+      if (!doc.projects[o.id]) { errors.push('Project not found'); return; }
+      summary.push(`Deleted project ${doc.projects[o.id].name}`); delete doc.projects[o.id];
+      return;
+    case 'library.upsert':
+      doc.library[o.entry.id] = o.entry; summary.push(`Filed “${o.entry.title}” in the library`);
+      return;
+    case 'library.delete':
+      if (!doc.library[o.id]) { errors.push('Library entry not found'); return; }
+      summary.push(`Removed “${doc.library[o.id].title}” from the library`); delete doc.library[o.id];
+      return;
     case 'furniture.delete': {
       const f = doc.furniture[o.id];
       if (!f) { errors.push('Furniture not found'); return; }
@@ -313,7 +619,11 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
       if (!a) { errors.push(`Agent ${o.id} not found`); return; }
       const p = o.patch as Record<string, unknown>;
       if ('id' in p) { errors.push('Agent IDs are immutable'); return; }
+      const before = new Set(a.appearance.accessories);
       deepMerge(a, p);
+      const added = a.appearance.accessories.filter((x) => !before.has(x)).map((x) => ACCESSORY[x]).filter((d) => d?.functionalTool && !a.permissions.allowedTools.includes(d.functionalTool));
+      if (added.length) { errors.push(`${added[0].label} represents the “${added[0].functionalTool}” tool, which ${a.identity.name} isn't allowed to use`); return; }
+      stripUnauthorisedEquipment(a, summary);
       summary.push(`Updated ${a.identity.name}: ${Object.keys(p).join(', ')}`);
       return;
     }
@@ -385,6 +695,18 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
   }
 }
 
+/** Functional equipment must match real permissions: drop items whose tool was revoked. */
+function stripUnauthorisedEquipment(a: Draft<Agent>, summary: string[]) {
+  const keep = a.appearance.accessories.filter((x) => { const t = ACCESSORY[x]?.functionalTool; return !t || a.permissions.allowedTools.includes(t); });
+  if (keep.length !== a.appearance.accessories.length) {
+    const gone = a.appearance.accessories.filter((x) => !keep.includes(x)).map((x) => ACCESSORY[x]?.label ?? x);
+    a.appearance.accessories = keep;
+    summary.push(`${a.identity.name} no longer shows ${gone.join(', ')} (tool permission removed)`);
+  }
+}
+
+const LAYOUT_OP = /^(room|door|corridor|rooms|furniture|settings|agent\.createFromArchetype|corridors)/;
+
 /** Keep doors on their walls and furniture inside its room after geometry changes. */
 export function normalize(doc: Draft<OfficeDoc>) {
   for (const r of Object.values(doc.rooms)) {
@@ -404,6 +726,8 @@ export function applyOps(doc: OfficeDoc, ops: DocOp[]): ApplyResult {
   const summary: string[] = []; const errors: string[] = [];
   const next = produce(doc, (d) => {
     for (const o of ops) { applyOne(d, o, summary, errors); if (errors.length) return; }
+    // profile, cosmetic, theme and alert edits don't touch geometry: skip the layout pass
+    if (!ops.some((o) => LAYOUT_OP.test(o.op))) return;
     normalize(d);
     updateCorridors(d as OfficeDoc, ops.some((o) => o.op === 'corridors.realign'));
   });

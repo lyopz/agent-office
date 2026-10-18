@@ -11,6 +11,10 @@ import { Settings } from './ui/Settings';
 import { Viewport } from './viewport/Viewport';
 import { ConfirmDialog } from './ui/primitives';
 import { useShortcuts } from './ui/actions';
+import { ObjectLibrary } from './ui/ObjectLibrary';
+import { PerfPanel } from './ui/PerfPanel';
+import { useApplyTheme } from './ui/ThemeEditor';
+import { useAlertDelivery } from './ui/AlertCenter';
 
 function useSimulationLoop() {
   const running = useStore((s) => s.prefs.simRunning);
@@ -61,8 +65,12 @@ function Toast() {
 export function App() {
   useSimulationLoop();
   useShortcuts();
+  useApplyTheme();
+  useAlertDelivery();
   const page = useStore((s) => s.page);
   const mode = useStore((s) => s.mode);
+  const tool = useStore((s) => s.tool);
+  const perf = useStore((s) => s.layers.perf);
   const [mobile, setMobile] = useState<'office' | 'agents' | 'inspect'>('office');
   return (
     <div className="app">
@@ -75,6 +83,8 @@ export function App() {
             <div style={{ position: 'relative', minHeight: 0, display: 'grid' }}>
               <Viewport />
               {mode === 'construct' && <div className="mode-banner">CONSTRUCTION MODE</div>}
+              {mode === 'construct' && (tool === 'furniture' || tool === 'workstation') && <ObjectLibrary />}
+              {perf && <PerfPanel />}
             </div>
           </div>
           <Inspector />

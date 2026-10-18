@@ -1,13 +1,11 @@
 import {
   AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
-  AlignVerticalDistributeCenter, Armchair, CheckCircle2, DoorOpen, Grid3x3, Hand, Magnet, Monitor, MousePointer2,
+  AlignVerticalDistributeCenter, Armchair, Gauge, CheckCircle2, DoorOpen, Grid3x3, Hand, Magnet, Monitor, MousePointer2,
   Redo2, Route, ScanLine, Spline, SquareDashed, SquarePlus, Trash2, Undo2, UserPlus, Workflow,
 } from 'lucide-react';
-import { useStore, type Tool } from '../store/store';
-import { FURNITURE_TYPES } from '../model/types';
-import { FURNITURE_META } from '../model/defaults';
+import { selectedFurniture, useStore, type Tool } from '../store/store';
 import type { DocOp } from '../engine/ops';
-import { deleteSelection } from './actions';
+import { deleteSelection, duplicateFurniture } from './actions';
 
 const TOOLS: { id: Tool; label: string; key: string; icon: typeof MousePointer2 }[] = [
   { id: 'select', label: 'Select / move / resize', key: 'V', icon: MousePointer2 },
@@ -16,7 +14,7 @@ const TOOLS: { id: Tool; label: string; key: string; icon: typeof MousePointer2 
   { id: 'hallway', label: 'Create hallway / connect rooms', key: 'H', icon: Spline },
   { id: 'door', label: 'Create door (click a wall)', key: 'D', icon: DoorOpen },
   { id: 'workstation', label: 'Add workstation', key: 'K', icon: Monitor },
-  { id: 'furniture', label: 'Add furniture', key: 'F', icon: Armchair },
+  { id: 'furniture', label: 'Object library', key: 'F', icon: Armchair },
   { id: 'agent', label: 'Add agent', key: 'N', icon: UserPlus },
 ];
 
@@ -43,15 +41,22 @@ export function Toolbar() {
   const tool = useStore((s) => s.tool);
   const layers = useStore((s) => s.layers);
   const view = useStore((s) => s.view);
-  const furnitureType = useStore((s) => s.furnitureType);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
-  const multi = useStore((s) => s.selection.kind === 'room' && s.selection.ids.length > 1);
+  const multiRooms = useStore((s) => s.selection.kind === 'room' && s.selection.ids.length > 1);
+  const furnIds = useStore((s) => selectedFurniture(s.selection).join(','));
+  const multiFurn = furnIds.split(',').filter(Boolean).length > 1;
+  const multi = multiRooms || multiFurn;
   const hasSel = useStore((s) => s.selection.kind !== 'none');
   const hallwayMode = useStore((s) => s.doc.settings.hallwayMode);
   const { setUi, setLayer, undo, redo, commit, notify } = useStore.getState();
   const construct = mode === 'construct';
-  const align = (k: Parameters<typeof alignOps>[0], label: string) => { const ops = alignOps(k); if (ops.length) commit(ops, label); };
+  const FMODE = { left: 'left', right: 'right', top: 'top', bottom: 'bottom', hdist: 'distribute-x', vdist: 'distribute-y' } as const;
+  const align = (k: Parameters<typeof alignOps>[0], label: string) => {
+    if (multiFurn) { commit([{ op: 'furniture.align', ids: furnIds.split(','), mode: FMODE[k] }], label); return; }
+    const ops = alignOps(k); if (ops.length) commit(ops, label);
+  };
+  const fids = furnIds ? furnIds.split(',') : [];
   return (
     <div className="toolbar" role="toolbar" aria-label="Construction tools">
       <div className="seg" role="group" aria-label="Mode">
@@ -63,11 +68,6 @@ export function Toolbar() {
         <button key={t.id} className="btn icon sm" aria-pressed={tool === t.id} disabled={!construct && t.id !== 'select' && t.id !== 'pan'} title={`${t.label} (${t.key})`} aria-label={t.label}
           onClick={() => setUi({ tool: t.id, hallwayDraft: null })}><t.icon size={15} /></button>
       ))}
-      {construct && tool === 'furniture' && (
-        <select aria-label="Furniture type" value={furnitureType} onChange={(e) => setUi({ furnitureType: e.target.value })}>
-          {FURNITURE_TYPES.map((f) => <option key={f} value={f}>{FURNITURE_META[f].label}</option>)}
-        </select>
-      )}
       <button className="btn icon sm" disabled={!hasSel || !construct} title="Delete selection (Del)" aria-label="Delete selection" onClick={deleteSelection}><Trash2 size={15} /></button>
       <span className="sep" />
       <button className="btn icon sm" disabled={!multi} title="Align left" aria-label="Align left" onClick={() => align('left', 'Align left')}><AlignStartVertical size={15} /></button>
@@ -76,6 +76,15 @@ export function Toolbar() {
       <button className="btn icon sm" disabled={!multi} title="Align bottom" aria-label="Align bottom" onClick={() => align('bottom', 'Align bottom')}><AlignEndHorizontal size={15} /></button>
       <button className="btn icon sm" disabled={!multi} title="Distribute horizontally" aria-label="Distribute horizontally" onClick={() => align('hdist', 'Distribute horizontally')}><AlignHorizontalDistributeCenter size={15} /></button>
       <button className="btn icon sm" disabled={!multi} title="Distribute vertically" aria-label="Distribute vertically" onClick={() => align('vdist', 'Distribute vertically')}><AlignVerticalDistributeCenter size={15} /></button>
+      {construct && fids.length > 0 && <>
+        <span className="sep" />
+        <span className="small muted">{fids.length} object{fids.length > 1 ? 's' : ''}</span>
+        <button className="btn sm" title="Duplicate (Ctrl+D)" onClick={duplicateFurniture}>Duplicate</button>
+        {multiFurn && <button className="btn sm" title="Arrange the selection in two aligned rows" onClick={() => commit([{ op: 'furniture.arrange', ids: fids, rows: 2 }], 'Arrange in two rows')}>2 rows</button>}
+        {multiFurn && <button className="btn sm" title="Group so they select and move together" onClick={() => commit([{ op: 'furniture.group', ids: fids }], 'Group objects')}>Group</button>}
+        {fids.some((id) => useStore.getState().doc.furniture[id]?.groupId) && <button className="btn sm" onClick={() => commit([{ op: 'furniture.ungroup', ids: fids }], 'Ungroup objects')}>Ungroup</button>}
+        {multiFurn && <button className="btn sm" title="Copy colour and material from the first selected object to the rest" onClick={() => commit([{ op: 'furniture.copyStyle', fromId: fids[0], toIds: fids.slice(1) }], 'Copy style')}>Copy style</button>}
+      </>}
       <span className="sep" />
       <button className="btn icon sm" aria-pressed={layers.grid} title="Toggle grid (G)" aria-label="Toggle grid" onClick={() => setLayer('grid', !layers.grid)}><Grid3x3 size={15} /></button>
       <button className="btn icon sm" aria-pressed={layers.snap} title="Toggle snapping (Shift+S)" aria-label="Toggle snapping" onClick={() => setLayer('snap', !layers.snap)}><Magnet size={15} /></button>
@@ -92,6 +101,7 @@ export function Toolbar() {
       <button className="btn icon sm" disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo" onClick={undo}><Undo2 size={15} /></button>
       <button className="btn icon sm" disabled={!canRedo} title="Redo (Ctrl+Shift+Z)" aria-label="Redo" onClick={redo}><Redo2 size={15} /></button>
       <span className="spacer" />
+      <button className="btn icon sm" aria-pressed={layers.perf} title="Performance diagnostics" aria-label="Performance diagnostics" onClick={() => setLayer('perf', !layers.perf)}><Gauge size={15} /></button>
       <label className="row small muted" style={{ gap: 4 }}>View
         <select aria-label="Character view" value={view} onChange={(e) => { setUi({ view: e.target.value as never }); useStore.getState().setPrefs({ viewMode: e.target.value }); }}>
           <option value="auto">Per agent</option><option value="top">Top-down</option><option value="front">Front</option><option value="side">Side</option><option value="three-quarter">Three-quarter</option>

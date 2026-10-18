@@ -3,45 +3,20 @@ import type {
   Agent, Appearance, Furniture, FurnitureType, OfficeDoc, OutfitTemplate, Room, RoomAppearance,
   RoomTemplate, RoomType,
 } from './types';
+import { FURNITURE_META, ROOM_META } from './catalog';
+import { ARCHETYPE, BUILTIN_COSMETICS } from './cosmetics';
+import { defaultAppearanceSettings } from './themes';
+import { defaultAlertSettings } from './alertDefaults';
 
 export const uid = (prefix: string) => `${prefix}_${nanoid(8)}`;
 export const now = () => new Date().toISOString();
 
-export const ROOM_META: Record<RoomType, { label: string; accent: string; floor: RoomAppearance['floor'] }> = {
-  operations: { label: 'Main operations', accent: '#39ff88', floor: 'grid' },
-  office: { label: 'Agent office', accent: '#4cc9ff', floor: 'carpet' },
-  research: { label: 'Research lab', accent: '#b57bff', floor: 'tile' },
-  server: { label: 'Server room', accent: '#ff9f43', floor: 'metal' },
-  meeting: { label: 'Meeting room', accent: '#4cc9ff', floor: 'wood' },
-  workshop: { label: 'Workshop', accent: '#ff9f43', floor: 'metal' },
-  storage: { label: 'Storage', accent: '#8a9a8f', floor: 'plain' },
-  break: { label: 'Break room', accent: '#ffd166', floor: 'wood' },
-  security: { label: 'Security', accent: '#ff5d73', floor: 'metal' },
-  reception: { label: 'Reception', accent: '#39ff88', floor: 'tile' },
-  custom: { label: 'Custom', accent: '#39ff88', floor: 'plain' },
-};
-
-export const FURNITURE_META: Record<FurnitureType, { label: string; w: number; h: number; blocking: boolean; color: string }> = {
-  desk: { label: 'Desk', w: 2, h: 1, blocking: true, color: '#1d3b2a' },
-  chair: { label: 'Chair', w: 1, h: 1, blocking: false, color: '#28473a' },
-  computer: { label: 'Computer', w: 1, h: 1, blocking: true, color: '#16302a' },
-  monitors: { label: 'Monitor wall', w: 3, h: 1, blocking: true, color: '#0f2a1f' },
-  'server-rack': { label: 'Server rack', w: 1, h: 2, blocking: true, color: '#2a1e10' },
-  whiteboard: { label: 'Whiteboard', w: 3, h: 1, blocking: true, color: '#2b3a3a' },
-  cabinet: { label: 'Filing cabinet', w: 1, h: 1, blocking: true, color: '#2a2f2c' },
-  'conference-table': { label: 'Conference table', w: 4, h: 2, blocking: true, color: '#1f2d3b' },
-  shelf: { label: 'Shelf', w: 2, h: 1, blocking: true, color: '#2a2a22' },
-  container: { label: 'Storage container', w: 2, h: 2, blocking: true, color: '#33281a' },
-  plant: { label: 'Plant', w: 1, h: 1, blocking: true, color: '#1e5a32' },
-  lamp: { label: 'Light', w: 1, h: 1, blocking: false, color: '#5a5a20' },
-  sofa: { label: 'Sofa', w: 3, h: 1, blocking: true, color: '#2a2440' },
-  decor: { label: 'Decor', w: 1, h: 1, blocking: false, color: '#203040' },
-  workbench: { label: 'Workbench', w: 3, h: 1, blocking: true, color: '#3a2a14' },
-};
-
+export { FURNITURE_META, ROOM_META } from './catalog';
 export function makeFurniture(type: FurnitureType, roomId: string, x: number, y: number, extra: Partial<Furniture> = {}): Furniture {
   const m = FURNITURE_META[type];
-  return { id: uid('fur'), type, roomId, x, y, w: m.w, h: m.h, rotation: 0, color: m.color, blocking: m.blocking, ...extra };
+  const f: Furniture = { id: uid('fur'), type, roomId, x, y, w: m.w, h: m.h, rotation: 0, color: m.color, blocking: m.blocking, ...extra };
+  if (m.fn === 'tube' && !f.tube) f.tube = { stationName: m.label, department: '' };
+  return f;
 }
 
 export function workstation(name: string, equipment: string[] = ['terminal'], services: string[] = []) {
@@ -97,6 +72,34 @@ export function furniturePreset(type: RoomType, w: number, h: number): Omit<Furn
     case 'reception':
       list.push(f('desk', Math.floor(w / 2) - 1, 2, { workstation: workstation('Front Desk', ['terminal'], ['visitor log']) }), f('plant', 1, 1));
       break;
+    case 'executive':
+      list.push(f('exec-desk', Math.max(1, Math.floor(w / 2) - 2), 2, { workstation: workstation('Command Desk', ['holographic dashboard', 'approval console'], ['portfolio']) }));
+      list.push(f('analytics-wall', 1, 0), f('strategy-table', 1, h - 3), f('approval-kiosk', w - 2, h - 2), f('plant', w - 2, 1));
+      break;
+    case 'library':
+      list.push(f('archive-terminal', 1, 2, { workstation: workstation('Archive Terminal', ['knowledge wall', 'catalogue'], ['library']) }));
+      list.push(f('digital-shelf', 1, 0), f('digital-shelf', 4, 0), f('evidence-station', w - 3, h - 2), f('research-kiosk', w - 2, 2));
+      break;
+    case 'finance':
+      list.push(f('finance-terminal', 1, 2, { workstation: workstation('Financial Control', ['ledger', 'cost dashboard'], ['ledger']) }));
+      list.push(f('budget-dashboard', 1, 0), f('approval-kiosk', w - 2, h - 2));
+      break;
+    case 'engineering':
+      list.push(f('workbench', 1, 2, { workstation: workstation('Engineering Bench', ['diagnostics', 'soldering'], ['integrations']) }));
+      list.push(f('diagnostic-panel', 1, 0), f('server-rack', w - 2, 1), f('charging-station', w - 2, h - 2));
+      break;
+    case 'design':
+      list.push(f('holo-table', 1, 2, { workstation: workstation('Design Table', ['cad', '3d projector'], ['prototyping']) }));
+      list.push(f('prototype-printer', w - 3, h - 3), f('material-station', 1, h - 2));
+      break;
+    case 'studio':
+      list.push(f('curved-monitor', 1, 2, { workstation: workstation('Creative Workstation', ['colour-calibrated display'], ['imagery']) }));
+      list.push(f('photo-station', w - 3, h - 3), f('mockup-display', 1, h - 2));
+      break;
+    case 'market':
+      list.push(f('multi-monitor', 1, 2, { workstation: workstation('Market Analysis Station', ['six-screen rig'], ['market data']) }));
+      list.push(f('market-display', 1, 0), f('comparison-wall', 4, 0));
+      break;
     default:
       break;
   }
@@ -106,14 +109,14 @@ export function furniturePreset(type: RoomType, w: number, h: number): Omit<Furn
 
 export function roomAppearance(type: RoomType): RoomAppearance {
   const m = ROOM_META[type];
-  return { floor: m.floor, wallColor: '#1f6f45', accent: m.accent, lighting: 0.6 };
+  return { floor: m.floor, wallColor: '', accent: m.accent, lighting: 0.6, lightTemp: 4500 };
 }
 
 export function makeRoom(type: RoomType, x: number, y: number, w: number, h: number, name?: string): Room {
   return {
     id: uid('room'), name: name ?? ROOM_META[type].label, type, x, y, w, h, rotation: 0,
     walls: { thickness: 2, style: 'solid' }, doors: [], appearance: roomAppearance(type),
-    furnitureIds: [], assignedAgentIds: [], purpose: ROOM_META[type].label,
+    furnitureIds: [], assignedAgentIds: [], purpose: ROOM_META[type].purpose || ROOM_META[type].label,
     special: type === 'break' ? 'restores-energy' : undefined,
   };
 }
@@ -125,7 +128,16 @@ export const DEFAULT_APPEARANCE: Appearance = {
   headwearColor: '#f2c230', glasses: 'none', jewelry: 'none', equipment: 'none', accent: '#39ff88',
   idlePose: 'stand', walkPose: 'normal', workPose: 'typing', facing: 'right', artStyle: 'flat', outline: 1.5,
   shading: 'soft', animationSpeed: 1, preferredView: 'top',
+  trimColor: '#39ff88', faceMarkings: 'none', robotic: 'none', shoulders: 'none', gloves: 'none', gloveColor: '#2a2f33', belt: 'none',
+  accessories: [],
+  effects: { aura: false, holoOutline: false, eyeGlow: false, particles: false, energyAccents: false, robotics: false, intensity: 0.35 },
 };
+
+/** Appearance merge that keeps nested effects and copies arrays. */
+export function withAppearance(base: Appearance, patch: Partial<Appearance> = {}): Appearance {
+  const out: Appearance = { ...base, ...patch, effects: { ...base.effects, ...(patch.effects ?? {}) }, accessories: [...(patch.accessories ?? base.accessories)] };
+  return out;
+}
 
 export const SKIN_TONES = ['#f6d7c3', '#e8b897', '#c68a64', '#a0663f', '#7a4a2a', '#4f3020', '#9fd8c0', '#b8c4ff'];
 
@@ -167,15 +179,33 @@ export function makeAgent(name: string, title: string, department: string, appea
     memory: [],
     schedule: { assignedRoomId: null, preferredWorkstationId: null, workStart: '09:00', workEnd: '17:00', breakEveryMin: 120, breakLengthMin: 15 },
     permissions: { allowedTools: ['terminal'], contactableAgentIds: 'all', requireApprovalFor: ['delete', 'external-message'], canMoveRooms: false, canEditOthers: false },
-    appearance: { ...DEFAULT_APPEARANCE, ...appearance },
+    appearance: withAppearance(DEFAULT_APPEARANCE, appearance),
+    defaultAppearance: withAppearance(DEFAULT_APPEARANCE, appearance),
+    budget: { monthlyCredits: 150, approvalAbove: 25 },
     assets: {},
   };
+}
+
+/** A fully configured agent from a starter archetype. The owner can change every field afterwards. */
+export function agentFromArchetype(archetypeId: string, name: string): Agent {
+  const t = ARCHETYPE[archetypeId] ?? ARCHETYPE.custom;
+  const a = makeAgent(name, t.title, t.department, t.appearance);
+  a.archetype = t.id;
+  a.identity.roleDescription = t.roleDescription;
+  a.identity.bio = t.responsibilities.length ? `Responsibilities: ${t.responsibilities.join('; ')}.` : '';
+  a.personality.traits = [...t.traits]; a.personality.communicationStyle = t.communicationStyle;
+  a.skills.skills = [...t.skills]; a.skills.tools = [...t.tools]; a.skills.primaryRole = t.title; a.skills.expertise = [...t.responsibilities];
+  a.ai.toolPermissions = [...t.tools];
+  a.permissions.allowedTools = [...t.tools]; a.permissions.requireApprovalFor = [...t.requireApprovalFor];
+  a.budget = { monthlyCredits: t.monthlyCredits, approvalAbove: t.approvalAbove };
+  return a;
 }
 
 export function builtinRoomTemplates(): RoomTemplate[] {
   const types: [RoomType, number, number][] = [
     ['office', 7, 6], ['research', 10, 7], ['server', 8, 6], ['meeting', 9, 7], ['workshop', 9, 7],
     ['storage', 6, 5], ['break', 8, 6], ['security', 7, 6], ['reception', 9, 6], ['operations', 16, 10],
+    ['executive', 12, 8], ['library', 12, 8], ['finance', 9, 6], ['engineering', 11, 7], ['design', 11, 7], ['studio', 10, 7], ['market', 10, 6],
   ];
   return types.map(([t, w, h]) => ({
     id: `tpl_${t}`, name: ROOM_META[t].label, type: t, w, h, appearance: roomAppearance(t), furniture: furniturePreset(t, w, h),
@@ -184,8 +214,10 @@ export function builtinRoomTemplates(): RoomTemplate[] {
 
 export function emptyOffice(name = 'New Office'): OfficeDoc {
   return {
-    schemaVersion: 2, id: uid('office'), name,
-    settings: { gridSize: 24, bounds: null, hallwayMode: 'hybrid', minCorridorWidth: 1, defaultCorridorWidth: 2 },
+    schemaVersion: 3, id: uid('office'), name,
+    settings: { gridSize: 24, bounds: null, hallwayMode: 'hybrid', minCorridorWidth: 1, defaultCorridorWidth: 2, collisionRule: 'warn', animationIntensity: 'subtle', idleWandering: false },
     rooms: {}, corridors: {}, furniture: {}, agents: {}, outfitTemplates: DEFAULT_OUTFITS, roomTemplates: builtinRoomTemplates(),
+    cosmetics: BUILTIN_COSMETICS.map((c) => ({ ...c })), appearance: defaultAppearanceSettings(), alertSettings: defaultAlertSettings(),
+    projects: {}, library: {},
   };
 }

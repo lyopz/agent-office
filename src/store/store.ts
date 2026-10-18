@@ -3,7 +3,10 @@
 //  - runtime  : persistent simulation state (tasks, positions, activity log); not undoable
 //  - ui       : ephemeral view state (selection, camera, tools) — never saved
 import { create } from 'zustand';
-import type { OfficeDoc, RuntimeState, Task } from '../model/types';
+import type { AlertSeverity, OfficeDoc, RuntimeState, Task } from '../model/types';
+import { acknowledgeAlert, raiseAlert, resolveAlert, testAlert, type AlertInput } from '../engine/alerts';
+import { decideApproval, recordUsage, requestAction, type ActionRequest } from '../engine/governance';
+import { dispatchViaTube } from '../engine/tubes';
 import { applyOps, type DocOp } from '../engine/ops';
 import { newErrors, validate, type Issue } from '../engine/validate';
 import { buildNav, type NavGraph } from '../engine/navigation';
@@ -12,14 +15,18 @@ import { sampleOffice } from '../model/sample';
 import { emptyOffice } from '../model/defaults';
 import { LocalStorageRepository, type OfficeRepository, type Preferences } from '../persistence/repository';
 import { exportOffice, parseOffice } from '../model/schema';
+import { markFrame } from '../ui/perf';
 
 export type Selection =
   | { kind: 'none' }
   | { kind: 'room'; ids: string[] }
   | { kind: 'corridor'; id: string }
-  | { kind: 'furniture'; id: string }
+  | { kind: 'furniture'; id: string; ids?: string[] }
   | { kind: 'door'; roomId: string; doorId: string }
   | { kind: 'agent'; id: string };
+
+/** Every furniture id in the selection (multi-select keeps the primary in `id`). */
+export function selectedFurniture(sel: Selection): string[] { return sel.kind === 'furniture' ? (sel.ids?.length ? sel.ids : [sel.id]) : []; }
 
 export type Tool = 'select' | 'room' | 'hallway' | 'door' | 'furniture' | 'workstation' | 'agent' | 'connect' | 'pan';
 export type GlobalView = 'auto' | 'top' | 'front' | 'side' | 'three-quarter';
@@ -32,8 +39,15 @@ export interface Preview { doc: OfficeDoc; ops: DocOp[]; runtimeOps: RuntimeOp[]
 
 export type RuntimeOp =
   | { op: 'agent.goTo'; agentId: string; roomId: string | null; workstationId?: string | null }
-  | { op: 'task.create'; agentId: string | null; name: string; description?: string; priority?: Task['priority']; roomId?: string | null; workstationId?: string | null; simulated?: boolean; deadline?: string; dependencies?: string[] }
+  | { op: 'task.create'; agentId: string | null; name: string; description?: string; priority?: Task['priority']; roomId?: string | null; workstationId?: string | null; simulated?: boolean; deadline?: string; dependencies?: string[]; id?: string; projectId?: string | null; handoff?: Task['handoff']; costPerUnit?: number; workUnits?: number; viaTube?: boolean; fromAgentId?: string | null }
   | { op: 'task.update'; id: string; patch: Partial<Pick<Task, 'priority' | 'status' | 'agentId' | 'name' | 'description' | 'deadline'>> }
+  | { op: 'alert.ack'; id: string } | { op: 'alert.resolve'; id: string } | { op: 'alert.test'; severity: AlertSeverity }
+  | { op: 'alert.raise'; input: AlertInput }
+  | { op: 'approval.decide'; id: string; approve: boolean }
+  | { op: 'action.request'; request: ActionRequest }
+  | { op: 'usage.record'; agentId: string | null; projectId: string | null; taskId?: string | null; credits: number; kind?: 'model' | 'tool' | 'purchase'; simulated?: boolean }
+  | { op: 'task.dispatchTube'; taskId: string; fromAgentId: string | null }
+  | { op: 'task.fail'; id: string; reason: string }
   | { op: 'history.undo' } | { op: 'history.redo' };
 
 interface State {
@@ -50,10 +64,11 @@ interface State {
   mode: 'simulate' | 'construct';
   tool: Tool;
   furnitureType: string;
+  placeRotation: 0 | 90 | 180 | 270;
   selection: Selection;
   camera: { x: number; y: number; zoom: number };
   view: GlobalView;
-  layers: { grid: boolean; snap: boolean; boundaries: boolean; paths: boolean; occupancy: boolean; labels: boolean };
+  layers: { grid: boolean; snap: boolean; boundaries: boolean; paths: boolean; occupancy: boolean; labels: boolean; perf: boolean };
   preview: Preview | null;
   conflict: { ops: DocOp[]; label: string; issues: Issue[] } | null;
   profileAgentId: string | null;
@@ -66,7 +81,7 @@ interface State {
   dryRun(ops: DocOp[]): CommitResult;
   runRuntimeOps(ops: RuntimeOp[]): string[];
   undo(): void; redo(): void;
-  setUi(p: Partial<Pick<State, 'mode' | 'tool' | 'selection' | 'camera' | 'view' | 'preview' | 'conflict' | 'profileAgentId' | 'profileTab' | 'page' | 'furnitureType' | 'hallwayDraft'>>): void;
+  setUi(p: Partial<Pick<State, 'mode' | 'tool' | 'selection' | 'camera' | 'view' | 'preview' | 'conflict' | 'profileAgentId' | 'profileTab' | 'page' | 'furnitureType' | 'placeRotation' | 'hallwayDraft'>>): void;
   setLayer(k: keyof State['layers'], v: boolean): void;
   setPrefs(p: Partial<Preferences>): void;
   notify(text: string, level?: 'info' | 'warn' | 'error'): void;
@@ -89,7 +104,7 @@ function initial() {
   const saved = repo.loadCurrent();
   const doc = saved?.doc ?? sampleOffice();
   const runtime: RuntimeState = { ...emptyRuntime(), ...(saved?.runtime ?? {}) } as RuntimeState;
-  runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {};
+  runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {}; runtime.usage ??= []; runtime.approvals ??= {}; runtime.alerts ??= {}; runtime.capsules ??= {};
   const nav = buildNav(doc);
   syncRuntime(doc, runtime, nav);
   if (!saved) log(runtime, { kind: 'system', agentId: null, simulated: false, message: 'Loaded sample office. Agents are simulated; no AI model is connected.' });
@@ -103,7 +118,7 @@ function cloneRuntime(rt: RuntimeState): RuntimeState {
   for (const [k, a] of Object.entries(rt.agents)) agents[k] = { ...a, pos: { ...a.pos }, path: a.path.slice() };
   const tasks: RuntimeState['tasks'] = {};
   for (const [k, t] of Object.entries(rt.tasks)) tasks[k] = { ...t };
-  return { ...rt, agents, tasks, events: rt.events.slice() };
+  return { ...rt, agents, tasks, events: rt.events.slice(), usage: rt.usage, approvals: { ...rt.approvals }, alerts: { ...rt.alerts }, capsules: { ...rt.capsules } };
 }
 
 function pruneTasks(rt: RuntimeState) {
@@ -133,10 +148,10 @@ export const useStore = create<State>((set, get) => {
     past: [], future: [], dirty: false,
     issues: validate(init.doc),
     prefs,
-    mode: 'simulate', tool: 'select', furnitureType: 'desk', selection: { kind: 'none' },
+    mode: 'simulate', tool: 'select', furnitureType: 'desk', placeRotation: 0, selection: { kind: 'none' },
     camera: { x: -40, y: -40, zoom: 0.8 },
     view: (prefs.viewMode as GlobalView) ?? 'auto',
-    layers: { grid: true, snap: true, boundaries: true, paths: false, occupancy: true, labels: true },
+    layers: { grid: true, snap: true, boundaries: true, paths: false, occupancy: true, labels: true, perf: false },
     preview: null, conflict: null, profileAgentId: null, profileTab: 'identity', page: 'office', toast: null, hallwayDraft: null,
 
     dryRun(ops) {
@@ -148,6 +163,7 @@ export const useStore = create<State>((set, get) => {
     },
 
     commit(ops, label, opts = {}) {
+      const t0 = performance.now();
       const { doc, past } = get();
       const res = get().dryRun(ops);
       if (!res.ok) { if (!opts.silent) get().notify(res.errors[0], 'error'); return res; }
@@ -159,6 +175,7 @@ export const useStore = create<State>((set, get) => {
       const rt = cloneRuntime(get().runtime);
       log(rt, { kind: 'layout', agentId: null, simulated: false, message: `${label}: ${res.summary.join('; ') || 'no changes'}` });
       set({ runtime: rt });
+      markFrame('commit', performance.now() - t0);
       return res;
     },
 
@@ -171,9 +188,10 @@ export const useStore = create<State>((set, get) => {
         const rt = cloneRuntime(get().runtime);
         if (o.op === 'agent.goTo') out.push(goTo(doc, rt, nav, o.agentId, o.roomId, o.workstationId ?? null).message);
         if (o.op === 'task.create') {
-          const t = createTask(rt, { name: o.name, description: o.description ?? '', agentId: o.agentId, priority: o.priority ?? 'normal', destination: { roomId: o.roomId ?? null, workstationId: o.workstationId ?? null }, simulated: o.simulated ?? true, deadline: o.deadline, dependencies: o.dependencies ?? [] });
+          const t = createTask(rt, { ...(o.id ? { id: o.id } : {}), name: o.name, description: o.description ?? '', agentId: o.agentId, priority: o.priority ?? 'normal', destination: { roomId: o.roomId ?? null, workstationId: o.workstationId ?? null }, simulated: o.simulated ?? true, deadline: o.deadline, dependencies: o.dependencies ?? [], projectId: o.projectId ?? null, handoff: o.handoff, costPerUnit: o.costPerUnit, ...(o.workUnits ? { workUnits: o.workUnits } : {}) });
           log(rt, { kind: 'system', agentId: o.agentId, simulated: false, message: `Task “${t.name}” queued${o.agentId ? ` for ${doc.agents[o.agentId]?.identity.name}` : ''}` });
           out.push(`Queued task ${t.name}`);
+          if (o.viaTube) out.push(dispatchViaTube(doc, rt, t.id, o.fromAgentId ?? null).message);
         }
         if (o.op === 'task.update') {
           const t = rt.tasks[o.id];
@@ -187,6 +205,25 @@ export const useStore = create<State>((set, get) => {
             }
             log(rt, { kind: 'config', agentId: t.agentId, simulated: false, message: `Task “${t.name}” updated: ${Object.entries(o.patch).map(([k, v]) => `${k}=${v}`).join(', ')}` });
             out.push(`Updated task ${t.name}`);
+          }
+        }
+        if (o.op === 'alert.ack') out.push(acknowledgeAlert(rt, o.id) ? 'Acknowledged' : 'Alert not found');
+        if (o.op === 'alert.resolve') out.push(resolveAlert(rt, o.id) ? 'Resolved' : 'Alert not found');
+        if (o.op === 'alert.test') out.push(testAlert(doc, rt, o.severity).alert.title);
+        if (o.op === 'alert.raise') out.push(raiseAlert(doc, rt, o.input).alert.id);
+        if (o.op === 'approval.decide') out.push(decideApproval(doc, rt, o.id, o.approve) ? (o.approve ? 'Approved' : 'Rejected') : 'Already decided');
+        if (o.op === 'action.request') { const r = requestAction(doc, rt, o.request); out.push(r.allowed ? 'Allowed' : `Approval requested: ${r.approval.reason}`); }
+        if (o.op === 'usage.record') out.push(recordUsage(doc, rt, { agentId: o.agentId, projectId: o.projectId, taskId: o.taskId ?? null, credits: o.credits, kind: o.kind ?? 'model', simulated: o.simulated }).id);
+        if (o.op === 'task.dispatchTube') out.push(dispatchViaTube(doc, rt, o.taskId, o.fromAgentId).message);
+        if (o.op === 'task.fail') {
+          const t = rt.tasks[o.id];
+          if (t) {
+            const failures = (t.failures ?? 0) + 1;
+            rt.tasks[o.id] = { ...t, status: 'failed', failures };
+            const name = t.agentId ? doc.agents[t.agentId]?.identity.name ?? 'agent' : 'unassigned';
+            log(rt, { kind: 'task-failed', agentId: t.agentId, simulated: t.simulated, level: 'error', message: `“${t.name}” failed (${name}): ${o.reason}` });
+            raiseAlert(doc, rt, { key: `task-fail:${t.agentId}:${t.name}`, severity: 'warning', category: 'operational', title: `“${t.name}” failed`, description: o.reason, recommended: 'Retry, or reassign it to another agent.', agentId: t.agentId, taskId: t.id, projectId: t.projectId ?? null, evidence: [{ kind: 'event', id: rt.events[rt.events.length - 1].id, label: o.reason }] });
+            out.push(`Recorded failure of ${t.name}`);
           }
         }
         set({ runtime: rt });
@@ -216,12 +253,14 @@ export const useStore = create<State>((set, get) => {
     notify(text, level = 'info') { set({ toast: { id: Date.now(), text, level } }); },
 
     tick() {
+      const t0 = performance.now();
       const { doc, nav, prefs } = get();
       const rt = cloneRuntime(get().runtime);
       step(doc, rt, nav, { demoTasks: prefs.demoTasks });
       if (rt.tick % 100 === 0) pruneTasks(rt);
       set({ runtime: rt });
       if (rt.tick % 50 === 0) scheduleSave();
+      markFrame('tick', performance.now() - t0, { agents: Object.keys(rt.agents).length, tasks: Object.keys(rt.tasks).length, events: rt.events.length });
     },
 
     save() {

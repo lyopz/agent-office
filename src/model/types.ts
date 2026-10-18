@@ -11,16 +11,27 @@ export type Side = 'n' | 's' | 'e' | 'w';
 export const ROOM_TYPES = [
   'operations', 'office', 'research', 'server', 'meeting', 'workshop',
   'storage', 'break', 'security', 'reception', 'custom',
+  'executive', 'library', 'finance', 'engineering', 'design', 'studio', 'market',
 ] as const;
 export type RoomType = (typeof ROOM_TYPES)[number];
 
 export interface RoomAppearance {
   floor: 'grid' | 'tile' | 'carpet' | 'metal' | 'wood' | 'plain';
   wallColor: string;
-  accent: string;
-  lighting: number; // 0..1
-  theme?: string;
+  accent: string;             // accent strips, labels
+  lighting: number;           // intensity 0..1
+  theme?: string;             // name of the room palette last applied
+  floorColor?: string;        // tints the floor material; unset = global office floor colour
+  lightTemp?: number;         // kelvin 2200..6500, default 4500
+  doorColor?: string;
+  windowTint?: string;
+  furnitureMaterial?: FurnitureMaterial;
+  displayColor?: string;      // screens and holograms in this room
+  effect?: 'none' | 'ambient-glow' | 'scanlines' | 'particles';
 }
+
+export const FURNITURE_MATERIALS = ['default', 'graphite', 'titanium', 'black-titanium', 'walnut', 'white-composite', 'brass'] as const;
+export type FurnitureMaterial = (typeof FURNITURE_MATERIALS)[number];
 
 export interface Door {
   id: ID;
@@ -62,10 +73,31 @@ export interface Corridor {
 }
 
 export const FURNITURE_TYPES = [
+  // original set
   'desk', 'chair', 'computer', 'monitors', 'server-rack', 'whiteboard', 'cabinet',
   'conference-table', 'shelf', 'container', 'plant', 'lamp', 'sofa', 'decor', 'workbench',
+  // furniture
+  'exec-desk', 'holo-desk', 'standing-desk', 'lounge-seat', 'locker', 'strategy-table',
+  // computing
+  'curved-monitor', 'holo-display', 'multi-monitor', 'terminal', 'charging-station', 'diagnostic-panel', 'research-kiosk',
+  // communication
+  'tube-station', 'dispatch-terminal', 'message-station', 'routing-hub', 'intercom', 'relay-panel',
+  // research
+  'archive-terminal', 'digital-shelf', 'data-vault', 'evidence-station', 'market-display', 'comparison-wall',
+  // creative
+  'holo-table', 'mockup-display', 'packaging-station', 'material-station', 'prototype-printer', 'photo-station',
+  // business
+  'budget-dashboard', 'approval-kiosk', 'project-board', 'finance-terminal', 'marketplace-display', 'inventory-monitor', 'analytics-wall',
+  // atmosphere
+  'sculpture', 'floor-light', 'wall-panel', 'window', 'deco-robot', 'aquarium', 'wall-art', 'ambient-machine',
 ] as const;
 export type FurnitureType = (typeof FURNITURE_TYPES)[number];
+
+export const OBJECT_CATEGORIES = ['furniture', 'computing', 'communication', 'research', 'creative', 'business', 'atmosphere'] as const;
+export type ObjectCategory = (typeof OBJECT_CATEGORIES)[number];
+
+/** What an object does in the simulation. Decorative objects have no function. */
+export type ObjectFunction = 'workstation' | 'tube' | 'archive' | 'approval' | 'budget' | 'display' | 'charging' | 'storage' | 'seating' | 'none';
 
 export interface Workstation {
   name: string;
@@ -85,6 +117,10 @@ export interface Furniture {
   color: string;
   blocking: boolean;
   workstation?: Workstation;
+  label?: string;             // custom display name
+  material?: FurnitureMaterial;
+  groupId?: string;           // objects sharing a group move and select together
+  tube?: { stationName: string; department: string }; // pneumatic tube endpoint
 }
 
 // ---------- Characters ----------
@@ -102,18 +138,28 @@ export interface Appearance {
   hairStyle: 'bald' | 'buzz' | 'short' | 'long' | 'bun' | 'ponytail' | 'mohawk' | 'curly';
   hairColor: string;
   facialHair: 'none' | 'stubble' | 'beard' | 'mustache';
-  top: 'tshirt' | 'hoodie' | 'suit' | 'labcoat' | 'coverall' | 'uniform' | 'vest';
+  top: 'tshirt' | 'hoodie' | 'suit' | 'labcoat' | 'coverall' | 'uniform' | 'vest' | 'jacket' | 'robe' | 'armor' | 'longcoat';
   topColor: string;
   bottom: 'pants' | 'shorts' | 'skirt';
   bottomColor: string;
   shoes: 'sneakers' | 'boots' | 'dress';
   shoeColor: string;
-  headwear: 'none' | 'cap' | 'hardhat' | 'helmet' | 'beanie' | 'headset';
+  headwear: 'none' | 'cap' | 'hardhat' | 'helmet' | 'beanie' | 'headset' | 'mask' | 'full-helmet';
   headwearColor: string;
-  glasses: 'none' | 'round' | 'square' | 'visor';
+  glasses: 'none' | 'round' | 'square' | 'visor' | 'ar-glasses';
   jewelry: 'none' | 'earrings' | 'necklace' | 'badge';
-  equipment: 'none' | 'tablet' | 'wrench' | 'clipboard' | 'laptop' | 'toolbelt';
+  equipment: 'none' | 'tablet' | 'wrench' | 'clipboard' | 'laptop' | 'toolbelt' | 'briefcase' | 'drafting-tablet' | 'holo-catalog';
   accent: string;           // glow / palette accent
+  trimColor: string;        // secondary clothing colour: trim, insignia, tie
+  faceMarkings: 'none' | 'freckles' | 'scar' | 'tattoo' | 'circuit';
+  robotic: 'none' | 'eyepiece' | 'jaw' | 'half-face' | 'full';
+  shoulders: 'none' | 'pads' | 'metallic' | 'armored';
+  gloves: 'none' | 'work' | 'tech' | 'formal';
+  gloveColor: string;
+  belt: 'none' | 'belt' | 'harness' | 'utility';
+  /** Accessory item ids from the cosmetic catalogue (badges, wrist displays, floating assistants…). */
+  accessories: string[];
+  effects: CharacterEffects;
   idlePose: 'stand' | 'arms-crossed' | 'hands-hips';
   walkPose: 'normal' | 'brisk' | 'casual';
   workPose: 'typing' | 'reading' | 'tinkering';
@@ -123,6 +169,11 @@ export interface Appearance {
   shading: 'none' | 'soft' | 'hard';
   animationSpeed: number;   // 0.5..2
   preferredView: ViewMode;  // view used on the floor plan when global view = 'auto'
+}
+
+export interface CharacterEffects {
+  aura: boolean; holoOutline: boolean; eyeGlow: boolean; particles: boolean; energyAccents: boolean; robotics: boolean;
+  intensity: number;        // 0..1, restrained by default
 }
 
 export interface VisualAssets {
@@ -209,10 +260,47 @@ export interface Agent {
   schedule: Schedule;
   permissions: Permissions;
   appearance: Appearance;
+  /** Appearance the agent was created with; "Restore default appearance" returns here. */
+  defaultAppearance?: Appearance;
+  archetype?: string;
+  budget: AgentBudget;
   assets: VisualAssets;
 }
 
-export interface OutfitTemplate { id: ID; name: string; patch: Partial<Appearance> }
+export interface AgentBudget {
+  monthlyCredits: number;     // spending allowance
+  approvalAbove: number;      // any single spend above this needs owner approval
+}
+
+export interface OutfitTemplate {
+  id: ID; name: string; patch: Partial<Appearance>;
+  kind?: 'outfit' | 'uniform';
+  department?: string;        // uniforms: the department they're approved for
+  approved?: boolean;         // uniforms must be approved before applying to a department
+  occasion?: string;          // seasonal / event label
+}
+
+export type CosmeticCategory = 'head' | 'clothing' | 'accessory' | 'effect';
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'legendary';
+
+/**
+ * A cosmetic inventory item. Applying it merges `patch` into the appearance
+ * (or adds `accessoryId`). Rarity and collections are purely organisational and
+ * never affect permissions or performance. Functional equipment names the tool
+ * it represents; it can only be worn by agents allowed to use that tool.
+ */
+export interface CosmeticItem {
+  id: ID; name: string; category: CosmeticCategory;
+  slot: string;               // the appearance field it occupies (top, headwear, accessories…)
+  patch?: Partial<Appearance>;
+  accessoryId?: string;
+  rarity?: Rarity;
+  collection?: string;
+  functionalTool?: string;    // e.g. 'diagnostics' — wearing it requires this tool permission
+  custom?: boolean;
+  assetId?: ID | null;        // uploaded artwork preview
+  tags?: string[];
+}
 export interface RoomTemplate {
   id: ID; name: string; type: RoomType; w: number; h: number;
   appearance: RoomAppearance; furniture: Omit<Furniture, 'id' | 'roomId'>[];
@@ -224,6 +312,58 @@ export interface OfficeSettings {
   hallwayMode: 'automatic' | 'manual' | 'hybrid';
   minCorridorWidth: number;
   defaultCorridorWidth: number;
+  collisionRule: 'warn' | 'prevent';  // object placement overlapping another object
+  animationIntensity: 'off' | 'subtle' | 'full';
+  idleWandering: boolean;      // purely cosmetic idle movement
+}
+
+// ---------- Themes ----------
+
+export interface ThemeTokens {
+  bg: string; bg2: string; panel: string; accent: string; accent2: string; text: string; border: string;
+  selection: string; success: string; warning: string; error: string; highlight: string;
+}
+export interface OfficeColors { floor: string; wall: string; door: string; corridor: string; lighting: string }
+export interface ThemeDef { id: ID; name: string; builtin?: boolean; dark: ThemeTokens; light: ThemeTokens; office: { dark: OfficeColors; light: OfficeColors } }
+export interface AppearanceSettings { mode: 'dark' | 'light' | 'system'; themeId: ID; themes: ThemeDef[] }
+
+// ---------- Alerts ----------
+
+export type AlertSeverity = 'critical' | 'high' | 'warning' | 'info';
+export type AlertCategory = 'operational' | 'financial' | 'project' | 'informational';
+export type DeliveryChannel = 'in-app' | 'sound' | 'desktop' | 'email' | 'messaging' | 'push';
+
+export interface SeveritySound { soundId: string; volume: number; repeatSec: number; ackRequired: boolean }
+export interface AlertSettings {
+  sounds: Record<AlertSeverity, SeveritySound>;
+  customSounds: { id: ID; name: string; assetId: ID }[];
+  masterVolume: number;
+  muted: Partial<Record<AlertCategory, boolean>>;   // never silences critical alerts
+  quietHours: { enabled: boolean; start: string; end: string };   // critical alerts still sound
+  soundSchedule: { enabled: boolean; start: string; end: string }; // sound only in these hours (critical exempt)
+  cooldownSec: number;          // identical alerts within this window are grouped
+  escalation: { enabled: boolean; afterSec: number; maxLevel: number };
+  thresholds: { budgetWarnPct: number; budgetCriticalPct: number; spendRateFactor: number; repeatedFailures: number };
+  channels: Record<DeliveryChannel, { enabled: boolean; minSeverity: AlertSeverity; target?: string }>;
+  minSoundSeverity: AlertSeverity; // routine events below this never make noise
+}
+
+// ---------- Business ----------
+
+export interface Project {
+  id: ID; name: string; ownerAgentId: ID | null; budget: number; forecastSpend: number;
+  status: 'active' | 'paused' | 'blocked' | 'done';
+  description: string;
+}
+
+export interface KnowledgeEntry {
+  id: ID; title: string; summary: string; topic: string; tags: string[];
+  sources: { title: string; url: string }[];
+  createdAt: string; authorAgentId: ID | null; projectId: ID | null;
+  confidence: number;         // 0..1
+  verification: 'unverified' | 'verified' | 'disputed';
+  sensitive: boolean;         // only agents in allowedAgentIds can read it
+  allowedAgentIds: ID[];
 }
 
 export interface OfficeDoc {
@@ -237,11 +377,16 @@ export interface OfficeDoc {
   agents: Record<ID, Agent>;
   outfitTemplates: OutfitTemplate[];
   roomTemplates: RoomTemplate[];
+  cosmetics: CosmeticItem[];
+  appearance: AppearanceSettings;
+  alertSettings: AlertSettings;
+  projects: Record<ID, Project>;
+  library: Record<ID, KnowledgeEntry>;
 }
 
 // ---------- Runtime (simulation) ----------
 
-export type AgentStatus = 'idle' | 'working' | 'walking' | 'thinking' | 'communicating' | 'error' | 'paused';
+export type AgentStatus = 'idle' | 'working' | 'walking' | 'thinking' | 'communicating' | 'researching' | 'waiting' | 'blocked' | 'error' | 'paused';
 
 export interface AgentRuntime {
   pos: Point;                 // world cell coordinates (float, cell centre = .5)
@@ -256,7 +401,14 @@ export interface AgentRuntime {
   waitTicks: number;
 }
 
-export type TaskStatus = 'queued' | 'active' | 'paused' | 'done' | 'cancelled' | 'failed';
+export type TaskStatus = 'queued' | 'in-transit' | 'active' | 'waiting-approval' | 'paused' | 'done' | 'cancelled' | 'failed';
+
+/** A structured handoff: every collaboration states its outcome up front. */
+export interface Handoff {
+  request: string; why: string; known: string; deliverable: string;
+  deadline?: string; budget?: number; acceptance: string;
+  fromAgentId?: ID | null;
+}
 
 export interface Task {
   id: ID;
@@ -274,11 +426,20 @@ export interface Task {
   completedAt?: string;
   deadline?: string;
   simulated: boolean;         // true = generated by the simulator, no model ran
+  projectId?: ID | null;
+  handoff?: Handoff;
+  costPerUnit?: number;       // credits spent per work unit (simulated usage)
+  failures?: number;
+  acknowledgedBy?: ID | null; // set when the receiving agent confirms a delivered task
+  acknowledgedAt?: string;
+  deliveredVia?: 'tube' | 'direct';
+  libraryRefs?: ID[];         // knowledge consulted before starting
 }
 
 export type EventKind =
   | 'task-start' | 'task-complete' | 'task-failed' | 'room-change' | 'comms'
-  | 'tool' | 'config' | 'error' | 'pause' | 'resume' | 'layout' | 'ai' | 'system';
+  | 'tool' | 'config' | 'error' | 'pause' | 'resume' | 'layout' | 'ai' | 'system'
+  | 'tube' | 'finance' | 'approval' | 'library' | 'alert';
 
 export interface ActivityEvent {
   id: ID;
@@ -290,9 +451,51 @@ export interface ActivityEvent {
   level: 'info' | 'warn' | 'error';
 }
 
+export interface UsageRecord {
+  id: ID; at: string; agentId: ID | null; projectId: ID | null; taskId: ID | null;
+  credits: number; kind: 'model' | 'tool' | 'purchase';
+  simulated: boolean;
+}
+
+export interface ApprovalRequest {
+  id: ID; at: string; agentId: ID | null; action: string; detail: string;
+  amount?: number; projectId?: ID | null; taskId?: ID | null;
+  reason: string;             // why approval is needed
+  status: 'pending' | 'approved' | 'rejected';
+  decidedAt?: string;
+}
+
+export interface AlertDelivery { channel: DeliveryChannel; status: 'delivered' | 'shown' | 'queued' | 'not-connected' | 'permission-needed' | 'suppressed'; detail?: string; soundId?: string }
+
+export interface Alert {
+  id: ID; key: string;        // dedupe key: same key within cooldown = same alert
+  severity: AlertSeverity; category: AlertCategory;
+  title: string; description: string; recommended: string;
+  firstAt: string; lastAt: string; count: number;
+  agentId?: ID | null; projectId?: ID | null; roomId?: ID | null; taskId?: ID | null; approvalId?: ID | null;
+  evidence: { kind: 'event' | 'usage' | 'task' | 'log'; id: string; label: string }[];
+  status: 'open' | 'acknowledged' | 'resolved';
+  ackRequired: boolean;
+  escalationLevel: number;
+  lastNotifiedAt: string;
+  deliveries: AlertDelivery[];
+  test?: boolean;
+}
+
+export interface Capsule {
+  id: ID; taskId: ID; fromId: ID; toId: ID;   // tube-station furniture ids
+  path: Point[]; progress: number;            // index into path (float)
+  status: 'in-transit' | 'delivered';
+  recipientId: ID | null;
+}
+
 export interface RuntimeState {
   agents: Record<ID, AgentRuntime>;
   tasks: Record<ID, Task>;
   events: ActivityEvent[];
   tick: number;
+  usage: UsageRecord[];
+  approvals: Record<ID, ApprovalRequest>;
+  alerts: Record<ID, Alert>;
+  capsules: Record<ID, Capsule>;
 }

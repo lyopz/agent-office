@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Copy, Plus, Power, Search, Trash2, UserRound } from 'lucide-react';
+import { ARCHETYPE, ARCHETYPES } from '../model/cosmetics';
 import { useStore } from '../store/store';
 import { Character } from '../characters/Character';
 import { STATUS_COLOR } from '../viewport/AgentsLayer';
@@ -44,18 +45,25 @@ export function AgentPanel() {
       return a.identity.name.localeCompare(b.identity.name);
     });
 
-  const create = () => {
+  const create = (archetype = 'custom') => {
     const n = Object.keys(agents).length + 1;
     const id = `agent_${Date.now().toString(36)}`;
-    const hub = Object.values(rooms).find((r) => r.type === 'operations') ?? Object.values(rooms)[0];
-    const r = commit([{ op: 'agent.create', id, name: `AGENT-${String(n).padStart(2, '0')}`, title: 'Generalist', department: 'Operations', roomId: hub?.id ?? null }], 'Create agent');
+    const t = ARCHETYPE[archetype];
+    // the archetype's home room if there is one, else operations
+    const home = Object.values(rooms).find((r) => r.type === t.roomType) ?? Object.values(rooms).find((r) => r.type === 'operations') ?? Object.values(rooms)[0];
+    const name = archetype === 'custom' ? `AGENT-${String(n).padStart(2, '0')}` : `${t.title.split(' ').map((w) => w[0]).join('').toUpperCase()}-${String(n).padStart(2, '0')}`;
+    let r = commit([{ op: 'agent.createFromArchetype', archetype, id, name, roomId: home?.id ?? null }], `Create ${t.label}`, { silent: true });
+    if (!r.ok && home) r = commit([{ op: 'agent.createFromArchetype', archetype, id, name, roomId: null }, { op: 'agent.assignRoom', agentId: id, roomId: home.id }], `Create ${t.label}`);
     if (r.ok) setUi({ selection: { kind: 'agent', id }, profileAgentId: id, profileTab: 'identity' });
   };
 
   return (
     <aside className="panel left" aria-label="Agents">
       <div className="panel-h"><span className="grow">Agents <span className="count">{list.length}/{Object.keys(agents).length}</span></span>
-        <button className="btn sm primary" onClick={create} title="Create agent"><Plus size={13} />New</button>
+        <button className="btn sm primary" onClick={() => create()} title="Create a blank agent"><Plus size={13} />New</button>
+        <select aria-label="New agent from archetype" value="" onChange={(e) => e.target.value && create(e.target.value)} style={{ width: 'auto', minHeight: 26 }}>
+          <option value="">From role…</option>{ARCHETYPES.filter((x) => x.id !== 'custom').map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+        </select>
       </div>
       <div className="section" style={{ display: 'grid', gap: 6 }}>
         <div className="row"><Search size={14} className="muted" /><input type="search" placeholder="Search name, role, room, skill" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search agents" /></div>

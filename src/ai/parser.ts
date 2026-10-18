@@ -7,6 +7,7 @@ import { doorFacing, manhattan, polylineCells, rectsOverlap, roomCenter } from '
 import { pickHub } from '../engine/validate';
 import { ROOM_META, uid } from '../model/defaults';
 import type { RuntimeOp, Selection } from '../store/store';
+import { remodel } from './remodel';
 
 export type Plan =
   | { kind: 'plan'; ops: DocOp[]; runtimeOps: RuntimeOp[]; explanation: string[]; needsConfirm: boolean; label: string }
@@ -22,6 +23,8 @@ export interface ParseContext {
 }
 
 const ROOM_SYNONYMS: [RegExp, RoomType][] = [
+  [/\b(engineering|engineer)\b/, 'engineering'], [/\b(library|archive|librarian)\b/, 'library'], [/\b(executive|exec suite|president)\b/, 'executive'],
+  [/\b(finance|treasury|accounting)\b/, 'finance'], [/\bdesign lab\b|\bdesign\b/, 'design'], [/\b(studio|creative)\b/, 'studio'], [/\b(market intel|market|analytics)\b/, 'market'],
   [/\b(research|lab|laboratory)\b/, 'research'], [/\bserver/, 'server'], [/\b(conference|meeting)\b/, 'meeting'],
   [/\b(main office|operations|ops|control)\b/, 'operations'], [/\b(break|kitchen|lounge)\b/, 'break'], [/\bworkshop\b/, 'workshop'],
   [/\b(reception|lobby|front desk)\b/, 'reception'], [/\bstorage\b/, 'storage'], [/\bsecurity\b/, 'security'],
@@ -366,9 +369,22 @@ function clause(raw: string, ctx: ParseContext, acc: Acc): ClauseResult {
     return { clarify: { kind: 'clarify', question: 'Which two rooms should I connect?', options: [] } };
   }
 
+  // object-library remodelling (place against walls, beside every X, replace, restyle, arrange, plants)
+  const isRoomAsk = /^(?:create|add|build|make)\s+(?:a |an )?(?:new )?(lounge|break room|kitchen|[a-z ]*\broom|[a-z ]*\boffice|[a-z ]*\blab|library|studio|workshop)\b/.test(t) && !/\b(desk|terminal|station|table|plant|lamp|display|kiosk|rack|shelf|seat|chair)\b/.test(t.split(/\s+(?:beside|next to|near|to the|above|below)\s+/)[0]);
+  if (!isRoomAsk) {
+    const rm = remodel(t, doc, selRoom.length ? selRoom : them, (d, x) => findRooms(d, x));
+    if (rm && 'clarify' in rm) return { clarify: { kind: 'clarify', ...rm.clarify } };
+    if (rm && 'error' in rm) return rm;
+    if (rm) {
+      const r = applyOps(acc.doc, rm.ops); if (r.errors.length) return { error: r.errors[0] };
+      acc.doc = r.doc; acc.ops.push(...rm.ops); acc.notes.push(...rm.notes); acc.confirm = true; acc.labels.push(rm.label);
+      return null;
+    }
+  }
+
   // create room
   const createM = /^(?:create|add|build|make)\s+(?:a |an )?(?:new )?(.+?)(?:\s+room)?(?:\s+for\s+(.+?))?(?:\s+(?:connected|linked|attached) to\s+(.+?))?(?:\s+((?:to the )?(?:left|right) of|above|below|beside|next to|near)\s+(.+))?$/.exec(t);
-  if (createM && /room|office|lab|laboratory|workshop|lobby|reception|storage|kitchen/.test(createM[1] + ' ' + t) && !/\b(desk|workstation|plant|chair|server rack|whiteboard|shelf|cabinet|furniture)\b/.test(createM[1])) {
+  if (createM && /room|office|lab|laboratory|workshop|lobby|reception|storage|kitchen|lounge|library|studio|suite/.test(createM[1] + ' ' + t) && !/\b(desk|workstation|plant|chair|server rack|whiteboard|shelf|cabinet|furniture)\b/.test(createM[1])) {
     const what = createM[1];
     let type: RoomType = 'custom';
     for (const [re, ty] of ROOM_SYNONYMS) if (re.test(what) || (ty === 'office' && /office/.test(what) && !/main office/.test(what))) { type = ty; break; }
@@ -379,7 +395,7 @@ function clause(raw: string, ctx: ParseContext, acc: Acc): ClauseResult {
     }
     const sizes: Partial<Record<RoomType, [number, number]>> = { office: [7, 6], server: [8, 6], research: [10, 7], meeting: [9, 7], storage: [6, 5], break: [8, 6], workshop: [9, 7], security: [7, 6], reception: [9, 6] };
     const [w, h] = sizes[type] ?? [8, 6];
-    const name = forAgent ? `${forAgent.identity.name} Private Office` : type === 'custom' ? `${what.replace(/\b\w/g, (m) => m.toUpperCase())} Room` : ROOM_META[type].label;
+    const name = forAgent ? `${forAgent.identity.name} Private Office` : /\blounge\b/.test(what) ? 'Lounge' : type === 'custom' ? `${what.replace(/\b\w/g, (m) => m.toUpperCase())} Room` : ROOM_META[type].label;
     const relTarget = createM[5] ? findRooms(doc, createM[5])[0] : undefined;
     const rel = createM[4] ? relFrom(createM[4]) : null;
     const anchorRoom = relTarget ?? (forAgent?.schedule.assignedRoomId ? doc.rooms[forAgent.schedule.assignedRoomId] : undefined) ?? pickHub(doc);

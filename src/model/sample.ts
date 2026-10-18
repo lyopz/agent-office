@@ -3,10 +3,11 @@
 import { produce } from 'immer';
 import { applyOps, type DocOp } from '../engine/ops';
 import { emptyOffice, makeAgent } from './defaults';
-import type { Agent, OfficeDoc } from './types';
+import { findObjectSpot } from '../engine/spatial';
+import type { Agent, FurnitureType, KnowledgeEntry, OfficeDoc, Project } from './types';
 
 export function sampleOffice(): OfficeDoc {
-  let doc = emptyOffice('NEXUS-7 Agent Office');
+  let doc = emptyOffice('NEXUS-7 Headquarters');
   doc.id = 'office_sample';
   const rooms: DocOp[] = [
     { op: 'room.create', id: 'room_ops', type: 'operations', name: 'Main Operations', x: 18, y: 12, w: 18, h: 11 },
@@ -83,5 +84,91 @@ export function sampleOffice(): OfficeDoc {
     ['agent_pixel', ws('room_ops')[0]], ['agent_rusty', ws('room_shop')[0]], ['agent_echo', ws('room_rec')[0]],
   ];
   doc = applyOps(doc, assign.filter(([, f]) => f).map(([agentId, furnitureId]) => ({ op: 'workstation.assign', furnitureId: furnitureId!, agentId }) as DocOp)).doc;
+  return addHeadquarters(doc);
+}
+
+const HQ_CREATED = '2026-10-01T09:00:00.000Z';
+
+/** The executive wing: business rooms, archetype agents, projects, tube network and library. */
+function addHeadquarters(doc0: OfficeDoc): OfficeDoc {
+  let doc = doc0;
+  const run = (ops: DocOp[]) => { const r = applyOps(doc, ops); if (r.errors.length) throw new Error(`sample HQ: ${r.errors.join('; ')}`); doc = r.doc; };
+  run([
+    { op: 'room.create', id: 'room_exec', type: 'executive', name: 'Executive Suite', x: 62, y: 0, w: 14, h: 9 },
+    { op: 'room.create', id: 'room_library', type: 'library', name: 'Research Library', x: 62, y: 14, w: 14, h: 9 },
+    { op: 'room.create', id: 'room_fin', type: 'finance', name: 'Finance Office', x: 82, y: 0, w: 10, h: 8 },
+    { op: 'room.create', id: 'room_eng', type: 'engineering', name: 'Engineering Lab', x: 82, y: 14, w: 12, h: 9 },
+    { op: 'room.create', id: 'room_design', type: 'design', name: 'Design Lab', x: 62, y: 29, w: 11, h: 8 },
+    { op: 'room.create', id: 'room_studio', type: 'studio', name: 'Creative Studio', x: 79, y: 29, w: 11, h: 8 },
+    { op: 'room.create', id: 'room_market', type: 'market', name: 'Market Intelligence', x: 98, y: 0, w: 10, h: 8 },
+  ]);
+  run([
+    { op: 'rooms.connect', id: 'hall_hq', a: 'room_srv', b: 'room_library', width: 3 },
+    { op: 'rooms.connect', id: 'hall_exec', a: 'room_library', b: 'room_exec' },
+    { op: 'rooms.connect', id: 'hall_eng', a: 'room_library', b: 'room_eng' },
+    { op: 'rooms.connect', id: 'hall_fin', a: 'room_exec', b: 'room_fin' },
+    { op: 'rooms.connect', id: 'hall_market', a: 'room_fin', b: 'room_market' },
+    { op: 'rooms.connect', id: 'hall_design', a: 'room_library', b: 'room_design' },
+    { op: 'rooms.connect', id: 'hall_studio', a: 'room_design', b: 'room_studio' },
+  ]);
+  const hallNames: Record<string, string> = { hall_hq: 'HQ Concourse', hall_exec: 'Executive Hall', hall_eng: 'Engineering Hall', hall_fin: 'Finance Hall', hall_market: 'Market Hall', hall_design: 'Design Hall', hall_studio: 'Studio Hall' };
+  run(Object.entries(hallNames).map(([id, name]) => ({ op: 'corridor.update', id, patch: { name } }) as DocOp));
+
+  run([
+    { op: 'agent.createFromArchetype', archetype: 'president', name: 'ORION', id: 'agent_orion', roomId: 'room_exec', workstationId: 'ws_orion' },
+    { op: 'agent.createFromArchetype', archetype: 'librarian', name: 'CODEX', id: 'agent_codex', roomId: 'room_library', workstationId: 'ws_codex' },
+    { op: 'agent.createFromArchetype', archetype: 'coo', name: 'VECTOR', id: 'agent_vector', roomId: 'room_ops', workstationId: 'ws_vector' },
+    { op: 'agent.createFromArchetype', archetype: 'cfo', name: 'LEDGER', id: 'agent_ledger', roomId: 'room_fin', workstationId: 'ws_ledger' },
+    { op: 'agent.createFromArchetype', archetype: 'market-analyst', name: 'SCOUT', id: 'agent_scout', roomId: 'room_market', workstationId: 'ws_scout' },
+    { op: 'agent.createFromArchetype', archetype: 'product-architect', name: 'FORGE', id: 'agent_forge', roomId: 'room_design', workstationId: 'ws_forge' },
+    { op: 'agent.createFromArchetype', archetype: 'creative-director', name: 'MUSE', id: 'agent_muse', roomId: 'room_studio', workstationId: 'ws_muse' },
+    { op: 'agent.createFromArchetype', archetype: 'chief-engineer', name: 'BOLT', id: 'agent_bolt', roomId: 'room_eng', workstationId: 'ws_bolt' },
+  ]);
+  for (const id of ['agent_orion', 'agent_codex', 'agent_vector', 'agent_ledger', 'agent_scout', 'agent_forge', 'agent_muse', 'agent_bolt']) {
+    run([{ op: 'agent.update', id, patch: { identity: { createdAt: HQ_CREATED }, skills: { supervisorId: id === 'agent_orion' ? null : 'agent_orion' } } }]);
+  }
+
+  // tube network: one station per business room plus the original core rooms
+  const tubes: [string, string, FurnitureType][] = [
+    ['room_exec', 'Executive', 'dispatch-terminal'], ['room_library', 'Library', 'tube-station'], ['room_fin', 'Finance', 'tube-station'],
+    ['room_eng', 'Engineering', 'tube-station'], ['room_design', 'Design', 'message-station'], ['room_studio', 'Studio', 'message-station'],
+    ['room_market', 'Market', 'tube-station'], ['room_ops', 'Operations', 'routing-hub'], ['room_lab', 'Research', 'tube-station'],
+  ];
+  for (const [roomId, name, type] of tubes) {
+    const room = doc.rooms[roomId];
+    const has = room.furnitureIds.some((f) => doc.furniture[f]?.tube);
+    if (has) { const f = room.furnitureIds.find((x) => doc.furniture[x]?.tube)!; run([{ op: 'furniture.update', id: f, patch: { tube: { stationName: `${name} Station`, department: name } } }]); continue; }
+    const spot = findObjectSpot(doc, room, type, { near: { x: room.w - 1, y: room.h - 1 } });
+    if (!spot) continue;
+    const id = `tube_${roomId.slice(5)}`;
+    run([{ op: 'furniture.add', id, roomId, type, x: spot.x, y: spot.y }, { op: 'furniture.update', id, patch: { tube: { stationName: `${name} Station`, department: name } } }]);
+  }
+  // an archive terminal and budget dashboard so the library and finance rooms do real work
+  const place = (roomId: string, type: FurnitureType, id: string, near?: { x: number; y: number }) => {
+    const room = doc.rooms[roomId]; const spot = findObjectSpot(doc, room, type, { near });
+    if (spot) run([{ op: 'furniture.add', id, roomId, type, x: spot.x, y: spot.y }]);
+  };
+  if (!Object.values(doc.furniture).some((f) => f.roomId === 'room_library' && f.type === 'archive-terminal')) place('room_library', 'archive-terminal', 'fur_archive', { x: 1, y: 1 });
+  if (!Object.values(doc.furniture).some((f) => f.roomId === 'room_fin' && f.type === 'budget-dashboard')) place('room_fin', 'budget-dashboard', 'fur_budget', { x: 1, y: 6 });
+  place('room_exec', 'approval-kiosk', 'fur_approvals', { x: 12, y: 7 });
+
+  const projects: Project[] = [
+    { id: 'proj_hq', name: 'HQ Operations', ownerAgentId: 'agent_orion', budget: 600, forecastSpend: 420, status: 'active', description: 'Running the headquarters: coordination, briefings and reviews.' },
+    { id: 'proj_catalog', name: 'Knowledge Catalogue', ownerAgentId: 'agent_codex', budget: 200, forecastSpend: 150, status: 'active', description: 'Index, verify and deduplicate everything the agents learn.' },
+    { id: 'proj_launch', name: 'Spring Product Launch', ownerAgentId: 'agent_muse', budget: 350, forecastSpend: 380, status: 'active', description: 'Packaging, product photography and launch visuals.' },
+    { id: 'proj_platform', name: 'Platform Reliability', ownerAgentId: 'agent_bolt', budget: 250, forecastSpend: 200, status: 'active', description: 'Diagnostics and repairs across the office systems.' },
+  ];
+  for (const project of projects) run([{ op: 'project.upsert', project }]);
+
+  const lib = (id: string, title: string, topic: string, summary: string, tags: string[], conf: number, extra: Partial<KnowledgeEntry> = {}): KnowledgeEntry => ({
+    id, title, topic, summary, tags, sources: [{ title: 'Internal briefing (simulated)', url: '' }], createdAt: HQ_CREATED, authorAgentId: 'agent_codex', projectId: 'proj_catalog',
+    confidence: conf, verification: conf > 0.8 ? 'verified' : 'unverified', sensitive: false, allowedAgentIds: [], ...extra,
+  });
+  for (const entry of [
+    lib('kb_bench', 'Routing algorithm benchmarks', 'research', 'A* with a binary heap beats BFS on the office graph above 2,000 cells.', ['benchmark', 'routing', 'papers'], 0.9, { authorAgentId: 'agent_atlas' }),
+    lib('kb_market', 'Competitor pricing, Q3', 'market', 'Three competitors cut entry prices by 10–15% this quarter.', ['pricing', 'competitors', 'market'], 0.7, { authorAgentId: 'agent_scout' }),
+    lib('kb_packaging', 'Packaging material comparison', 'design', 'Recycled board is 8% cheaper than composite at our volumes.', ['packaging', 'materials', 'supplier'], 0.85, { authorAgentId: 'agent_forge' }),
+    lib('kb_payroll', 'Agent compensation ledger', 'finance', 'Monthly allowances and approval limits per agent.', ['budget', 'ledger'], 0.95, { authorAgentId: 'agent_ledger', sensitive: true, allowedAgentIds: ['agent_ledger', 'agent_orion'] }),
+  ]) run([{ op: 'library.upsert', entry }]);
   return doc;
 }

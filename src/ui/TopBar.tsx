@@ -5,6 +5,7 @@ import { useStore } from '../store/store';
 import { repo } from '../store/store';
 import { confirmAction } from './primitives';
 import { providerStatus } from '../ai/providers';
+import { AlertBell } from './AlertCenter';
 
 export function TopBar() {
   const name = useStore((s) => s.doc.name);
@@ -32,12 +33,13 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <span className="brand">AGENT//OFFICE<small className="hide-sm">sim v0.1</small></span>
+      <span className="brand">AGENT//HQ<small className="hide-sm">sim v0.2</small></span>
       <input className="office-name" aria-label="Office name" defaultValue={name} key={name} onBlur={(e) => e.target.value.trim() && e.target.value !== name && s.commit([{ op: 'office.rename', name: e.target.value.trim() }], 'Rename office')} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
       <nav className="seg" aria-label="Pages">
         {(['office', 'dashboard', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p[0].toUpperCase() + p.slice(1)}</button>)}
       </nav>
       <span className="spacer" />
+      <AlertBell />
       <button className="btn icon sm" aria-label={prefs.simRunning ? 'Pause simulation' : 'Run simulation'} title={prefs.simRunning ? 'Pause simulation' : 'Run simulation'} onClick={() => s.setPrefs({ simRunning: !prefs.simRunning })}>{prefs.simRunning ? <Pause size={14} /> : <Play size={14} />}</button>
       <select className="hide-sm" aria-label="Simulation speed" value={prefs.simSpeed} onChange={(e) => s.setPrefs({ simSpeed: Number(e.target.value) })} style={{ width: 64, minHeight: 26 }}>
         {[0.5, 1, 2, 4].map((v) => <option key={v} value={v}>{v}×</option>)}

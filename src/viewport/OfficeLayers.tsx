@@ -3,6 +3,8 @@
 import { memo } from 'react';
 import type { Corridor, Furniture, OfficeDoc, Room } from '../model/types';
 import { doorSegment } from '../engine/geometry';
+import { FURNITURE_META, MATERIAL_COLOR } from '../model/catalog';
+import { kelvinColor } from '../model/themes';
 
 export const G = 24; // px per cell at zoom 1
 
@@ -47,31 +49,47 @@ export const CorridorShape = memo(function CorridorShape({ c, selected, ghost }:
   );
 });
 
-function FurnitureShape({ f, x, y, w, h }: { f: Furniture; x: number; y: number; w: number; h: number }) {
+/** One object, drawn from its library entry: a body in its material plus a glyph for what it does. */
+export function FurnitureShape({ f, x, y, w, h, display, ghost }: { f: Pick<Furniture, 'type' | 'color' | 'material' | 'workstation' | 'label'> & { id?: string }; x: number; y: number; w: number; h: number; display?: string; ghost?: 'ok' | 'bad' }) {
   const px = x * G, py = y * G, pw = w * G, ph = h * G;
-  const inner = { x: px + 3, y: py + 3, w: pw - 6, h: ph - 6 };
+  const ix = px + 3, iy = py + 3, iw = pw - 6, ih = ph - 6;
+  const meta = FURNITURE_META[f.type];
   const ws = f.workstation;
+  const scr = display ?? 'var(--screen)';
   const statusColor = ws ? (ws.status === 'online' ? 'var(--accent)' : ws.status === 'maintenance' ? 'var(--warn)' : 'var(--danger)') : undefined;
+  const body = (f.material && MATERIAL_COLOR[f.material]) || f.color;
+  const cx = px + pw / 2, cy = py + ph / 2, rr = Math.min(pw, ph) / 2 - 3;
   let detail: React.ReactNode = null;
+  let round = false;
   switch (f.type) {
-    case 'desk': case 'workbench':
-      detail = <><rect x={inner.x + inner.w * 0.3} y={inner.y + 1} width={inner.w * 0.4} height={4} fill="var(--screen)" /><rect x={inner.x + 2} y={inner.y + inner.h - 4} width={inner.w - 4} height={2} fill="rgba(255,255,255,.08)" /></>;
-      break;
-    case 'monitors': detail = [0, 1, 2].map((i) => <rect key={i} x={inner.x + 2 + i * (inner.w / 3)} y={inner.y + 2} width={inner.w / 3 - 4} height={inner.h - 4} fill="var(--screen)" opacity={0.85} />); break;
-    case 'computer': detail = <rect x={inner.x + 2} y={inner.y + 2} width={inner.w - 4} height={inner.h - 6} fill="var(--screen)" />; break;
-    case 'server-rack': detail = Array.from({ length: 6 }).map((_, i) => <circle key={i} className="led" cx={inner.x + 5 + (i % 2) * 8} cy={inner.y + 6 + Math.floor(i / 2) * (inner.h / 3.2)} r={1.6} fill={i % 3 ? 'var(--accent)' : 'var(--accent-orange)'} style={{ animationDelay: `${i * 0.37}s` }} />); break;
-    case 'plant': detail = <><circle cx={px + pw / 2} cy={py + ph / 2} r={pw / 2 - 3} fill="#1f6b3a" /><circle cx={px + pw / 2 - 3} cy={py + ph / 2 - 2} r={4} fill="#2f8f4e" /></>; break;
-    case 'whiteboard': detail = <path d={`M${inner.x + 4},${inner.y + inner.h / 2} q6,-5 12,0 t12,0`} stroke="var(--accent-blue)" fill="none" strokeWidth={1.5} />; break;
-    case 'conference-table': detail = <rect x={inner.x + 4} y={inner.y + 4} width={inner.w - 8} height={inner.h - 8} rx={8} fill="rgba(76,201,255,.08)" stroke="rgba(76,201,255,.4)" />; break;
-    case 'lamp': detail = <circle cx={px + pw / 2} cy={py + ph / 2} r={6} fill="#ffe28a" opacity={0.6} filter="url(#glow)" />; break;
-    case 'sofa': detail = <rect x={inner.x} y={inner.y} width={inner.w} height={5} rx={2} fill="rgba(255,255,255,.08)" />; break;
-    default: break;
+    case 'plant': round = true; detail = <><circle cx={cx} cy={cy} r={rr} fill="#1f6b3a" /><circle cx={cx - 3} cy={cy - 2} r={rr / 2} fill="#2f8f4e" /></>; break;
+    case 'lamp': case 'floor-light': round = true; detail = <circle cx={cx} cy={cy} r={6} fill="#ffe28a" opacity={0.6} filter="url(#glow)" />; break;
+    case 'aquarium': detail = <><rect x={ix + 2} y={iy + 2} width={iw - 4} height={ih - 4} fill="#0b4a6b" opacity={0.9} /><circle cx={ix + iw * 0.3} cy={cy} r={2} fill="#ffb14a" /><circle cx={ix + iw * 0.7} cy={cy + 2} r={1.6} fill="#ff6f91" /></>; break;
+    case 'sculpture': round = true; detail = <><circle cx={cx} cy={cy} r={rr} fill={body} /><path d={`M${cx - rr / 2},${cy + rr / 2} L${cx},${cy - rr / 2} L${cx + rr / 2},${cy + rr / 2}Z`} fill="var(--accent)" opacity={0.6} /></>; break;
+    case 'deco-robot': round = true; detail = <><circle cx={cx} cy={cy} r={rr} fill="#3a4250" /><rect x={cx - 4} y={cy - 2} width={8} height={3} fill="var(--accent-blue)" /></>; break;
+    case 'conference-table': case 'strategy-table': case 'holo-table':
+      detail = <rect x={ix + 4} y={iy + 4} width={iw - 8} height={ih - 8} rx={8} fill="none" stroke={scr} strokeOpacity={0.55} />; break;
+    case 'server-rack': detail = Array.from({ length: 6 }).map((_, i) => <circle key={i} className="led" cx={ix + 5 + (i % 2) * 8} cy={iy + 6 + Math.floor(i / 2) * (ih / 3.2)} r={1.6} fill={i % 3 ? 'var(--accent)' : 'var(--accent-orange)'} style={{ animationDelay: `${i * 0.37}s` }} />); break;
+    case 'monitors': case 'multi-monitor': detail = [0, 1, 2].map((i) => <rect key={i} x={ix + 2 + i * (iw / 3)} y={iy + 2} width={iw / 3 - 4} height={ih - 4} fill={scr} opacity={0.85} />); break;
+    case 'whiteboard': detail = <path d={`M${ix + 4},${cy} q6,-5 12,0 t12,0`} stroke="var(--accent-blue)" fill="none" strokeWidth={1.5} />; break;
+    default:
+      switch (meta?.fn) {
+        case 'workstation': detail = <><rect x={ix + iw * 0.3} y={iy + 1} width={iw * 0.4} height={4} fill={scr} />{f.type === 'holo-desk' && <rect x={ix + 3} y={iy + 7} width={iw - 6} height={Math.max(2, ih - 10)} fill={scr} opacity={0.18} />}</>; break;
+        case 'display': detail = <><rect x={ix + 2} y={iy + 2} width={iw - 4} height={ih - 4} fill={scr} opacity={0.75} /><path d={`M${ix + 4},${iy + ih - 5} l${iw * 0.25},-${ih * 0.35} l${iw * 0.2},${ih * 0.15} l${iw * 0.3},-${ih * 0.3}`} stroke="rgba(0,0,0,.45)" fill="none" strokeWidth={1.2} /></>; break;
+        case 'tube': detail = <><circle cx={cx} cy={cy} r={rr} fill="#3a2f12" stroke="#d4a84a" strokeWidth={2} /><circle cx={cx} cy={cy} r={rr / 2.2} fill="#0d0d0d" /><rect x={cx - 1.5} y={py} width={3} height={4} fill="#d4a84a" /></>; round = true; break;
+        case 'archive': case 'storage': detail = [1, 2, 3].map((i) => <line key={i} x1={ix + 2} x2={ix + iw - 2} y1={iy + (ih * i) / 4} y2={iy + (ih * i) / 4} stroke="rgba(255,255,255,.18)" />); break;
+        case 'approval': case 'budget': detail = <><rect x={ix + 2} y={iy + 2} width={iw - 4} height={ih - 4} fill={scr} opacity={0.3} />{[0.3, 0.6, 0.45].map((v, i) => <rect key={i} x={ix + 4 + i * (iw - 8) / 3} y={iy + ih - 2 - (ih - 6) * v} width={(iw - 8) / 3 - 2} height={(ih - 6) * v} fill={f.type === 'approval-kiosk' ? 'var(--accent)' : 'var(--warn)'} />)}</>; break;
+        case 'charging': detail = <path d={`M${cx + 2},${iy + 2} L${cx - 3},${cy + 1} L${cx + 1},${cy + 1} L${cx - 2},${iy + ih - 2}`} stroke="var(--warn)" fill="none" strokeWidth={2} />; break;
+        case 'seating': detail = <rect x={ix} y={iy} width={iw} height={5} rx={2} fill="rgba(255,255,255,.08)" />; break;
+        default: break;
+      }
   }
-  const round = f.type === 'plant' || f.type === 'lamp';
+  const tint = ghost === 'bad' ? 'var(--danger)' : ghost === 'ok' ? 'var(--accent)' : undefined;
   return (
-    <g data-kind="furniture" data-id={f.id} className="furniture">
-      {!round && <rect x={inner.x} y={inner.y} width={inner.w} height={inner.h} rx={2} fill={f.color} stroke="rgba(57,255,136,.35)" strokeWidth={1} />}
+    <g data-kind={ghost ? undefined : 'furniture'} data-id={f.id} className="furniture" opacity={ghost ? 0.75 : 1}>
+      {!round && <rect className="f-body" x={ix} y={iy} width={iw} height={ih} rx={2} fill={body} stroke={tint ?? 'color-mix(in srgb, var(--accent) 35%, transparent)'} strokeWidth={tint ? 2 : 1} />}
       {detail}
+      {round && tint && <circle cx={cx} cy={cy} r={rr + 1} fill="none" stroke={tint} strokeWidth={2} />}
       {statusColor && <circle cx={px + pw - 5} cy={py + 5} r={2.5} fill={statusColor} />}
     </g>
   );
@@ -97,30 +115,34 @@ export const RoomShape = memo(function RoomShape({
     segs.forEach(([a, b], i) => walls.push(horiz
       ? <line key={`${side}${i}`} x1={a * G} y1={fixed * G} x2={b * G} y2={fixed * G} />
       : <line key={`${side}${i}`} x1={fixed * G} y1={a * G} x2={fixed * G} y2={b * G} />));
-    for (const g of gaps) walls.push(<line key={`d${side}${g.a.x}${g.a.y}`} className="door-mark" x1={g.a.x * G} y1={g.a.y * G} x2={g.b.x * G} y2={g.b.y * G} stroke={acc} strokeOpacity={0.5} strokeWidth={2} strokeDasharray="3 3" />);
+    for (const g of gaps) walls.push(<line key={`d${side}${g.a.x}${g.a.y}`} className="door-mark" x1={g.a.x * G} y1={g.a.y * G} x2={g.b.x * G} y2={g.b.y * G} stroke={room.appearance.doorColor || 'var(--door)'} strokeOpacity={0.7} strokeWidth={2} strokeDasharray="3 3" />);
   }
   const floor = `url(#fl-${room.appearance.floor})`;
+  const ap = room.appearance;
+  const wall = room.walls.style === 'glass' ? 'var(--accent-blue)' : ap.wallColor || 'var(--wall)';
   return (
     <g className={`room${selected ? ' selected' : ''}${invalid ? ' invalid' : ''}`}>
-      <rect data-kind="room" data-id={room.id} x={x} y={y} width={w} height={h} fill={floor} />
-      <rect x={x} y={y} width={w} height={h} fill={acc} opacity={0.04 + room.appearance.lighting * 0.06} pointerEvents="none" />
+      {ap.floorColor && <rect x={x} y={y} width={w} height={h} fill={ap.floorColor} pointerEvents="none" />}
+      <rect data-kind="room" data-id={room.id} x={x} y={y} width={w} height={h} fill={floor} opacity={ap.floorColor ? 0.45 : 1} />
+      <rect x={x} y={y} width={w} height={h} fill={ap.lightTemp ? kelvinColor(ap.lightTemp) : 'var(--light)'} opacity={0.03 + ap.lighting * 0.07} pointerEvents="none" />
+      {ap.effect === 'ambient-glow' && <rect x={x} y={y} width={w} height={h} fill="none" stroke={acc} strokeOpacity={0.25} strokeWidth={10} filter="url(#glow)" pointerEvents="none" />}
       <g pointerEvents="none">
         {furniture.map((f) => {
           const rot = f.rotation === 90 || f.rotation === 270;
-          return <FurnitureShape key={f.id} f={f} x={room.x + f.x} y={room.y + f.y} w={rot ? f.h : f.w} h={rot ? f.w : f.h} />;
+          return <FurnitureShape key={f.id} f={ap.furnitureMaterial && ap.furnitureMaterial !== 'default' && !f.material ? { ...f, material: ap.furnitureMaterial } : f} x={room.x + f.x} y={room.y + f.y} w={rot ? f.h : f.w} h={rot ? f.w : f.h} display={ap.displayColor} />;
         })}
       </g>
-      <g stroke={room.walls.style === 'glass' ? 'var(--accent-blue)' : room.appearance.wallColor} strokeWidth={room.walls.thickness * 2} strokeLinecap="square" opacity={room.walls.style === 'glass' ? 0.6 : 1} pointerEvents="none">{walls}</g>
+      <g stroke={wall} strokeWidth={room.walls.thickness * 2} strokeLinecap="square" opacity={room.walls.style === 'glass' ? 0.6 : 1} pointerEvents="none">{walls}</g>
       {showBoundary && <rect x={x + 3} y={y + 3} width={w - 6} height={h - 6} fill="none" stroke={acc} strokeOpacity={0.35} strokeWidth={1} strokeDasharray={construct ? '4 4' : undefined} pointerEvents="none" />}
       {invalid && <rect className="pulse" x={x - 2} y={y - 2} width={w + 4} height={h + 4} fill="rgba(255,93,115,.12)" stroke="var(--danger)" strokeWidth={3} pointerEvents="none" />}
       {selected && <rect x={x - 3} y={y - 3} width={w + 6} height={h + 6} fill="none" stroke="var(--accent)" strokeWidth={2} filter="url(#glow)" pointerEvents="none" />}
       {showLabel && (
         <g pointerEvents="none">
-          <rect x={x + 6} y={y + 6} width={Math.min(w - 12, room.name.length * 7.4 + 14)} height={17} fill="rgba(0,0,0,.65)" stroke={acc} strokeOpacity={0.6} />
+          <rect x={x + 6} y={y + 6} width={Math.min(w - 12, room.name.length * 7.4 + 14)} height={17} fill="var(--label-bg)" stroke={acc} strokeOpacity={0.6} />
           <text x={x + 13} y={y + 18} className="room-label" fill={acc}>{room.name.toUpperCase()}</text>
           {occupancy !== null && (
             <g>
-              <rect x={x + w - 34} y={y + 6} width={28} height={17} fill="rgba(0,0,0,.65)" stroke={acc} strokeOpacity={0.6} />
+              <rect x={x + w - 34} y={y + 6} width={28} height={17} fill="var(--label-bg)" stroke={acc} strokeOpacity={0.6} />
               <text x={x + w - 20} y={y + 18} className="room-label" textAnchor="middle" fill={occupancy ? acc : 'var(--muted)'}>{occupancy}</text>
             </g>
           )}
