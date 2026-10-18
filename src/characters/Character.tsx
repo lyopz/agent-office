@@ -4,6 +4,7 @@
 import { memo, useId } from 'react';
 import type { Appearance, ViewMode } from '../model/types';
 import { shade } from './color';
+import { EquipmentExtra, FrontBack, FrontBody, FrontFaceExtras, FrontOver, SideExtras, TopExtras, handColor } from './extras';
 
 export type Pose = 'idle' | 'walk' | 'work';
 
@@ -136,7 +137,7 @@ function Equipment({ c, x, y, side }: { c: Ctx; x: number; y: number; side?: boo
     case 'laptop': return side
       ? <g {...s}><rect x={x - 2} y={y - 12} width={3} height={12} fill="#2a2f33" /><rect x={x - 2} y={y} width={16} height={2.5} fill="#3a4045" /></g>
       : <g {...s}><rect x={x - 9} y={y - 6} width={18} height={11} rx={1} fill="#2a2f33" /><rect x={x - 7} y={y - 4} width={14} height={7} fill={a.accent} opacity={0.45} stroke="none" /></g>;
-    default: return null;
+    default: return <EquipmentExtra a={a} s={s} x={x} y={y} side={side} />;
   }
 }
 
@@ -144,7 +145,7 @@ function TopDetails({ c, x0, w, y0, h }: { c: Ctx; x0: number; w: number; y0: nu
   const { a, s } = c;
   const cx = x0 + w / 2;
   switch (a.top) {
-    case 'suit': return <g><path d={`M${cx - 7},${y0} L${cx},${y0 + 20} L${cx + 7},${y0}`} fill="#e9ecef" stroke="none" /><path d={`M${cx - 1.5},${y0 + 3} L${cx + 1.5},${y0 + 3} L${cx + 2.5},${y0 + 20} L${cx},${y0 + 24} L${cx - 2.5},${y0 + 20} Z`} fill={a.accent} stroke="none" /><path d={`M${cx - 8},${y0} L${cx - 2},${y0 + 22} M${cx + 8},${y0} L${cx + 2},${y0 + 22}`} stroke={shade(a.topColor, -0.4)} strokeWidth={1.4} fill="none" /></g>;
+    case 'suit': return <g><path d={`M${cx - 7},${y0} L${cx},${y0 + 20} L${cx + 7},${y0}`} fill="#e9ecef" stroke="none" /><path d={`M${cx - 8},${y0} L${cx - 2},${y0 + 22} M${cx + 8},${y0} L${cx + 2},${y0 + 22}`} stroke={shade(a.topColor, -0.4)} strokeWidth={1.4} fill="none" /></g>;
     case 'labcoat': return <g><rect x={cx - 4} y={y0} width={8} height={h} fill={shade(a.topColor, -0.55)} stroke="none" /><path d={`M${cx - 4},${y0} L${cx - 4},${y0 + h + 22} M${cx + 4},${y0} L${cx + 4},${y0 + h + 22}`} stroke={shade(a.topColor, -0.25)} strokeWidth={1} /><rect x={x0 + 4} y={y0 + 24} width={7} height={6} fill="none" stroke={shade(a.topColor, -0.25)} /></g>;
     case 'hoodie': return <g {...s}><rect x={cx - 9} y={y0 + 28} width={18} height={9} rx={3} fill={shade(a.topColor, -0.15)} /><path d={`M${cx - 3},${y0 + 2} l0,10 M${cx + 3},${y0 + 2} l0,10`} stroke="#ddd" strokeWidth={1} /></g>;
     case 'coverall': return <g><rect x={x0 + 4} y={y0 + 8} width={8} height={7} fill={shade(a.topColor, -0.2)} {...s} /><rect x={x0 + w - 12} y={y0 + 8} width={8} height={7} fill={shade(a.topColor, -0.2)} {...s} /><path d={`M${cx},${y0 + 2} L${cx},${y0 + h}`} stroke={shade(a.topColor, -0.35)} strokeWidth={1.2} /></g>;
@@ -181,14 +182,15 @@ function Front({ c, turn }: { c: Ctx; turn: number }) {
           <rect x={l.x - 1.5} y={l.end - (boots ? 9 : 2)} width={lw + 2} height={boots ? 14 : 7} rx={a.shoes === 'dress' ? 2 : 3} fill={a.shoeColor} {...s} />
         </g>
       ))}
+      <FrontBack c={c} x0={x0} tw={tw} />
       {skirt && <path d={`M${x0 + 1},98 L${x0 + tw - 1},98 L${x0 + tw + 4},124 L${x0 - 4},124 Z`} fill={a.bottomColor} {...s} />}
       {a.top === 'labcoat' && <path d={`M${x0 - 2},62 L${x0 + tw + 2},62 L${x0 + tw + 5},124 L${x0 - 5},124 Z`} fill={a.topColor} {...s} />}
       {/* far arm / near arm */}
       {!crossed && [{ x: x0 - 8, sw: step, side: -1 }, { x: x0 + tw, sw: -step, side: 1 }].map((arm, i) => {
-        if (hips) return <g key={i}><path d={`M${arm.x + 4},${armTop} L${arm.x + 4 + arm.side * 6},${82} L${arm.x + 4 - arm.side * 1},${96}`} stroke={sleeve} strokeWidth={8} fill="none" strokeLinecap="round" /><circle cx={arm.x + 4 - arm.side} cy={96} r={4.2} fill={a.skinTone} {...s} /></g>;
-        if (typing) return <g key={i}><rect x={arm.x} y={armTop} width={8} height={22} rx={4} fill={sleeve} {...s} /><rect x={i ? arm.x - 12 : arm.x} y={78 + bob * (i ? -1 : 1)} width={20} height={7} rx={3.5} fill={sleeve} {...s} /><circle cx={i ? arm.x - 12 : arm.x + 20} cy={81.5 + bob * (i ? -1 : 1)} r={4} fill={a.skinTone} {...s} /></g>;
+        if (hips) return <g key={i}><path d={`M${arm.x + 4},${armTop} L${arm.x + 4 + arm.side * 6},${82} L${arm.x + 4 - arm.side * 1},${96}`} stroke={sleeve} strokeWidth={8} fill="none" strokeLinecap="round" /><circle cx={arm.x + 4 - arm.side} cy={96} r={4.2} fill={handColor(a)} {...s} /></g>;
+        if (typing) return <g key={i}><rect x={arm.x} y={armTop} width={8} height={22} rx={4} fill={sleeve} {...s} /><rect x={i ? arm.x - 12 : arm.x} y={78 + bob * (i ? -1 : 1)} width={20} height={7} rx={3.5} fill={sleeve} {...s} /><circle cx={i ? arm.x - 12 : arm.x + 20} cy={81.5 + bob * (i ? -1 : 1)} r={4} fill={handColor(a)} {...s} /></g>;
         const len = 36 + arm.sw;
-        return <g key={i}><rect x={arm.x} y={armTop} width={8} height={len} rx={4} fill={a.top === 'tshirt' ? a.skinTone : sleeve} {...s} />{a.top === 'tshirt' && <rect x={arm.x} y={armTop} width={8} height={12} rx={3} fill={sleeve} {...s} />}<circle cx={arm.x + 4} cy={armTop + len + 2} r={4.4} fill={a.skinTone} {...s} /></g>;
+        return <g key={i}><rect x={arm.x} y={armTop} width={8} height={len} rx={4} fill={a.top === 'tshirt' ? a.skinTone : sleeve} {...s} />{a.top === 'tshirt' && <rect x={arm.x} y={armTop} width={8} height={12} rx={3} fill={sleeve} {...s} />}<circle cx={arm.x + 4} cy={armTop + len + 2} r={4.4} fill={handColor(a)} {...s} /></g>;
       })}
       {/* torso */}
       <rect x={x0} y={58} width={tw} height={44} rx={7} fill={a.top === 'vest' ? shade(a.topColor, 0.35) : a.topColor} {...s} />
@@ -196,10 +198,11 @@ function Front({ c, turn }: { c: Ctx; turn: number }) {
       <TopDetails c={c} x0={x0} w={tw} y0={58} h={44} />
       <Shade c={c}><rect x={x0} y={58} width={tw} height={44} rx={7} /></Shade>
       <rect x={x0} y={58} width={tw} height={20} rx={7} fill={`url(#${c.gid}-light)`} stroke="none" />
+      <FrontBody c={c} x0={x0} tw={tw} step={step} />
       {a.equipment === 'toolbelt' && <g {...s}><rect x={x0 - 1} y={96} width={tw + 2} height={6} fill="#3a2a14" /><rect x={x0 + 2} y={99} width={7} height={9} fill="#5a4020" /><rect x={x0 + tw - 9} y={99} width={7} height={9} fill="#5a4020" /></g>}
       {a.jewelry === 'badge' && <rect x={x0 + 5} y={66} width={7} height={9} rx={1} fill={a.accent} {...s} />}
       {a.jewelry === 'necklace' && <path d="M43,60 Q50,70 57,60" fill="none" stroke="#e8c45a" strokeWidth={1.4} />}
-      {crossed && <g><rect x={x0 - 4} y={74} width={tw + 8} height={10} rx={5} fill={shade(sleeve, -0.1)} {...s} /><circle cx={x0 + 2} cy={79} r={4} fill={a.skinTone} {...s} /><circle cx={x0 + tw - 2} cy={79} r={4} fill={a.skinTone} {...s} /></g>}
+      {crossed && <g><rect x={x0 - 4} y={74} width={tw + 8} height={10} rx={5} fill={shade(sleeve, -0.1)} {...s} /><circle cx={x0 + 2} cy={79} r={4} fill={handColor(a)} {...s} /><circle cx={x0 + tw - 2} cy={79} r={4} fill={handColor(a)} {...s} /></g>}
       {!typing && !crossed && !hips && <Equipment c={c} x={x0 + tw + 4} y={armTop + 38 - step} />}
       {typing && a.equipment === 'laptop' && <Equipment c={c} x={50} y={88} />}
       {/* neck + head */}
@@ -213,8 +216,10 @@ function Front({ c, turn }: { c: Ctx; turn: number }) {
         : <ellipse cx={hx} cy={37} rx={a.faceShape === 'round' ? 17 : 15} ry={18} fill={a.skinTone} {...s} />}
       <Shade c={c}><ellipse cx={hx} cy={37} rx={15} ry={18} /></Shade>
       <FrontFace c={c} hx={hx} turn={turn} />
+      <FrontFaceExtras c={c} hx={hx} turn={turn} />
       <FrontHair c={c} hx={hx} />
       <FrontHeadwear c={c} hx={hx} />
+      <FrontOver c={c} hx={hx} x0={x0} tw={tw} step={step} />
     </g>
   );
 }
@@ -242,8 +247,9 @@ function Side({ c }: { c: Ctx }) {
   return (
     <g>
       {/* far limbs */}
+      <SideExtras c={c} bodyX={bodyX} td={td} layer="back" />
       {legShape(-swing, far(leg), 'far-leg')}
-      <g transform={`rotate(${work ? armAngle + 8 : swing} 50 62)`}><rect x={46} y={60} width={8} height={36} rx={4} fill={far(sleeve)} {...s} /><circle cx={50} cy={98} r={4} fill={far(a.skinTone)} {...s} /></g>
+      <g transform={`rotate(${work ? armAngle + 8 : swing} 50 62)`}><rect x={46} y={60} width={8} height={36} rx={4} fill={far(sleeve)} {...s} /><circle cx={50} cy={98} r={4} fill={far(handColor(a))} {...s} /></g>
       {legShape(swing, leg, 'near-leg')}
       {a.top === 'labcoat' && <path d={`M${bodyX - 2},62 L${bodyX + td + 1},62 L${bodyX + td + 2},104 L${bodyX - 6},124 Z`} fill={a.topColor} {...s} />}
       {a.bottom === 'skirt' && a.top !== 'coverall' && <path d={`M${bodyX},98 L${bodyX + td},98 L${bodyX + td + 5},122 L${bodyX - 5},122 Z`} fill={a.bottomColor} {...s} />}
@@ -257,12 +263,13 @@ function Side({ c }: { c: Ctx }) {
       {a.jewelry === 'badge' && <rect x={bodyX + td - 7} y={66} width={5} height={8} rx={1} fill={a.accent} {...s} />}
       <Shade c={c}><rect x={bodyX} y={58} width={td} height={44} rx={8} /></Shade>
       <rect x={bodyX} y={58} width={td} height={18} rx={8} fill={`url(#${c.gid}-light)`} stroke="none" />
+      <SideExtras c={c} bodyX={bodyX} td={td} layer="body" />
       {a.top === 'hoodie' && <path d={`M${bodyX - 4},66 Q${bodyX - 6},52 ${bodyX + 8},54`} fill={shade(a.topColor, -0.2)} {...s} />}
       {/* near arm */}
       <g transform={`rotate(${armAngle} 50 62)`}>
         <rect x={46} y={60} width={8} height={36} rx={4} fill={a.top === 'tshirt' ? a.skinTone : sleeve} {...s} />
         {a.top === 'tshirt' && <rect x={46} y={60} width={8} height={12} rx={3} fill={sleeve} {...s} />}
-        <circle cx={50} cy={98} r={4.4} fill={a.skinTone} {...s} />
+        <circle cx={50} cy={98} r={4.4} fill={handColor(a)} {...s} />
         {!(pose === 'idle' && a.idlePose === 'arms-crossed') && <g transform="translate(0 0)"><Equipment c={c} x={50} y={100} side /></g>}
       </g>
       {/* head */}
@@ -297,6 +304,7 @@ function Side({ c }: { c: Ctx }) {
       {a.headwear === 'helmet' && <g {...s}><path d="M35,44 Q34,8 53,8 Q70,8 70,32 L70,36 L52,36 L50,44 Z" fill={a.headwearColor} /><rect x={58} y={28} width={13} height={9} rx={3} fill={a.accent} opacity={0.4} /></g>}
       {a.headwear === 'beanie' && <g {...s}><path d="M37,28 Q38,6 53,7 Q67,8 67,28 Z" fill={a.headwearColor} /><rect x={36} y={24} width={32} height={6} rx={3} fill={shade(a.headwearColor, -0.2)} /></g>}
       {a.headwear === 'headset' && <g {...s}><path d="M42,32 Q46,10 60,16" fill="none" stroke={a.headwearColor} strokeWidth={3} /><rect x={42} y={33} width={8} height={11} rx={3} fill={a.headwearColor} /><path d="M48,43 Q56,52 64,48" fill="none" stroke={a.headwearColor} strokeWidth={1.6} /></g>}
+      <SideExtras c={c} bodyX={bodyX} td={td} layer="head" />
     </g>
   );
 }
@@ -311,14 +319,15 @@ function Top({ c }: { c: Ctx }) {
   return (
     <g>
       <ellipse cx={50} cy={56} rx={rx + 4} ry={18} fill="#000" opacity={0.35} stroke="none" />
+      <TopExtras c={c} rx={rx} layer="under" />
       {/* feet peek out when walking */}
       {pose === 'walk' && <g {...s}><ellipse cx={42} cy={50 - st * 1.6} rx={4.5} ry={7} fill={a.shoeColor} /><ellipse cx={58} cy={50 + st * 1.6} rx={4.5} ry={7} fill={a.shoeColor} /></g>}
       {/* arms */}
       <g {...s}>
         <ellipse cx={50 - rx - 1} cy={52 + st} rx={5} ry={9} fill={a.top === 'tshirt' ? a.skinTone : sleeveColor(a)} />
         <ellipse cx={50 + rx + 1} cy={52 - st} rx={5} ry={9} fill={a.top === 'tshirt' ? a.skinTone : sleeveColor(a)} />
-        <circle cx={50 - rx - 1} cy={44 + st} r={4} fill={a.skinTone} />
-        <circle cx={50 + rx + 1} cy={44 - st} r={4} fill={a.skinTone} />
+        <circle cx={50 - rx - 1} cy={44 + st} r={4} fill={handColor(a)} />
+        <circle cx={50 + rx + 1} cy={44 - st} r={4} fill={handColor(a)} />
       </g>
       {a.top === 'labcoat' && <ellipse cx={50} cy={56} rx={rx + 2} ry={16} fill={a.topColor} {...s} />}
       <ellipse cx={50} cy={52} rx={rx} ry={13} fill={a.topColor} {...s} />
@@ -343,6 +352,7 @@ function Top({ c }: { c: Ctx }) {
       {a.headwear === 'beanie' && <g {...s}><circle cx={50} cy={49} r={13} fill={a.headwearColor} /><circle cx={50} cy={49} r={3.5} fill={shade(a.headwearColor, 0.3)} /></g>}
       {a.headwear === 'headset' && <path d="M37,48 Q50,40 63,48" stroke={a.headwearColor} strokeWidth={3} fill="none" />}
       {a.glasses === 'visor' && <path d="M40,40 Q50,35 60,40" stroke={a.accent} strokeWidth={3} fill="none" filter={`url(#${c.gid}-glow)`} />}
+      <TopExtras c={c} rx={rx} layer="over" />
     </g>
   );
 }

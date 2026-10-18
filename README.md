@@ -66,6 +66,18 @@ The app needs no account, backend, or API key. It opens with a sample office, "N
 
 The full shortcut list is under **Settings**.
 
+## AI Headquarters
+
+The sample office now includes the NEXUS-7 Headquarters wing: an executive suite, a library, finance, engineering, design, a studio and a market-intelligence room. It is staffed by eight role agents (ORION the president, CODEX the librarian, VECTOR the COO, LEDGER the CFO, SCOUT, FORGE, MUSE and BOLT), each with its own look, tools, budget and workstation.
+
+- **Object library and placement.** Open the object library from the toolbar to browse holo-desks, archive terminals, tube stations, vaults and more. The placement ghost turns red when an object would overlap another, sit outside the room or block a door. Shift-click or shift-drag selects several objects. Dragging a group moves it as one with its spacing kept. Ctrl+D duplicates, E rotates and the arrow keys nudge. The toolbar can arrange objects in rows, align them, group them and copy a style.
+- **Remodelling commands.** The console understands commands such as "Add a librarian archive terminal against the back wall", "Add a tube station beside every research desk", "Replace the executive desk with a wider black titanium desk", "Make the lighting warmer and the floor dark graphite", "Arrange the desks in two aligned rows" and "Add plants without blocking doors".
+- **Characters and wardrobe.** "New agent → From role…" creates an agent from an archetype. The Wardrobe tab in a profile saves outfits, applies them to other agents, issues approved uniforms to a department and restores the default look. Changing clothes never touches identity, permissions or memory. Functional equipment, such as a ledger slate, can only be worn by an agent that has the matching tool.
+- **Themes.** Settings → Theme switches between dark, light and system modes, edits colour tokens with a contrast check, and saves, exports and imports themes. Room palettes, such as the library's, are stored on the room and don't change with the global theme. Characters look the same in every theme.
+- **Alerts and sounds.** The bell in the top bar opens the alert centre. Identical alerts are grouped. Repeated failures are escalated, and unacknowledged alerts climb a level over time. Settings → Alerts picks a sound per severity, previews it and fires a test alert. It also sets quiet hours, mutes categories and sets thresholds. Critical alerts always sound. Routine information never makes noise.
+- **Business.** The dashboard shows projects with budgets and usage records, approvals, tube handoffs and the knowledge library. A spend above an agent's limit, an action on the owner's approval list, or a tool the agent hasn't been granted pauses the task until you approve it. Priority tasks travel between rooms in pneumatic-tube capsules, and the recipient acknowledges them on arrival.
+- **Performance.** Rooms and hallways outside the view are not drawn. Collision checks use a spatial index. A drag is drawn as a temporary overlay and committed once when you let go. The gauge button shows frame and tick timings.
+
 ## What is simulated and what is live
 
 | Area | Status |
@@ -75,6 +87,8 @@ The full shortcut list is under **Settings**.
 | Agent "work": task progress, demo tasks, messages between agents, CPU and memory figures | **Simulated.** Labelled "sim" throughout the interface. No model runs for agents. |
 | AI console with the default **Simulated AI** provider | **Simulated.** A local rule-based interpreter. No model is called and no key is needed. |
 | AI console with the **Live model** provider | **Live.** Sends commands to a model through `server/ai-proxy.mjs`. The model's reply is checked against the schema, applied to a draft, and validated before you see a preview. |
+| Budgets, usage records and spend alerts | **Simulated.** Usage comes from simulated task work and every record is marked `simulated`. |
+| Alert delivery | In-app and sound are **real**. Sound reports "permission needed" until you click once to enable audio. Desktop notifications are real once you allow them. Email, messaging and push say **not connected**, because they need a server-side service, and nothing is ever reported as sent when it wasn't. |
 | Personality and AI-model settings | Saved with the agent, and sent to the live provider as instructions. They have no effect on the simulation. |
 
 ### Connecting a live model
@@ -118,8 +132,14 @@ src/
                 idle / walk / work poses, flat / neon / realistic / pixel styles
   viewport/     floor plan canvas, rooms, corridors, agents, minimap, context menu
   ai/           rule-based interpreter (parser.ts), provider layer (mock / remote / off)
+  engine/       … plus spatial (object index, placement checks) · alerts (dedupe,
+                escalation, delivery) · governance (usage, budgets, approvals) ·
+                tubes (capsule network) · library (knowledge search)
+  ai/remodel.ts object-level remodelling commands
   ui/           panels, inspector, profile drawer, appearance editor, console,
-                dashboard, settings, shared form primitives
+                dashboard, settings, shared form primitives, object library,
+                wardrobe, theme editor, alert centre, alert settings, business
+                panels, sound (WebAudio), perf panel
 server/ai-proxy.mjs   server-side model proxy (key lives here)
 tests/                acceptance suite
 examples/             sample-office.json (valid) and malformed-office.json (rejected)
@@ -132,7 +152,7 @@ There are three layers of state:
 - **runtime**: positions, tasks and events. It is saved but not undoable.
 - **ui**: never saved.
 
-**Schema.** `schemaVersion` is currently 2. Version-1 files migrate automatically. Imports check both the shape of the data and references between objects, such as a hallway pointing at a room that doesn't exist.
+**Schema.** `schemaVersion` is currently 3. Version-1 and version-2 files migrate automatically. Imports check both the shape of the data and references between objects, such as a hallway pointing at a room that doesn't exist.
 
 ## Acceptance tests
 
@@ -157,6 +177,30 @@ All 15 required tests live in `tests/acceptance.test.ts` and run against the rea
 | 15 | Import | A valid export loads. Broken JSON, the wrong shape, a bad field type, and a dangling reference are each rejected, and the current office is left untouched. |
 
 The suite also checks secret stripping and runs the 11 example commands from the brief through the interpreter.
+
+### AI Headquarters tests
+
+The 15 tests from the headquarters specification live in `tests/hq.acceptance.test.ts`:
+
+| # | Requirement | Test |
+|---|---|---|
+| 1 | Librarian and president differ | Archetype, title, role, outfit, tools, workstation type, room type and rendered drawing all differ. |
+| 2 | Outfit change keeps identity | Identity, permissions, memory, skills, AI settings and budget are unchanged, and the default look can be restored. |
+| 3 | Reuse an outfit | An outfit saved from ORION applied to SCOUT copies the look and leaves SCOUT's identity alone. |
+| 4 | Add HQ objects | A holo-desk, an archive terminal and a tube station are placed with no errors or overlaps. |
+| 5 | Move a group | Relative spacing and the group are kept. |
+| 6 | Dark to light | Theme variables change; agents and their rendered drawings are identical. |
+| 7 | Library palette | The room's colours survive mode and theme changes, and other rooms are untouched. |
+| 8 | Sound and test alert | The chosen sound is delivered. Before audio is allowed it reports "permission needed", and email, messaging and push report "not connected". |
+| 9 | Budget warning | The alert carries the project id and links to that project's usage records. |
+| 10 | Tube delivery | A critical task travels from the executive suite to the library and CODEX acknowledges it. |
+| 11 | Approval | An over-limit spend waits for approval; approving queues the task and resolves the alert. |
+| 12 | Remodel while active | A remodel commits mid-simulation in under 1.5 s, and agents and tasks are preserved. |
+| 13 | Save and reload | Object positions, theme, room palette, appearance, sounds, quiet hours and thresholds round-trip, and the saved file has no secrets. |
+| 14 | Repeated failure | Repeats group into one alert that is escalated to high. |
+| 15 | No overwhelm | 600 ticks of routine work produce at most 3 audible alerts. Info never sounds, and critical still sounds through quiet hours and mute. |
+
+A performance test builds an office of 48 rooms, more than 570 objects and 60 agents, and checks the timing of placement checks, a group move with validation, and simulation ticks.
 
 ## Extending
 

@@ -6,7 +6,7 @@ import type { Furniture, Point, Rect, Room } from '../model/types';
 import type { DocOp } from '../engine/ops';
 import { applyOps } from '../engine/ops';
 import { boundsOf, clampDoor, rectsOverlap, snap } from '../engine/geometry';
-import { AgentPaths, AgentsLayer } from './AgentsLayer';
+import { AgentPaths, AgentsLayer, CapsulesLayer } from './AgentsLayer';
 import { CorridorShape, FloorPatterns, FurnitureShape, G, RoomShape, corridorPx, useFurnitureByRoom } from './OfficeLayers';
 import { checkPlacement, footprint } from '../engine/spatial';
 import { FURNITURE_META } from '../model/catalog';
@@ -397,7 +397,7 @@ export function Viewport() {
               {Object.values(preview.doc.rooms).map((r) => {
                 const cur = doc.rooms[r.id];
                 const changed = !cur || cur.x !== r.x || cur.y !== r.y || cur.w !== r.w || cur.h !== r.h;
-                return changed ? <rect key={r.id} x={r.x * G} y={r.y * G} width={r.w * G} height={r.h * G} fill="rgba(76,201,255,.12)" stroke="var(--accent-blue)" strokeWidth={2} strokeDasharray="8 5" /> : null;
+                return changed ? <rect key={r.id} x={r.x * G} y={r.y * G} width={r.w * G} height={r.h * G} fill="color-mix(in srgb, var(--accent-blue) 12%, transparent)" stroke="var(--accent-blue)" strokeWidth={2} strokeDasharray="8 5" /> : null;
               })}
             </g>
           )}
@@ -431,12 +431,13 @@ export function Viewport() {
             const x = Math.min(drag.start.x, drag.cur.x), y = Math.min(drag.start.y, drag.cur.y);
             const w = Math.abs(drag.cur.x - drag.start.x) + 1, h = Math.abs(drag.cur.y - drag.start.y) + 1;
             const bad = Object.values(doc.rooms).some((r) => rectsOverlap({ x, y, w, h }, r)) || w < 3 || h < 3;
-            return <g pointerEvents="none"><rect x={x * G} y={y * G} width={w * G} height={h * G} fill={bad ? 'rgba(255,93,115,.15)' : 'rgba(57,255,136,.12)'} stroke={bad ? 'var(--danger)' : 'var(--accent)'} strokeDasharray="6 4" strokeWidth={2} /><text x={x * G + 6} y={y * G - 6} className="room-label" fill="var(--accent)">{w}×{h}</text></g>;
+            return <g pointerEvents="none"><rect x={x * G} y={y * G} width={w * G} height={h * G} fill={bad ? 'color-mix(in srgb, var(--danger) 15%, transparent)' : 'color-mix(in srgb, var(--accent) 12%, transparent)'} stroke={bad ? 'var(--danger)' : 'var(--accent)'} strokeDasharray="6 4" strokeWidth={2} /><text x={x * G + 6} y={y * G - 6} className="room-label" fill="var(--accent)">{w}×{h}</text></g>;
           })()}
           {drag?.type === 'rooms' && drag.moved && drag.ids.map((id) => { const r = doc.rooms[id]; return <rect key={id} x={r.x * G} y={r.y * G} width={r.w * G} height={r.h * G} fill="none" stroke="var(--muted)" strokeDasharray="4 4" pointerEvents="none" />; })}
           {(drag?.type === 'rooms' || drag?.type === 'resize') && selRoom && <text x={selRoom.x * G} y={selRoom.y * G - 8} className="room-label" fill={overlapping.size ? 'var(--danger)' : 'var(--accent)'}>{`x ${selRoom.x}  y ${selRoom.y}  ${selRoom.w}×${selRoom.h}${overlapping.size ? '  OVERLAP' : ''}`}</text>}
           {layers.paths && <AgentPaths />}
           <AgentsLayer />
+          <CapsulesLayer />
           {hallwayDraft && doc.rooms[hallwayDraft.roomId] && <rect x={doc.rooms[hallwayDraft.roomId].x * G - 4} y={doc.rooms[hallwayDraft.roomId].y * G - 4} width={doc.rooms[hallwayDraft.roomId].w * G + 8} height={doc.rooms[hallwayDraft.roomId].h * G + 8} fill="none" stroke="var(--accent-blue)" strokeWidth={3} strokeDasharray="10 6" className="march" pointerEvents="none" />}
         </g>
       </svg>

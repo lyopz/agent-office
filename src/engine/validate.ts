@@ -111,7 +111,7 @@ export function validate(doc: OfficeDoc): Issue[] {
 
   // functional equipment must be backed by a real tool permission
   for (const a of Object.values(doc.agents)) {
-    const tools = new Set([...a.skills.tools, ...a.permissions.allowedTools]);
+    const tools = new Set(a.permissions.allowedTools);
     for (const id of a.appearance.accessories ?? []) {
       const acc = ACCESSORY[id];
       if (acc?.functionalTool && !tools.has(acc.functionalTool)) issues.push({ id: `equip:${a.id}:${id}`, severity: 'warning', code: 'equipment-unauthorised', message: `${a.identity.name} wears ${acc.label} but lacks the “${acc.functionalTool}” tool`, objectIds: [a.id],

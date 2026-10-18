@@ -8,13 +8,14 @@ import { uid } from '../model/defaults';
 import { stripSecrets } from '../model/schema';
 import { Character } from '../characters/Character';
 import { STATUS_COLOR } from '../viewport/AgentsLayer';
+import { Wardrobe } from './Wardrobe';
 import { AppearanceEditor } from './AppearanceEditor';
 import { ChipsInput, NumberField, SelectField, Slider, TextField, Toggle, confirmAction } from './primitives';
 import { deleteAgent } from './actions';
 
 const TABS = [
   ['identity', 'Identity'], ['personality', 'Personality'], ['skills', 'Skills & roles'], ['ai', 'AI model'], ['memory', 'Memory'],
-  ['schedule', 'Schedule & tasks'], ['appearance', 'Appearance'], ['activity', 'Activity & logs'], ['permissions', 'Permissions'],
+  ['schedule', 'Schedule & tasks'], ['appearance', 'Appearance'], ['wardrobe', 'Wardrobe'], ['activity', 'Activity & logs'], ['permissions', 'Permissions'],
 ] as const;
 
 type Up = (patch: DeepPartial<Omit<Agent, 'id'>>, label?: string) => void;
@@ -339,6 +340,7 @@ export function ProfileDrawer() {
         {tab === 'memory' && <Memory a={agent} up={up} />}
         {tab === 'schedule' && <Schedule a={agent} up={up} />}
         {tab === 'appearance' && <AppearanceEditor agent={agent} />}
+        {tab === 'wardrobe' && <Wardrobe agent={agent} />}
         {tab === 'activity' && <Activity a={agent} />}
         {tab === 'permissions' && <Permissions a={agent} up={up} />}
       </div>

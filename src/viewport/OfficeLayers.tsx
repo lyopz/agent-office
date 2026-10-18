@@ -87,7 +87,7 @@ export function FurnitureShape({ f, x, y, w, h, display, ghost }: { f: Pick<Furn
   const tint = ghost === 'bad' ? 'var(--danger)' : ghost === 'ok' ? 'var(--accent)' : undefined;
   return (
     <g data-kind={ghost ? undefined : 'furniture'} data-id={f.id} className="furniture" opacity={ghost ? 0.75 : 1}>
-      {!round && <rect x={ix} y={iy} width={iw} height={ih} rx={2} fill={body} stroke={tint ?? 'color-mix(in srgb, var(--accent) 35%, transparent)'} strokeWidth={tint ? 2 : 1} />}
+      {!round && <rect className="f-body" x={ix} y={iy} width={iw} height={ih} rx={2} fill={body} stroke={tint ?? 'color-mix(in srgb, var(--accent) 35%, transparent)'} strokeWidth={tint ? 2 : 1} />}
       {detail}
       {round && tint && <circle cx={cx} cy={cy} r={rr + 1} fill="none" stroke={tint} strokeWidth={2} />}
       {statusColor && <circle cx={px + pw - 5} cy={py + 5} r={2.5} fill={statusColor} />}

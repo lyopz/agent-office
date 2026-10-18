@@ -4,6 +4,7 @@ import { Character } from '../characters/Character';
 import type { AgentStatus, ViewMode } from '../model/types';
 import { assetStore } from '../persistence/repository';
 import { G } from './OfficeLayers';
+import { capsulePos } from '../engine/tubes';
 
 export const STATUS_COLOR: Record<AgentStatus, string> = {
   idle: 'var(--muted)', working: 'var(--accent)', walking: 'var(--accent-blue)', thinking: 'var(--accent-purple)',
@@ -33,6 +34,7 @@ const AgentSprite = memo(function AgentSprite({ id }: { id: string }) {
   const global = useStore((s) => s.view);
   const selected = useStore((s) => s.selection.kind === 'agent' && s.selection.id === id);
   const labels = useStore((s) => s.layers.labels);
+  const motion = useStore((s) => s.doc.settings.animationIntensity);
   const view = agent ? resolveView(global, agent.appearance.preferredView) : 'top';
   const asset = useAsset(agent?.assets[view]?.assetId);
   const [facing, setFacing] = useState<'left' | 'right'>(agent?.appearance.facing ?? 'right');
@@ -41,7 +43,7 @@ const AgentSprite = memo(function AgentSprite({ id }: { id: string }) {
   const a = agent.appearance;
   const cx = (rt.pos.x + 0.5) * G, cy = (rt.pos.y + 0.5) * G;
   const pose = rt.status === 'walking' ? 'walk' : rt.status === 'working' ? 'work' : 'idle';
-  const frame = Math.floor((tick * a.animationSpeed) / 2) % 4;
+  const frame = motion === 'off' ? 0 : Math.floor((tick * a.animationSpeed) / (motion === 'subtle' ? 4 : 2)) % 4;
   const top = view === 'top';
   const size = top ? G * 1.7 : G * 2.7 * a.height;
   const width = top ? size : size * 0.625;
@@ -60,13 +62,13 @@ const AgentSprite = memo(function AgentSprite({ id }: { id: string }) {
       {asset === null && agent.assets[view] && <text x={cx} y={ty - 2} textAnchor="middle" className="tag">fallback</text>}
       {(rt.status === 'thinking' || rt.status === 'communicating' || rt.status === 'error') && (
         <g transform={`translate(${cx + G * 0.4} ${ty - 6})`}>
-          <rect x={-2} y={-12} width={rt.status === 'error' ? 14 : 20} height={14} rx={4} fill="rgba(0,0,0,.8)" stroke={col} />
+          <rect x={-2} y={-12} width={rt.status === 'error' ? 14 : 20} height={14} rx={4} fill="var(--label-bg)" stroke={col} />
           <text x={rt.status === 'error' ? 5 : 8} y={-1.5} textAnchor="middle" className="bubble" fill={col}>{rt.status === 'error' ? '!' : rt.status === 'thinking' ? '···' : '⇄'}</text>
         </g>
       )}
       {labels && (
         <g pointerEvents="none">
-          <rect x={cx - agent.identity.name.length * 3.4 - 5} y={cy + G * 0.62} width={agent.identity.name.length * 6.8 + 10} height={13} rx={2} fill="rgba(0,0,0,.75)" stroke={col} strokeOpacity={0.7} />
+          <rect x={cx - agent.identity.name.length * 3.4 - 5} y={cy + G * 0.62} width={agent.identity.name.length * 6.8 + 10} height={13} rx={2} fill="var(--label-bg)" stroke={col} strokeOpacity={0.7} />
           <text x={cx} y={cy + G * 0.62 + 10} textAnchor="middle" className="agent-label" fill={col}>{agent.identity.name}</text>
         </g>
       )}
@@ -93,4 +95,24 @@ export function AgentsLayer() {
   // draw back-to-front so standing characters overlap correctly
   const sorted = ids ? ids.split('|').sort((a, b) => (order[a]?.pos.y ?? 0) - (order[b]?.pos.y ?? 0)) : [];
   return <g>{sorted.map((id) => <AgentSprite key={id} id={id} />)}</g>;
+}
+
+/** Task capsules travelling through the pneumatic tube network. */
+export function CapsulesLayer() {
+  const capsules = useStore((s) => s.runtime.capsules);
+  const list = Object.values(capsules).filter((c) => c.status === 'in-transit');
+  if (!list.length) return null;
+  return (
+    <g pointerEvents="none" className="capsules">
+      {list.map((c) => {
+        const p = capsulePos(c);
+        return (
+          <g key={c.id}>
+            <polyline points={c.path.map((q) => `${q.x * G},${q.y * G}`).join(' ')} fill="none" stroke="#d4a84a" strokeOpacity={0.35} strokeWidth={3} strokeDasharray="2 4" />
+            <rect x={p.x * G - 6} y={p.y * G - 3.5} width={12} height={7} rx={3.5} fill="#d4a84a" stroke="#6b4e12" filter="url(#glow)" />
+          </g>
+        );
+      })}
+    </g>
+  );
 }

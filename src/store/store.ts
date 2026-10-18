@@ -3,7 +3,10 @@
 //  - runtime  : persistent simulation state (tasks, positions, activity log); not undoable
 //  - ui       : ephemeral view state (selection, camera, tools) — never saved
 import { create } from 'zustand';
-import type { OfficeDoc, RuntimeState, Task } from '../model/types';
+import type { AlertSeverity, OfficeDoc, RuntimeState, Task } from '../model/types';
+import { acknowledgeAlert, raiseAlert, resolveAlert, testAlert, type AlertInput } from '../engine/alerts';
+import { decideApproval, recordUsage, requestAction, type ActionRequest } from '../engine/governance';
+import { dispatchViaTube } from '../engine/tubes';
 import { applyOps, type DocOp } from '../engine/ops';
 import { newErrors, validate, type Issue } from '../engine/validate';
 import { buildNav, type NavGraph } from '../engine/navigation';
@@ -36,8 +39,15 @@ export interface Preview { doc: OfficeDoc; ops: DocOp[]; runtimeOps: RuntimeOp[]
 
 export type RuntimeOp =
   | { op: 'agent.goTo'; agentId: string; roomId: string | null; workstationId?: string | null }
-  | { op: 'task.create'; agentId: string | null; name: string; description?: string; priority?: Task['priority']; roomId?: string | null; workstationId?: string | null; simulated?: boolean; deadline?: string; dependencies?: string[] }
+  | { op: 'task.create'; agentId: string | null; name: string; description?: string; priority?: Task['priority']; roomId?: string | null; workstationId?: string | null; simulated?: boolean; deadline?: string; dependencies?: string[]; id?: string; projectId?: string | null; handoff?: Task['handoff']; costPerUnit?: number; workUnits?: number; viaTube?: boolean; fromAgentId?: string | null }
   | { op: 'task.update'; id: string; patch: Partial<Pick<Task, 'priority' | 'status' | 'agentId' | 'name' | 'description' | 'deadline'>> }
+  | { op: 'alert.ack'; id: string } | { op: 'alert.resolve'; id: string } | { op: 'alert.test'; severity: AlertSeverity }
+  | { op: 'alert.raise'; input: AlertInput }
+  | { op: 'approval.decide'; id: string; approve: boolean }
+  | { op: 'action.request'; request: ActionRequest }
+  | { op: 'usage.record'; agentId: string | null; projectId: string | null; taskId?: string | null; credits: number; kind?: 'model' | 'tool' | 'purchase'; simulated?: boolean }
+  | { op: 'task.dispatchTube'; taskId: string; fromAgentId: string | null }
+  | { op: 'task.fail'; id: string; reason: string }
   | { op: 'history.undo' } | { op: 'history.redo' };
 
 interface State {
@@ -178,9 +188,10 @@ export const useStore = create<State>((set, get) => {
         const rt = cloneRuntime(get().runtime);
         if (o.op === 'agent.goTo') out.push(goTo(doc, rt, nav, o.agentId, o.roomId, o.workstationId ?? null).message);
         if (o.op === 'task.create') {
-          const t = createTask(rt, { name: o.name, description: o.description ?? '', agentId: o.agentId, priority: o.priority ?? 'normal', destination: { roomId: o.roomId ?? null, workstationId: o.workstationId ?? null }, simulated: o.simulated ?? true, deadline: o.deadline, dependencies: o.dependencies ?? [] });
+          const t = createTask(rt, { ...(o.id ? { id: o.id } : {}), name: o.name, description: o.description ?? '', agentId: o.agentId, priority: o.priority ?? 'normal', destination: { roomId: o.roomId ?? null, workstationId: o.workstationId ?? null }, simulated: o.simulated ?? true, deadline: o.deadline, dependencies: o.dependencies ?? [], projectId: o.projectId ?? null, handoff: o.handoff, costPerUnit: o.costPerUnit, ...(o.workUnits ? { workUnits: o.workUnits } : {}) });
           log(rt, { kind: 'system', agentId: o.agentId, simulated: false, message: `Task “${t.name}” queued${o.agentId ? ` for ${doc.agents[o.agentId]?.identity.name}` : ''}` });
           out.push(`Queued task ${t.name}`);
+          if (o.viaTube) out.push(dispatchViaTube(doc, rt, t.id, o.fromAgentId ?? null).message);
         }
         if (o.op === 'task.update') {
           const t = rt.tasks[o.id];
@@ -194,6 +205,25 @@ export const useStore = create<State>((set, get) => {
             }
             log(rt, { kind: 'config', agentId: t.agentId, simulated: false, message: `Task “${t.name}” updated: ${Object.entries(o.patch).map(([k, v]) => `${k}=${v}`).join(', ')}` });
             out.push(`Updated task ${t.name}`);
+          }
+        }
+        if (o.op === 'alert.ack') out.push(acknowledgeAlert(rt, o.id) ? 'Acknowledged' : 'Alert not found');
+        if (o.op === 'alert.resolve') out.push(resolveAlert(rt, o.id) ? 'Resolved' : 'Alert not found');
+        if (o.op === 'alert.test') out.push(testAlert(doc, rt, o.severity).alert.title);
+        if (o.op === 'alert.raise') out.push(raiseAlert(doc, rt, o.input).alert.id);
+        if (o.op === 'approval.decide') out.push(decideApproval(doc, rt, o.id, o.approve) ? (o.approve ? 'Approved' : 'Rejected') : 'Already decided');
+        if (o.op === 'action.request') { const r = requestAction(doc, rt, o.request); out.push(r.allowed ? 'Allowed' : `Approval requested: ${r.approval.reason}`); }
+        if (o.op === 'usage.record') out.push(recordUsage(doc, rt, { agentId: o.agentId, projectId: o.projectId, taskId: o.taskId ?? null, credits: o.credits, kind: o.kind ?? 'model', simulated: o.simulated }).id);
+        if (o.op === 'task.dispatchTube') out.push(dispatchViaTube(doc, rt, o.taskId, o.fromAgentId).message);
+        if (o.op === 'task.fail') {
+          const t = rt.tasks[o.id];
+          if (t) {
+            const failures = (t.failures ?? 0) + 1;
+            rt.tasks[o.id] = { ...t, status: 'failed', failures };
+            const name = t.agentId ? doc.agents[t.agentId]?.identity.name ?? 'agent' : 'unassigned';
+            log(rt, { kind: 'task-failed', agentId: t.agentId, simulated: t.simulated, level: 'error', message: `“${t.name}” failed (${name}): ${o.reason}` });
+            raiseAlert(doc, rt, { key: `task-fail:${t.agentId}:${t.name}`, severity: 'warning', category: 'operational', title: `“${t.name}” failed`, description: o.reason, recommended: 'Retry, or reassign it to another agent.', agentId: t.agentId, taskId: t.id, projectId: t.projectId ?? null, evidence: [{ kind: 'event', id: rt.events[rt.events.length - 1].id, label: o.reason }] });
+            out.push(`Recorded failure of ${t.name}`);
           }
         }
         set({ runtime: rt });

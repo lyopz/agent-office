@@ -289,6 +289,11 @@ export function step(doc: OfficeDoc, rt: RuntimeState, nav: NavGraph, opts: Step
           t.status = 'active'; t.startedAt = new Date().toISOString();
           r.currentTaskId = t.id; r.status = 'thinking'; r.waitTicks = 6;
           log(rt, { kind: 'task-start', agentId: a.id, simulated: t.simulated, message: `${a.identity.name} started “${t.name}”${t.simulated ? ' (simulated)' : ''}` });
+        } else if (doc.settings.idleWandering && r.roomId && doc.rooms[r.roomId] && rand() < 0.003) {
+          // purely cosmetic: stroll to another free spot in the same room
+          const room = doc.rooms[r.roomId];
+          const cell = { x: room.x + 1 + Math.floor(rand() * Math.max(1, room.w - 2)), y: room.y + 1 + Math.floor(rand() * Math.max(1, room.h - 2)) };
+          if (nav.walkable.has(key(cell.x, cell.y))) { r.destination = { roomId: room.id, workstationId: null, cell }; replan(doc, rt, nav, a.id); }
         } else if (opts.demoTasks && rand() < 0.004) {
           const peer = Object.values(doc.agents).find((b) => b.id !== a.id && rt.agents[b.id]?.roomId === r.roomId && rt.agents[b.id]?.status === 'idle');
           if (peer) {

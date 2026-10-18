@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../store/store';
 import { STATUS_COLOR } from '../viewport/AgentsLayer';
 import { providerStatus } from '../ai/providers';
+import { BusinessPanels } from './Business';
 
 export function Dashboard() {
   const doc = useStore((s) => s.doc);
@@ -38,6 +39,8 @@ export function Dashboard() {
         ['Active agents', `${active}/${agents.length}`], ['Tasks completed', done.length], ['In progress', inProgress.length],
         ['Queued', queued.length], ['Agents in error', errorsAgents.length], ['Layout issues', issues.filter((i) => i.severity === 'error').length],
       ].map(([l, v]) => <div key={l as string} className="card kpi"><div className="v">{v}</div><div className="l">{l}</div></div>)}
+
+      <BusinessPanels />
 
       <div className="card span-8">
         <h4>Tasks completed per minute (last 15 min)</h4>
@@ -97,7 +100,7 @@ export function Dashboard() {
 
       <div className="card span-8">
         <div className="row"><h4 className="grow">Recent events</h4>
-          <select aria-label="Filter events" value={evFilter} onChange={(e) => setEvFilter(e.target.value)} style={{ width: 160 }}>{['all', 'problems', 'task-start', 'task-complete', 'room-change', 'layout', 'config', 'system'].map((k) => <option key={k}>{k}</option>)}</select></div>
+          <select aria-label="Filter events" value={evFilter} onChange={(e) => setEvFilter(e.target.value)} style={{ width: 160 }}>{['all', 'problems', 'task-start', 'task-complete', 'room-change', 'layout', 'config', 'system', 'tube', 'finance', 'approval', 'library', 'alert'].map((k) => <option key={k}>{k}</option>)}</select></div>
         <div className="events">{events.map((e) => <div key={e.id} className={`ev ${e.level}`}><time>{new Date(e.at).toLocaleTimeString()}</time><span className="m">{e.message}</span>{e.simulated ? <span className="badge sim">sim</span> : <span className="badge live">sys</span>}</div>)}</div>
       </div>
       <div className="card span-4">

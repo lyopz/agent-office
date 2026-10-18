@@ -13,6 +13,8 @@ import { ConfirmDialog } from './ui/primitives';
 import { useShortcuts } from './ui/actions';
 import { ObjectLibrary } from './ui/ObjectLibrary';
 import { PerfPanel } from './ui/PerfPanel';
+import { useApplyTheme } from './ui/ThemeEditor';
+import { useAlertDelivery } from './ui/AlertCenter';
 
 function useSimulationLoop() {
   const running = useStore((s) => s.prefs.simRunning);
@@ -63,6 +65,8 @@ function Toast() {
 export function App() {
   useSimulationLoop();
   useShortcuts();
+  useApplyTheme();
+  useAlertDelivery();
   const page = useStore((s) => s.page);
   const mode = useStore((s) => s.mode);
   const tool = useStore((s) => s.tool);

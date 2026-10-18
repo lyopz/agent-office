@@ -22,12 +22,12 @@ export function Minimap({ width, height }: { width: number; height: number }) {
   };
   return (
     <svg className="minimap" width={W} height={H} onPointerDown={jump} onPointerMove={jump} aria-label="Minimap: click to navigate" role="img">
-      <rect width={W} height={H} fill="rgba(0,0,0,.75)" />
+      <rect width={W} height={H} fill="color-mix(in srgb, var(--panel) 85%, transparent)" />
       <g transform={`translate(${ox} ${oy}) scale(${sc})`}>
         {Object.values(doc.corridors).map((c) => c.points.length > 1 && <polyline key={c.id} points={corridorPx(c).map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke="var(--hall-edge)" strokeWidth={c.width * G} />)}
         {rooms.map((r) => <rect key={r.id} x={r.x * G} y={r.y * G} width={r.w * G} height={r.h * G} fill="var(--panel-2)" stroke={r.appearance.accent} strokeWidth={G / 3} />)}
         {Object.entries(agents).map(([id, a]) => <circle key={id} cx={(a.pos.x + 0.5) * G} cy={(a.pos.y + 0.5) * G} r={G * 0.6} fill={doc.agents[id]?.appearance.accent ?? 'var(--accent)'} />)}
-        <rect x={vx} y={vy} width={vw} height={vh} fill="rgba(57,255,136,.06)" stroke="var(--accent)" strokeWidth={2 / sc} />
+        <rect x={vx} y={vy} width={vw} height={vh} fill="color-mix(in srgb, var(--accent) 8%, transparent)" stroke="var(--accent)" strokeWidth={2 / sc} />
       </g>
     </svg>
   );
