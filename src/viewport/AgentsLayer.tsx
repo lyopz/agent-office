@@ -7,7 +7,7 @@ import { G } from './OfficeLayers';
 
 export const STATUS_COLOR: Record<AgentStatus, string> = {
   idle: 'var(--muted)', working: 'var(--accent)', walking: 'var(--accent-blue)', thinking: 'var(--accent-purple)',
-  communicating: 'var(--accent-orange)', error: 'var(--danger)', paused: 'var(--muted-2)',
+  communicating: 'var(--accent-orange)', researching: 'var(--accent-blue)', waiting: 'var(--warn)', blocked: 'var(--danger)', error: 'var(--danger)', paused: 'var(--muted-2)',
 };
 
 export function useAsset(assetId: string | undefined | null) {

@@ -19,7 +19,21 @@ export function furnitureWorldRect(doc: OfficeDoc, f: Furniture) {
   return { x: (r?.x ?? 0) + f.x, y: (r?.y ?? 0) + f.y, w: rot ? f.h : f.w, h: rot ? f.w : f.h };
 }
 
+// Small cache keyed on the layout slices' identities. Immer keeps unchanged
+// slices identical, so profile edits, theme changes and simulation ticks reuse
+// the graph instead of rebuilding it.
+const navCache: { rooms: unknown; corridors: unknown; furniture: unknown; nav: NavGraph }[] = [];
+
 export function buildNav(doc: OfficeDoc): NavGraph {
+  const hit = navCache.find((c) => c.rooms === doc.rooms && c.corridors === doc.corridors && c.furniture === doc.furniture);
+  if (hit) return hit.nav;
+  const nav = buildNavUncached(doc);
+  navCache.unshift({ rooms: doc.rooms, corridors: doc.corridors, furniture: doc.furniture, nav });
+  navCache.length = Math.min(navCache.length, 4);
+  return nav;
+}
+
+function buildNavUncached(doc: OfficeDoc): NavGraph {
   const walkable = new Set<string>();
   const region = new Map<string, string>();
   const doorEdges = new Set<string>();

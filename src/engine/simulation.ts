@@ -10,7 +10,7 @@ import { pickHub } from './validate';
 export const SPEED = 0.2; // cells per tick at animation speed 1
 const PRIORITY = { critical: 0, high: 1, normal: 2, low: 3 } as const;
 
-export function emptyRuntime(): RuntimeState { return { agents: {}, tasks: {}, events: [], tick: 0 }; }
+export function emptyRuntime(): RuntimeState { return { agents: {}, tasks: {}, events: [], tick: 0, usage: [], approvals: {}, alerts: {}, capsules: {} }; }
 
 export function log(rt: RuntimeState, e: Omit<ActivityEvent, 'id' | 'at' | 'level' | 'simulated'> & Partial<Pick<ActivityEvent, 'level' | 'simulated'>>) {
   rt.events.push({ id: uid('evt'), at: new Date().toISOString(), level: 'info', simulated: true, ...e });

@@ -89,7 +89,7 @@ function initial() {
   const saved = repo.loadCurrent();
   const doc = saved?.doc ?? sampleOffice();
   const runtime: RuntimeState = { ...emptyRuntime(), ...(saved?.runtime ?? {}) } as RuntimeState;
-  runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {};
+  runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {}; runtime.usage ??= []; runtime.approvals ??= {}; runtime.alerts ??= {}; runtime.capsules ??= {};
   const nav = buildNav(doc);
   syncRuntime(doc, runtime, nav);
   if (!saved) log(runtime, { kind: 'system', agentId: null, simulated: false, message: 'Loaded sample office. Agents are simulated; no AI model is connected.' });

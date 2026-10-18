@@ -1,0 +1,117 @@
+// The object library: every placeable object, its footprint, category and
+// what it does. `fn` ties an object to a real behaviour (a tube station
+// routes capsules, an approval kiosk is where requests are signed, a
+// workstation is where an agent works); decorative objects have fn 'none'.
+import type { FurnitureMaterial, FurnitureType, ObjectCategory, ObjectFunction, RoomAppearance, RoomType } from './types';
+
+export interface ObjectMeta {
+  label: string; w: number; h: number; blocking: boolean; color: string;
+  category: ObjectCategory; fn: ObjectFunction;
+  wall?: boolean;               // designed to sit against a wall
+  desc: string;
+}
+
+const m = (label: string, category: ObjectCategory, w: number, h: number, fn: ObjectFunction, color: string, desc: string, opts: { blocking?: boolean; wall?: boolean } = {}): ObjectMeta =>
+  ({ label, category, w, h, fn, color, desc, blocking: opts.blocking ?? true, wall: opts.wall });
+
+export const FURNITURE_META: Record<FurnitureType, ObjectMeta> = {
+  // furniture
+  desk: m('Modular desk', 'furniture', 2, 1, 'workstation', '#1d3b2a', 'Standard workstation desk with a terminal.'),
+  chair: m('Adjustable chair', 'furniture', 1, 1, 'seating', '#28473a', 'Task chair.', { blocking: false }),
+  'exec-desk': m('Executive command desk', 'furniture', 4, 2, 'workstation', '#1a1c1f', 'Large curved command desk with an owner approval link.'),
+  'holo-desk': m('Holographic desk', 'furniture', 3, 1, 'workstation', '#16263a', 'Desk with a projected holographic work surface.'),
+  'standing-desk': m('Standing workstation', 'furniture', 2, 1, 'workstation', '#20302a', 'Height-adjustable desk.'),
+  'conference-table': m('Conference table', 'furniture', 4, 2, 'seating', '#1f2d3b', 'Meeting table for up to eight.'),
+  'strategy-table': m('Strategic planning table', 'furniture', 3, 2, 'display', '#1b2433', 'Table with a projected portfolio map.'),
+  sofa: m('Lounge sofa', 'furniture', 3, 1, 'seating', '#2a2440', 'Three-seat sofa.'),
+  'lounge-seat': m('Lounge seating', 'furniture', 2, 1, 'seating', '#2c2546', 'Pair of lounge chairs.'),
+  cabinet: m('Storage cabinet', 'furniture', 1, 1, 'storage', '#2a2f2c', 'Lockable cabinet.'),
+  locker: m('Personal locker', 'furniture', 1, 1, 'storage', '#25303a', 'Personal storage locker.', { wall: true }),
+  shelf: m('Shelf', 'furniture', 2, 1, 'storage', '#2a2a22', 'Open shelving.', { wall: true }),
+  container: m('Storage container', 'furniture', 2, 2, 'storage', '#33281a', 'Bulk storage.'),
+  workbench: m('Workbench', 'furniture', 3, 1, 'workstation', '#3a2a14', 'Fabrication bench with tools.'),
+  // computing
+  computer: m('Compact computer', 'computing', 1, 1, 'display', '#16302a', 'Small computer.'),
+  monitors: m('Monitor wall', 'computing', 3, 1, 'display', '#0f2a1f', 'Three-screen wall.', { wall: true }),
+  'curved-monitor': m('Curved monitor', 'computing', 2, 1, 'display', '#0f2230', 'Wide curved display.'),
+  'holo-display': m('Holographic display', 'computing', 2, 1, 'display', '#0e2236', 'Free-standing hologram projector.'),
+  'multi-monitor': m('Multi-monitor rig', 'computing', 3, 1, 'display', '#102028', 'Six-screen trading rig.'),
+  terminal: m('Compact terminal', 'computing', 1, 1, 'workstation', '#13261e', 'Single-seat terminal.'),
+  'server-rack': m('Server rack', 'computing', 1, 2, 'none', '#2a1e10', 'Rack of compute nodes.'),
+  'charging-station': m('Charging station', 'computing', 1, 1, 'charging', '#1d2b16', 'Restores agent energy faster than a break.'),
+  'diagnostic-panel': m('Diagnostic panel', 'computing', 1, 1, 'display', '#2a2214', 'Live system diagnostics.', { wall: true }),
+  'research-kiosk': m('Research kiosk', 'computing', 1, 1, 'archive', '#1a2236', 'Quick library lookups.'),
+  // communication
+  'tube-station': m('Pneumatic tube station', 'communication', 1, 1, 'tube', '#3a2f12', 'Sends and receives task capsules.'),
+  'dispatch-terminal': m('Capsule dispatch terminal', 'communication', 1, 1, 'tube', '#2e2a14', 'Dispatches priority capsules.'),
+  'message-station': m('Message receiving station', 'communication', 1, 1, 'tube', '#302a18', 'Receives capsules for a team.'),
+  'routing-hub': m('Department routing hub', 'communication', 2, 2, 'tube', '#3a2c10', 'Central capsule switch.'),
+  intercom: m('Holographic intercom', 'communication', 1, 1, 'none', '#14283a', 'Room-to-room voice link.', { blocking: false, wall: true }),
+  'relay-panel': m('Communication relay panel', 'communication', 1, 1, 'none', '#16243a', 'Signal relay.', { blocking: false, wall: true }),
+  // research
+  'archive-terminal': m('Archive terminal', 'research', 2, 1, 'archive', '#1c1a3a', 'Search, file and verify knowledge.'),
+  'digital-shelf': m('Digital bookshelf', 'research', 2, 1, 'archive', '#1e1838', 'Illuminated archive cabinet.', { wall: true }),
+  'data-vault': m('Data vault', 'research', 2, 2, 'archive', '#191a2e', 'Restricted records storage.'),
+  'evidence-station': m('Evidence review station', 'research', 2, 1, 'archive', '#1f2236', 'Source and claim verification.'),
+  'market-display': m('Market research display', 'research', 2, 1, 'display', '#0f2a2e', 'Competitor and pricing charts.', { wall: true }),
+  'comparison-wall': m('Product comparison wall', 'research', 3, 1, 'display', '#102a2a', 'Side-by-side product boards.', { wall: true }),
+  whiteboard: m('Whiteboard', 'research', 3, 1, 'display', '#2b3a3a', 'Shared sketching wall.', { wall: true }),
+  // creative
+  'holo-table': m('Holographic design table', 'creative', 3, 2, 'display', '#26163a', 'Projects 3D product models.'),
+  'mockup-display': m('Product mockup display', 'creative', 2, 1, 'display', '#2a1838', 'Rotating mockup plinth.'),
+  'packaging-station': m('Packaging workstation', 'creative', 2, 1, 'workstation', '#2e2216', 'Packaging design bench.'),
+  'material-station': m('Material selection station', 'creative', 2, 1, 'display', '#2a2420', 'Swatches and finishes.'),
+  'prototype-printer': m('Prototype printer', 'creative', 2, 2, 'none', '#2a2a2a', 'Large-format 3D printer.'),
+  'photo-station': m('Product photography station', 'creative', 2, 2, 'none', '#202020', 'Lit photo booth.'),
+  // business
+  'budget-dashboard': m('Budget dashboard', 'business', 2, 1, 'budget', '#2e2410', 'Live project spend.', { wall: true }),
+  'approval-kiosk': m('Approval kiosk', 'business', 1, 1, 'approval', '#2e1e10', 'Where owner approvals are signed.'),
+  'project-board': m('Project tracking board', 'business', 3, 1, 'display', '#1a2a20', 'Milestones and blockers.', { wall: true }),
+  'finance-terminal': m('Financial terminal', 'business', 2, 1, 'budget', '#2a2210', 'Ledger and forecasts.'),
+  'marketplace-display': m('Marketplace display', 'business', 2, 1, 'display', '#122a22', 'Storefront metrics.', { wall: true }),
+  'inventory-monitor': m('Inventory monitor', 'business', 1, 1, 'display', '#1a2420', 'Stock levels.', { wall: true }),
+  'analytics-wall': m('Performance analytics wall', 'business', 3, 1, 'display', '#102230', 'Company KPIs.', { wall: true }),
+  // atmosphere
+  plant: m('Plant', 'atmosphere', 1, 1, 'none', '#1e5a32', 'Potted plant.'),
+  lamp: m('Futuristic lamp', 'atmosphere', 1, 1, 'none', '#5a5a20', 'Ambient light.', { blocking: false }),
+  decor: m('Decor piece', 'atmosphere', 1, 1, 'none', '#203040', 'Small decorative item.', { blocking: false }),
+  sculpture: m('Sculpture', 'atmosphere', 1, 1, 'none', '#3a3a44', 'Kinetic sculpture.'),
+  'floor-light': m('Floor lighting', 'atmosphere', 1, 1, 'none', '#1c2a30', 'Recessed floor light strip.', { blocking: false }),
+  'wall-panel': m('Wall panel', 'atmosphere', 2, 1, 'none', '#1a2226', 'Textured acoustic panel.', { blocking: false, wall: true }),
+  window: m('Window', 'atmosphere', 3, 1, 'none', '#132a3a', 'View of the city.', { blocking: false, wall: true }),
+  'deco-robot': m('Decorative robot', 'atmosphere', 1, 1, 'none', '#2a3036', 'Retro robot statue.'),
+  aquarium: m('Aquarium display', 'atmosphere', 2, 1, 'none', '#0c2a3a', 'Holographic aquarium.'),
+  'wall-art': m('Wall art', 'atmosphere', 2, 1, 'none', '#2a1a2a', 'Framed art.', { blocking: false, wall: true }),
+  'ambient-machine': m('Ambient machinery', 'atmosphere', 1, 1, 'none', '#22261e', 'Humming pipes and gauges.'),
+};
+
+export const CATEGORY_LABEL: Record<ObjectCategory, string> = {
+  furniture: 'Furniture', computing: 'Computing', communication: 'Communication', research: 'Research',
+  creative: 'Creative', business: 'Business', atmosphere: 'Atmosphere',
+};
+
+export const MATERIAL_COLOR: Record<FurnitureMaterial, string | null> = {
+  default: null, graphite: '#2a2d31', titanium: '#5b6268', 'black-titanium': '#16181b', walnut: '#4a3222', 'white-composite': '#d8dcdf', brass: '#8a6a2a',
+};
+
+export interface RoomMeta { label: string; accent: string; floor: RoomAppearance['floor']; purpose: string }
+export const ROOM_META: Record<RoomType, RoomMeta> = {
+  operations: { label: 'Main operations', accent: '#39ff88', floor: 'grid', purpose: 'Coordinate day-to-day operations.' },
+  office: { label: 'Agent office', accent: '#4cc9ff', floor: 'carpet', purpose: 'Private workspace.' },
+  research: { label: 'Research lab', accent: '#b57bff', floor: 'tile', purpose: 'Investigations and experiments.' },
+  server: { label: 'Server room', accent: '#ff9f43', floor: 'metal', purpose: 'Compute infrastructure.' },
+  meeting: { label: 'Meeting room', accent: '#4cc9ff', floor: 'wood', purpose: 'Meetings and reviews.' },
+  workshop: { label: 'Workshop', accent: '#ff9f43', floor: 'metal', purpose: 'Repairs and fabrication.' },
+  storage: { label: 'Storage', accent: '#8a9a8f', floor: 'plain', purpose: 'Supplies.' },
+  break: { label: 'Lounge', accent: '#ffd166', floor: 'wood', purpose: 'Rest and informal talk; restores energy.' },
+  security: { label: 'Security', accent: '#ff5d73', floor: 'metal', purpose: 'Access control and monitoring.' },
+  reception: { label: 'Reception', accent: '#39ff88', floor: 'tile', purpose: 'Visitors and inbound requests.' },
+  custom: { label: 'Custom', accent: '#39ff88', floor: 'plain', purpose: '' },
+  executive: { label: 'Executive suite', accent: '#d4a84a', floor: 'carpet', purpose: 'Strategy, portfolio review and owner approvals.' },
+  library: { label: 'Research library', accent: '#5ad1ff', floor: 'tile', purpose: 'Institutional knowledge: search, filing and verification.' },
+  finance: { label: 'Finance office', accent: '#f2b544', floor: 'carpet', purpose: 'Budgets, spend tracking and approvals.' },
+  engineering: { label: 'Engineering lab', accent: '#ff9f43', floor: 'metal', purpose: 'Integrations, automations and infrastructure.' },
+  design: { label: 'Product design lab', accent: '#b57bff', floor: 'tile', purpose: 'Specifications, prototypes and packaging.' },
+  studio: { label: 'Creative studio', accent: '#ff6fb5', floor: 'wood', purpose: 'Brand, imagery and marketing assets.' },
+  market: { label: 'Market intelligence', accent: '#39d0c8', floor: 'grid', purpose: 'Competitor and customer analysis.' },
+};

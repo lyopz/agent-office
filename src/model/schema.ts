@@ -1,9 +1,12 @@
 // Schema validation + migrations for saved/imported offices.
 import { z } from 'zod';
-import { DEFAULT_APPEARANCE, DEFAULT_OUTFITS, builtinRoomTemplates, makeAgent } from './defaults';
-import { FURNITURE_TYPES, ROOM_TYPES, type OfficeDoc } from './types';
+import { DEFAULT_APPEARANCE, DEFAULT_OUTFITS, builtinRoomTemplates, makeAgent, withAppearance } from './defaults';
+import { FURNITURE_MATERIALS, FURNITURE_TYPES, ROOM_TYPES, type OfficeDoc } from './types';
+import { BUILTIN_COSMETICS } from './cosmetics';
+import { defaultAppearanceSettings } from './themes';
+import { defaultAlertSettings } from './alertDefaults';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const id = z.string().min(1).max(120);
 const num = z.number().finite();
@@ -17,6 +20,9 @@ const room = z.object({
   walls: z.object({ thickness: num, style: z.enum(['solid', 'glass']) }).default({ thickness: 2, style: 'solid' }),
   doors: z.array(door), appearance: z.object({
     floor: z.enum(['grid', 'tile', 'carpet', 'metal', 'wood', 'plain']), wallColor: color, accent: color, lighting: num, theme: z.string().optional(),
+    floorColor: color.optional(), lightTemp: num.optional(), doorColor: color.optional(), windowTint: color.optional(),
+    furnitureMaterial: z.enum(FURNITURE_MATERIALS).optional(), displayColor: color.optional(),
+    effect: z.enum(['none', 'ambient-glow', 'scanlines', 'particles']).optional(),
   }),
   furnitureIds: z.array(id), assignedAgentIds: z.array(id), purpose: z.string().max(500).default(''), special: z.string().optional(),
 });
@@ -35,6 +41,8 @@ const workstation = z.object({
 const furniture = z.object({
   id, type: z.enum(FURNITURE_TYPES), roomId: id, x: num, y: num, w: num.min(1), h: num.min(1),
   rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]), color, blocking: z.boolean(), workstation: workstation.optional(),
+  label: z.string().max(120).optional(), material: z.enum(FURNITURE_MATERIALS).optional(), groupId: z.string().max(120).optional(),
+  tube: z.object({ stationName: z.string().max(120), department: z.string().max(120) }).optional(),
 });
 
 // Agents are validated loosely and then filled from defaults, so older files gain new fields.
@@ -46,6 +54,50 @@ const agent = z.object({
 const settings = z.object({
   gridSize: num, bounds: z.object({ x: num, y: num, w: num, h: num }).nullable(),
   hallwayMode: z.enum(['automatic', 'manual', 'hybrid']), minCorridorWidth: num, defaultCorridorWidth: num,
+  collisionRule: z.enum(['warn', 'prevent']).default('warn'),
+  animationIntensity: z.enum(['off', 'subtle', 'full']).default('subtle'),
+  idleWandering: z.boolean().default(false),
+});
+
+const tokens = z.object({
+  bg: color, bg2: color, panel: color, accent: color, accent2: color, text: color, border: color,
+  selection: color, success: color, warning: color, error: color, highlight: color,
+});
+const officeColors = z.object({ floor: color, wall: color, door: color, corridor: color, lighting: color });
+const theme = z.object({ id, name: z.string().max(80), builtin: z.boolean().optional(), dark: tokens, light: tokens, office: z.object({ dark: officeColors, light: officeColors }) });
+const appearanceSettings = z.object({ mode: z.enum(['dark', 'light', 'system']), themeId: id, themes: z.array(theme).min(1).max(60) });
+
+const severity = z.enum(['critical', 'high', 'warning', 'info']);
+const sevSound = z.object({ soundId: z.string().max(80), volume: num.min(0).max(1), repeatSec: num.min(0), ackRequired: z.boolean() });
+const hours = z.object({ enabled: z.boolean(), start: z.string().max(5), end: z.string().max(5) });
+const channel = z.object({ enabled: z.boolean(), minSeverity: severity, target: z.string().max(200).optional() });
+const alertSettings = z.object({
+  sounds: z.object({ critical: sevSound, high: sevSound, warning: sevSound, info: sevSound }),
+  customSounds: z.array(z.object({ id, name: z.string().max(80), assetId: id })).max(40),
+  masterVolume: num.min(0).max(1),
+  muted: z.record(z.boolean()),
+  quietHours: hours, soundSchedule: hours,
+  cooldownSec: num.min(0), escalation: z.object({ enabled: z.boolean(), afterSec: num.min(5), maxLevel: num.min(1).max(10) }),
+  thresholds: z.object({ budgetWarnPct: num, budgetCriticalPct: num, spendRateFactor: num, repeatedFailures: num.min(1) }),
+  channels: z.object({ 'in-app': channel, sound: channel, desktop: channel, email: channel, messaging: channel, push: channel }),
+  minSoundSeverity: severity,
+});
+
+const project = z.object({
+  id, name: z.string().max(120), ownerAgentId: id.nullable(), budget: num.min(0), forecastSpend: num.min(0),
+  status: z.enum(['active', 'paused', 'blocked', 'done']), description: z.string().max(2000).default(''),
+});
+const knowledge = z.object({
+  id, title: z.string().max(200), summary: z.string().max(4000), topic: z.string().max(120), tags: z.array(z.string().max(60)).max(30),
+  sources: z.array(z.object({ title: z.string().max(200), url: z.string().max(1000) })).max(40),
+  createdAt: z.string(), authorAgentId: id.nullable(), projectId: id.nullable(), confidence: num.min(0).max(1),
+  verification: z.enum(['unverified', 'verified', 'disputed']), sensitive: z.boolean(), allowedAgentIds: z.array(id),
+});
+const cosmetic = z.object({
+  id, name: z.string().max(120), category: z.enum(['head', 'clothing', 'accessory', 'effect']), slot: z.string().max(40),
+  patch: z.record(z.unknown()).optional(), accessoryId: z.string().max(80).optional(),
+  rarity: z.enum(['common', 'uncommon', 'rare', 'legendary']).optional(), collection: z.string().max(80).optional(),
+  functionalTool: z.string().max(80).optional(), custom: z.boolean().optional(), assetId: id.nullable().optional(), tags: z.array(z.string().max(40)).optional(),
 });
 
 export const officeSchema = z.object({
@@ -53,8 +105,16 @@ export const officeSchema = z.object({
   id, name: z.string().max(200),
   settings,
   rooms: z.record(room), corridors: z.record(corridor), furniture: z.record(furniture), agents: z.record(agent),
-  outfitTemplates: z.array(z.object({ id, name: z.string(), patch: z.record(z.unknown()) })).default([]),
+  outfitTemplates: z.array(z.object({
+    id, name: z.string(), patch: z.record(z.unknown()), kind: z.enum(['outfit', 'uniform']).optional(),
+    department: z.string().max(120).optional(), approved: z.boolean().optional(), occasion: z.string().max(120).optional(),
+  })).default([]),
   roomTemplates: z.array(z.unknown()).default([]),
+  cosmetics: z.array(cosmetic).max(500),
+  appearance: appearanceSettings,
+  alertSettings,
+  projects: z.record(project),
+  library: z.record(knowledge),
 });
 
 const SECRET_KEYS = /^(api[-_]?key|secret|token|password|authorization|credential)s?$/i;
@@ -86,6 +146,20 @@ const migrations: Record<number, (d: Raw) => Raw> = {
     d.schemaVersion = 2;
     return d;
   },
+  // v2 → v3: headquarters features — object library, cosmetics, themes, alerts, projects, library.
+  2: (d) => {
+    d.settings ??= {};
+    d.settings.collisionRule ??= 'warn';
+    d.settings.animationIntensity ??= 'subtle';
+    d.settings.idleWandering ??= false;
+    d.cosmetics ??= BUILTIN_COSMETICS;
+    d.appearance ??= defaultAppearanceSettings();
+    d.alertSettings ??= defaultAlertSettings();
+    d.projects ??= {};
+    d.library ??= {};
+    d.schemaVersion = 3;
+    return d;
+  },
 };
 
 function fillAgent(a: Raw): Raw {
@@ -97,7 +171,8 @@ function fillAgent(a: Raw): Raw {
     }
   };
   merge(base, a);
-  base.appearance = { ...DEFAULT_APPEARANCE, ...(a.appearance ?? {}) };
+  base.appearance = withAppearance(DEFAULT_APPEARANCE, a.appearance ?? {});
+  base.defaultAppearance = a.defaultAppearance ? withAppearance(DEFAULT_APPEARANCE, a.defaultAppearance) : base.appearance;
   base.id = a.id;
   return base;
 }
@@ -130,6 +205,8 @@ export function parseOffice(input: unknown): ParseResult {
       if (e.kind === 'corridor' && !doc.corridors[e.corridorId]) errs.push(`${c.name} joins missing hallway ${e.corridorId}`);
     }
     for (const [k, r] of Object.entries(doc.rooms)) if (r.id !== k) errs.push(`Room key ${k} doesn't match its id`);
+    for (const p of Object.values(doc.projects)) if (p.ownerAgentId && !doc.agents[p.ownerAgentId]) p.ownerAgentId = null;
+    if (!doc.appearance.themes.some((t) => t.id === doc.appearance.themeId)) doc.appearance.themeId = doc.appearance.themes[0].id;
     if (errs.length) return { ok: false, errors: errs.slice(0, 12) };
     doc.schemaVersion = SCHEMA_VERSION;
     return { ok: true, doc, warnings };
