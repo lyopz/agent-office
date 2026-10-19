@@ -58,8 +58,8 @@ export const BubbleRoomShape = memo(function BubbleRoomShape({
         <rect x={x} y={y} width={w} height={h} rx={rx} fill="none" stroke="url(#bubble-iris)" strokeWidth={2.5} strokeOpacity={0.85} />
         <rect x={x + 3} y={y + 3} width={w - 6} height={h - 6} rx={Math.max(0, rx - 3)} fill="none" stroke={acc} strokeOpacity={0.3} strokeWidth={1} />
         {/* glossy highlight: a short arc on the upper-left rim and a pin-point glint */}
-        <path d={`M${x + rx * 0.45},${y + h * 0.42} Q${x + rx * 0.3},${y + rx * 0.3} ${x + Math.min(w * 0.36, rx * 1.6)},${y + 7}`} fill="none" stroke="#ffffff" strokeOpacity={0.4} strokeWidth={3} strokeLinecap="round" />
-        <circle cx={x + Math.min(w * 0.42, rx * 1.9) + 6} cy={y + 7} r={2} fill="#ffffff" opacity={0.5} />
+        <path d={`M${x + 6},${y + rx * 1.05} Q${x + 6},${y + 6} ${x + rx * 1.05},${y + 6}`} fill="none" stroke="#ffffff" strokeOpacity={0.38} strokeWidth={2.5} strokeLinecap="round" />
+        <circle cx={x + rx * 1.05 + 9} cy={y + 6} r={1.8} fill="#ffffff" opacity={0.5} />
         {room.doors.map((d) => {
           // where a tube meets the bubble: a soft iridescent socket instead of a door
           const s = doorSegment(room, d);
