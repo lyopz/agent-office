@@ -187,12 +187,15 @@ function addProductionWing(doc0: OfficeDoc): OfficeDoc {
     { op: 'room.create', id: 'room_floor', type: 'ops-floor', name: 'Operations Floor', x: 0, y: 46, w: 30, h: 17 },
     { op: 'room.create', id: 'room_arcade', type: 'arcade', name: 'Game Dev Arcade', x: 38, y: 46, w: 18, h: 12 },
     { op: 'room.create', id: 'room_blender', type: 'blender-studio', name: 'Blender Design Studio', x: 62, y: 46, w: 16, h: 11 },
+    { op: 'room.create', id: 'room_lounge', type: 'royal-lounge', name: "King's Lounge", x: 86, y: 46, w: 16, h: 11 },
   ]);
   run([
     { op: 'rooms.connect', id: 'hall_floor', a: 'room_shop', b: 'room_floor', width: 3 },
     { op: 'rooms.connect', id: 'hall_arcade', a: 'room_shop', b: 'room_arcade' },
     { op: 'rooms.connect', id: 'hall_blender', a: 'room_arcade', b: 'room_blender' },
     { op: 'rooms.connect', id: 'hall_studio3d', a: 'room_design', b: 'room_blender' },
+    { op: 'rooms.connect', id: 'hall_lounge', a: 'room_blender', b: 'room_lounge' },
+    { op: 'rooms.connect', id: 'hall_court', a: 'room_studio', b: 'room_lounge' },
   ]);
   // keep doorways clear: move any preset object a new door landed on
   for (const i of validate(doc)) if (i.code === 'door-blocked') {
@@ -200,7 +203,7 @@ function addProductionWing(doc0: OfficeDoc): OfficeDoc {
     const spot = findObjectSpot(doc, room, f.type, { near: { x: f.x, y: room.h - 1 }, ignore: new Set([f.id]), rotation: f.rotation });
     if (spot) run([{ op: 'furniture.update', id: f.id, patch: { x: spot.x, y: spot.y } }]);
   }
-  run(Object.entries({ hall_floor: 'Floor Concourse', hall_arcade: 'Arcade Hall', hall_blender: 'Studio Walk', hall_studio3d: 'Design Link' }).map(([id, name]) => ({ op: 'corridor.update', id, patch: { name } }) as DocOp));
+  run(Object.entries({ hall_floor: 'Floor Concourse', hall_arcade: 'Arcade Hall', hall_blender: 'Studio Walk', hall_studio3d: 'Design Link', hall_lounge: 'Royal Walk', hall_court: 'Court Hall' }).map(([id, name]) => ({ op: 'corridor.update', id, patch: { name } }) as DocOp));
 
   const place = (roomId: string, type: FurnitureType, id: string, near: { x: number; y: number }, extra: Record<string, unknown> = {}) => {
     const room = doc.rooms[roomId]; const spot = findObjectSpot(doc, room, type, { near });

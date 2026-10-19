@@ -17,6 +17,7 @@ import { useApplyTheme } from './ui/ThemeEditor';
 import { useAlertDelivery } from './ui/AlertCenter';
 import { ExecutiveControl } from './ui/ExecutiveControl';
 import { ArcadeHost } from './ui/ArcadeHost';
+import { BriefingHost } from './ui/BriefingBoard';
 
 function useSimulationLoop() {
   const running = useStore((s) => s.prefs.simRunning);
@@ -108,6 +109,7 @@ export function App() {
       <ConfirmDialog />
       <Toast />
       <ArcadeHost />
+      <BriefingHost />
     </div>
   );
 }
