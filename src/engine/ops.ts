@@ -2,7 +2,7 @@
 // edits and AI commands both produce `DocOp[]`, which are applied atomically,
 // followed by door/furniture clamping and corridor rerouting.
 import { produce, type Draft } from 'immer';
-import type {
+import type { PlayerProfile,
   Agent, AlertSettings, Appearance, AppearanceSettings, CorridorEndpoint, Corridor, CosmeticItem, Door, Furniture, FurnitureMaterial, FurnitureType,
   ArcadeSettings, ControlSettings, Department, KnowledgeEntry, OfficeDoc, OfficeSettings, OutfitTemplate, Point, Project, Rect, Room, RoomAppearance, RoomTemplate, RoomType, ThemeDef,
 } from '../model/types';
@@ -82,7 +82,8 @@ export type DocOp =
   | { op: 'departments.setMode'; ids: string[] | 'all'; mode: Department['mode'] }
   | { op: 'department.setAgentsEnabled'; id: string; enabled: boolean }
   | { op: 'control.update'; patch: DeepPartial<ControlSettings> }
-  | { op: 'arcade.update'; patch: DeepPartial<ArcadeSettings> };
+  | { op: 'arcade.update'; patch: DeepPartial<ArcadeSettings> }
+  | { op: 'player.update'; patch: { name?: string; camera?: PlayerProfile['camera']; lastRoomId?: string | null; appearance?: Partial<Appearance> } };
 
 export interface ApplyResult { doc: OfficeDoc; summary: string[]; errors: string[] }
 
@@ -646,6 +647,15 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
       deepMerge(doc.control, o.patch);
       summary.push(o.patch.emergencyStop === true ? 'Emergency pause: all agents stopped' : o.patch.emergencyStop === false ? 'Emergency pause lifted' : 'Updated executive control settings');
       return;
+    case 'player.update': {
+      const { appearance, ...rest } = o.patch;
+      if (rest.name !== undefined && !rest.name.trim()) { errors.push('Your avatar needs a name'); return; }
+      if (rest.lastRoomId && !doc.rooms[rest.lastRoomId]) { errors.push('That room no longer exists'); return; }
+      Object.assign(doc.player, rest);
+      if (appearance) doc.player.appearance = withAppearance(doc.player.appearance as Appearance, appearance) as Draft<Appearance>;
+      if (appearance || rest.name) summary.push(`Updated your avatar${rest.name ? ` (${rest.name})` : ''}`);
+      return;
+    }
     case 'arcade.update': {
       const { tokenFreeVerified: _ignored, ...patch } = o.patch; // verification comes from code, never from a setting
       deepMerge(doc.arcade, patch);

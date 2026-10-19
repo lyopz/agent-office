@@ -145,7 +145,7 @@ export interface Appearance {
   eyeStyle: 'dot' | 'almond' | 'wide' | 'visor';
   eyeColor: string;
   brows: 'none' | 'thin' | 'thick' | 'angled';
-  hairStyle: 'bald' | 'buzz' | 'short' | 'long' | 'bun' | 'ponytail' | 'mohawk' | 'curly';
+  hairStyle: 'bald' | 'buzz' | 'short' | 'long' | 'bun' | 'ponytail' | 'mohawk' | 'curly' | HairStyle3D;
   hairColor: string;
   facialHair: 'none' | 'stubble' | 'beard' | 'mustache';
   top: 'tshirt' | 'hoodie' | 'suit' | 'labcoat' | 'coverall' | 'uniform' | 'vest' | 'jacket' | 'robe' | 'armor' | 'longcoat';
@@ -179,6 +179,29 @@ export interface Appearance {
   shading: 'none' | 'soft' | 'hard';
   animationSpeed: number;   // 0.5..2
   preferredView: ViewMode;  // view used on the floor plan when global view = 'auto'
+  // 3D headquarters (optional so older looks keep their render keys)
+  expression?: Expression;  // resting facial expression
+  bodyStyle?: BodyStyle;    // overall 3D proportions
+  mouth?: 'small' | 'wide' | 'full';
+  nose?: 'button' | 'straight' | 'broad' | 'none';
+  cheeks?: 'none' | 'blush' | 'dimples';
+}
+
+/** Hair styles modelled for the 3D headquarters (also drawn, simplified, in 2D). */
+export const HAIR_STYLES_3D = ['spiky', 'afro', 'braids', 'undercut', 'swept', 'twin-buns'] as const;
+export type HairStyle3D = (typeof HAIR_STYLES_3D)[number];
+export const EXPRESSIONS = ['neutral', 'smile', 'grin', 'focused', 'surprised', 'smirk', 'determined'] as const;
+export type Expression = (typeof EXPRESSIONS)[number];
+/** Original game-inspired 3D proportions: chunky blocks, heroic, chibi (big head), sleek. */
+export const BODY_STYLES = ['blocky', 'heroic', 'chibi', 'sleek'] as const;
+export type BodyStyle = (typeof BODY_STYLES)[number];
+
+/** The person using the app: their avatar in the 3D headquarters. */
+export interface PlayerProfile {
+  name: string;
+  appearance: Appearance;
+  camera: 'first' | 'third';
+  lastRoomId: ID | null;
 }
 
 export interface CharacterEffects {
@@ -402,6 +425,7 @@ export interface OfficeDoc {
   departments: Record<ID, Department>;
   control: ControlSettings;
   arcade: ArcadeSettings;
+  player: PlayerProfile;
 }
 
 // ---------- Departments and executive control ----------

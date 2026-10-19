@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import type {
+import type { PlayerProfile,
   Agent, Appearance, Furniture, FurnitureType, OfficeDoc, OutfitTemplate, Room, RoomAppearance,
   RoomTemplate, RoomType,
 } from './types';
@@ -160,6 +160,17 @@ export const DEFAULT_APPEARANCE: Appearance = {
   effects: { aura: false, holoOutline: false, eyeGlow: false, particles: false, energyAccents: false, robotics: false, intensity: 0.35 },
 };
 
+/** The owner's avatar for the 3D headquarters: an original explorer look. */
+export function defaultPlayer(): PlayerProfile {
+  return {
+    name: 'You', camera: 'third', lastRoomId: null,
+    appearance: withAppearance(DEFAULT_APPEARANCE, {
+      hairStyle: 'swept', hairColor: '#3b2416', top: 'jacket', topColor: '#2b3a8c', trimColor: '#ffd166', accent: '#7cf7ff',
+      bottom: 'pants', bottomColor: '#20232b', shoes: 'boots', shoeColor: '#1a1a1f', expression: 'smile', bodyStyle: 'heroic', mouth: 'wide', nose: 'button', cheeks: 'none',
+    }),
+  };
+}
+
 /** Appearance merge that keeps nested effects and copies arrays. */
 export function withAppearance(base: Appearance, patch: Partial<Appearance> = {}): Appearance {
   const out: Appearance = { ...base, ...patch, effects: { ...base.effects, ...(patch.effects ?? {}) }, accessories: [...(patch.accessories ?? base.accessories)] };
@@ -253,10 +264,10 @@ export function builtinRoomTemplates(): RoomTemplate[] {
 
 export function emptyOffice(name = 'New Office'): OfficeDoc {
   return {
-    schemaVersion: 6, id: uid('office'), name,
+    schemaVersion: 7, id: uid('office'), name,
     settings: { gridSize: 24, bounds: null, hallwayMode: 'hybrid', minCorridorWidth: 1, defaultCorridorWidth: 2, collisionRule: 'warn', animationIntensity: 'subtle', idleWandering: false, layoutPreset: 'grid' },
     rooms: {}, corridors: {}, furniture: {}, agents: {}, outfitTemplates: JSON.parse(JSON.stringify(DEFAULT_OUTFITS)), roomTemplates: builtinRoomTemplates(),
     cosmetics: BUILTIN_COSMETICS.map((c) => ({ ...c })), appearance: defaultAppearanceSettings(), alertSettings: defaultAlertSettings(),
-    projects: {}, library: {}, departments: {}, control: defaultControl(), arcade: defaultArcade(),
+    projects: {}, library: {}, departments: {}, control: defaultControl(), arcade: defaultArcade(), player: defaultPlayer(),
   };
 }
