@@ -12,6 +12,7 @@ import { makeDepartment } from './control';
 export function sampleOffice(): OfficeDoc {
   let doc = emptyOffice('NEXUS-7 Headquarters');
   doc.id = 'office_sample';
+  doc.settings.layoutPreset = 'bubble'; // the Neural Command Campus look: floating rooms joined by transport tubes
   const rooms: DocOp[] = [
     { op: 'room.create', id: 'room_ops', type: 'operations', name: 'Main Operations', x: 18, y: 12, w: 18, h: 11 },
     { op: 'room.create', id: 'room_lab', type: 'research', name: 'Research Lab', x: 0, y: 12, w: 11, h: 8 },

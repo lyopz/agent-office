@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from './store/store';
 import { TopBar } from './ui/TopBar';
 import { Toolbar } from './ui/Toolbar';
+import { AutoSortPanel } from './ui/AutoSort';
 import { AgentPanel } from './ui/AgentPanel';
 import { Inspector } from './ui/Inspector';
 import { Console } from './ui/Console';
@@ -87,6 +88,7 @@ export function App() {
               {mode === 'construct' && <div className="mode-banner">CONSTRUCTION MODE</div>}
               {mode === 'construct' && (tool === 'furniture' || tool === 'workstation') && <ObjectLibrary />}
               {perf && <PerfPanel />}
+              <AutoSortPanel />
             </div>
           </div>
           <Inspector />

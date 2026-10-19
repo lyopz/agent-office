@@ -1,13 +1,13 @@
 // Schema validation + migrations for saved/imported offices.
 import { z } from 'zod';
 import { DEFAULT_APPEARANCE, DEFAULT_OUTFITS, ROLE_UNIFORMS, builtinRoomTemplates, makeAgent, roleUniformId, withAppearance } from './defaults';
-import { FURNITURE_MATERIALS, FURNITURE_TYPES, ROOM_TYPES, type OfficeDoc } from './types';
+import { FURNITURE_MATERIALS, FURNITURE_TYPES, LAYOUT_PRESETS, ROOM_TYPES, type OfficeDoc } from './types';
 import { BUILTIN_COSMETICS, OUTFIT_FIELDS } from './cosmetics';
 import { defaultAppearanceSettings } from './themes';
 import { defaultAlertSettings } from './alertDefaults';
 import { TOKEN_FREE_VERIFIED, defaultArcade, defaultControl } from './control';
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const id = z.string().min(1).max(120);
 const num = z.number().finite();
@@ -59,6 +59,7 @@ const settings = z.object({
   collisionRule: z.enum(['warn', 'prevent']).default('warn'),
   animationIntensity: z.enum(['off', 'subtle', 'full']).default('subtle'),
   idleWandering: z.boolean().default(false),
+  layoutPreset: z.enum(LAYOUT_PRESETS).default('grid'),
 });
 
 const tokens = z.object({
@@ -207,6 +208,13 @@ const migrations: Record<number, (d: Raw) => Raw> = {
       a.uniformId = same ? u.id : null;
     }
     d.schemaVersion = 5;
+    return d;
+  },
+  // v5 → v6: Neural Command Campus — layout presets (grid or bubble office).
+  5: (d) => {
+    d.settings ??= {};
+    d.settings.layoutPreset ??= 'grid';
+    d.schemaVersion = 6;
     return d;
   },
 };

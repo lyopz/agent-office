@@ -14,6 +14,9 @@ import { FURNITURE_META } from '../model/catalog';
 import { markFrame } from '../ui/perf';
 import { ContextMenu, type MenuTarget } from './ContextMenu';
 import { Minimap } from './Minimap';
+import { BubbleDefs, BubbleRoomShape, TubeShape } from './BubbleLayers';
+import { MailNetworkLayer, TubeRoutesLayer } from './TubeLayers';
+import { AutoSortGhosts } from '../ui/AutoSort';
 
 type Drag =
   | { type: 'pan'; sx: number; sy: number; cam: { x: number; y: number } }
@@ -42,6 +45,8 @@ export function Viewport() {
   const layers = useStore((s) => s.layers);
   const issues = useStore((s) => s.issues);
   const preview = useStore((s) => s.preview);
+  const bubble = useStore((s) => s.doc.settings.layoutPreset === 'bubble');
+  const RoomComp = bubble ? BubbleRoomShape : RoomShape;
   const hallwayDraft = useStore((s) => s.hallwayDraft);
   const furnitureType = useStore((s) => s.furnitureType);
   const placeRotation = useStore((s) => s.placeRotation);
@@ -382,9 +387,10 @@ export function Viewport() {
   const gridPx = G * camera.zoom;
 
   return (
-    <div className="viewport" data-mode={mode}>
+    <div className="viewport" data-mode={mode} data-motion={doc.settings.animationIntensity}>
       <svg ref={svgRef} width={size.w} height={size.h} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => setDrag(null)} onPointerLeave={() => hover && setHover(null)} onContextMenu={onContextMenu} style={{ cursor, touchAction: 'none' }} aria-label="Office floor plan" role="application">
         <FloorPatterns />
+        {bubble && <BubbleDefs />}
         {layers.grid && (
           <>
             <defs><pattern id="bg-grid" width={gridPx} height={gridPx} patternUnits="userSpaceOnUse" x={camera.x % gridPx} y={camera.y % gridPx}><path d={`M${gridPx} 0 L0 0 0 ${gridPx}`} fill="none" stroke="var(--grid-line)" strokeWidth="1" /></pattern></defs>
@@ -393,12 +399,17 @@ export function Viewport() {
         )}
         <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.zoom})`}>
           {doc.settings.bounds && <rect x={doc.settings.bounds.x * G} y={doc.settings.bounds.y * G} width={doc.settings.bounds.w * G} height={doc.settings.bounds.h * G} fill="none" stroke="var(--warn)" strokeDasharray="10 6" opacity={0.5} />}
-          <g>{visibleCorridors.map((c) => <CorridorShape key={c.id} c={c} selected={selCorridor?.id === c.id || affectedCorridors.has(c.id)} />)}</g>
+          <g>{visibleCorridors.map((c) => bubble
+            ? <TubeShape key={c.id} c={c} selected={selCorridor?.id === c.id || affectedCorridors.has(c.id)} />
+            : <CorridorShape key={c.id} c={c} selected={selCorridor?.id === c.id || affectedCorridors.has(c.id)} />)}</g>
           <g>{visibleRooms.map((r) => (
-            <RoomShape key={r.id} room={r} furniture={live && live.errors.length === 0 ? Object.values(shown.furniture).filter((f) => f.roomId === r.id) : furnitureFor[r.id] ?? []}
+            <RoomComp key={r.id} room={r} furniture={live && live.errors.length === 0 ? Object.values(shown.furniture).filter((f) => f.roomId === r.id) : furnitureFor[r.id] ?? []}
               selected={selectedRoomIds.includes(r.id)} invalid={overlapping.has(r.id) || errorObjects.has(r.id)}
               occupancy={layers.occupancy ? occupancy[r.id] ?? 0 : null} showLabel={layers.labels} showBoundary={layers.boundaries} construct={construct} />
           ))}</g>
+          {bubble && <TubeRoutesLayer />}
+          <MailNetworkLayer />
+          {preview?.source === 'autosort' && <AutoSortGhosts />}
           {preview && (
             <g pointerEvents="none" className="ghost">
               {Object.values(preview.doc.corridors).map((c) => <CorridorShape key={c.id} c={c} ghost />)}

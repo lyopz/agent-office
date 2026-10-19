@@ -6,6 +6,7 @@ import {
 import { selectedFurniture, useStore, type Tool } from '../store/store';
 import type { DocOp } from '../engine/ops';
 import { deleteSelection, duplicateFurniture } from './actions';
+import { AutoSortButton, LayoutPresetSelect } from './AutoSort';
 
 const TOOLS: { id: Tool; label: string; key: string; icon: typeof MousePointer2 }[] = [
   { id: 'select', label: 'Select / move / resize', key: 'V', icon: MousePointer2 },
@@ -97,6 +98,9 @@ export function Toolbar() {
       <select aria-label="Hallway mode" title="Hallway connection mode" value={hallwayMode} onChange={(e) => commit([{ op: 'settings.update', patch: { hallwayMode: e.target.value as never } }], 'Hallway mode')}>
         <option value="automatic">Halls: automatic</option><option value="hybrid">Halls: hybrid</option><option value="manual">Halls: manual</option>
       </select>
+      <span className="sep" />
+      <LayoutPresetSelect />
+      <AutoSortButton />
       <span className="sep" />
       <button className="btn icon sm" disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo" onClick={undo}><Undo2 size={15} /></button>
       <button className="btn icon sm" disabled={!canRedo} title="Redo (Ctrl+Shift+Z)" aria-label="Redo" onClick={redo}><Redo2 size={15} /></button>

@@ -38,7 +38,7 @@ export interface HistoryEntry { doc: OfficeDoc; label: string }
 
 export interface CommitResult { ok: boolean; summary: string[]; errors: string[]; conflicts: Issue[]; doc?: OfficeDoc }
 
-export interface Preview { doc: OfficeDoc; ops: DocOp[]; runtimeOps: RuntimeOp[]; label: string; summary: string[]; issues: Issue[]; source: 'ai' | 'conflict' }
+export interface Preview { doc: OfficeDoc; ops: DocOp[]; runtimeOps: RuntimeOp[]; label: string; summary: string[]; issues: Issue[]; source: 'ai' | 'conflict' | 'autosort' }
 
 export type RuntimeOp =
   | { op: 'agent.goTo'; agentId: string; roomId: string | null; workstationId?: string | null }

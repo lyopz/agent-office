@@ -325,7 +325,11 @@ export interface OfficeSettings {
   collisionRule: 'warn' | 'prevent';  // object placement overlapping another object
   animationIntensity: 'off' | 'subtle' | 'full';
   idleWandering: boolean;      // purely cosmetic idle movement
+  /** How the campus is drawn and how Auto Sort packs it: classic grid offices, or floating bubble rooms joined by transport tubes. */
+  layoutPreset: LayoutPreset;
 }
+export const LAYOUT_PRESETS = ['grid', 'bubble'] as const;
+export type LayoutPreset = (typeof LAYOUT_PRESETS)[number];
 
 // ---------- Themes ----------
 
@@ -554,6 +558,8 @@ export interface Capsule {
   path: Point[]; progress: number;            // index into path (float)
   status: 'in-transit' | 'delivered';
   recipientId: ID | null;
+  deliveredTick?: number;                     // tick the capsule arrived; it stays visible briefly with its delivery status
+  acknowledged?: boolean;                     // the recipient confirmed it on arrival
 }
 
 export interface RuntimeState {

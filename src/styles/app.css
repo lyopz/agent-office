@@ -412,3 +412,18 @@ fieldset.plain:disabled { opacity: 0.55; }
 .char-grid figure { margin: 0; border: 1px solid var(--border); background: var(--bg); text-align: center; }
 .char-grid img { width: 100%; aspect-ratio: 2 / 3; object-fit: contain; display: block; }
 .char-grid figcaption { font-size: var(--fs-xs); padding: 4px; }
+
+/* ---------- Neural Command Campus: bubble office, tubes, Auto Sort ---------- */
+:root { --tube-glass: rgba(12, 34, 48, 0.62); }
+:root[data-theme='light'] { --tube-glass: rgba(210, 238, 250, 0.7); }
+.tube-flow { animation: tube-flow 2.4s linear infinite; }
+.route-flow { animation: tube-flow 0.9s linear infinite; }
+@keyframes tube-flow { to { stroke-dashoffset: -48; } }
+.pod-streak { animation: pod-streak 0.5s ease-out infinite; }
+@keyframes pod-streak { from { opacity: 0.8; } to { opacity: 0.1; } }
+[data-motion='off'] .tube-flow, [data-motion='off'] .route-flow, [data-motion='off'] .pod-streak { animation: none; }
+@media (prefers-reduced-motion: reduce) { .tube-flow, .route-flow, .pod-streak { animation: none; } }
+.autosort-btn { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent), 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent); }
+.autosort-panel { position: absolute; top: 10px; right: 10px; width: min(340px, calc(100% - 20px)); max-height: calc(100% - 20px); overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: grid; gap: 8px; z-index: 6; box-shadow: 0 8px 30px rgba(0,0,0,.35); }
+.autosort-panel header { gap: 6px; }
+.autosort-moves { margin: 0; padding-left: 16px; display: grid; gap: 3px; font-size: 12px; }
