@@ -152,6 +152,17 @@ Characters are still drawn as SVG at the same size. They now sit at a desk (with
 blender --background --factory-startup --python tools/blender/build_characters.py -- roster.json out/
 ```
 
+### Graph POW
+
+The **Graph POW** button in the top bar opens Graph POW, the glowing map of how this app's files connect, in a new tab. It appears only when the local app serves `public/graph-pow.html`; the published single-file build doesn't include it. To refresh the map after code changes, run graphify on this folder (it writes `graphify-out/graph.json`), then:
+
+```bash
+npm run graph:pow                                  # rebuild from graphify-out/graph.json
+npm run graph:pow -- --from path/to/graph-pow.html # or install a Graph POW page you already have
+```
+
+The page loads d3 from cdnjs, so it needs an internet connection.
+
 ### Schema version 5
 
 Version 4 added `departments`, `control` and `arcade`; version 3 files migrate with every department running, no emergency stop and the arcade set to human only. Version 5 adds locked uniforms. Migrating replaces only the built-in wardrobe (custom items and saved outfits are kept), adds the role uniforms, and locks an agent only if it is already dressed exactly in its role uniform, so nobody's look changes.

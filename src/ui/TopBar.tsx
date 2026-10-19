@@ -1,6 +1,6 @@
 import { saveFile } from '../persistence/saveFile';
-import { useRef, useState } from 'react';
-import { Download, FolderOpen, History, OctagonX, Pause, Play, Redo2, Save, Undo2, Upload } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Download, FolderOpen, History, Network, OctagonX, Pause, Play, Redo2, Save, Undo2, Upload } from 'lucide-react';
 import { useStore } from '../store/store';
 import { repo } from '../store/store';
 import { confirmAction } from './primitives';
@@ -38,6 +38,7 @@ export function TopBar() {
       <nav className="seg" aria-label="Pages">
         {(['office', 'dashboard', 'control', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'control' ? 'Control' : p[0].toUpperCase() + p.slice(1)}</button>)}
       </nav>
+      <GraphPowButton />
       <span className="spacer" />
       <AlertBell />
       <button className="btn icon sm" aria-label={prefs.simRunning ? 'Pause simulation' : 'Run simulation'} title={prefs.simRunning ? 'Pause simulation' : 'Run simulation'} onClick={() => s.setPrefs({ simRunning: !prefs.simRunning })}>{prefs.simRunning ? <Pause size={14} /> : <Play size={14} />}</button>
@@ -92,6 +93,18 @@ function VersionsMenu({ onClose }: { onClose: () => void }) {
       </div>
     </div>
   );
+}
+
+/** Opens Graph POW, the file map of this codebase, when the local app serves one (npm run graph:pow). */
+function GraphPowButton() {
+  const [ok, setOk] = useState(false);
+  useEffect(() => {
+    if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+    // a dev server answers unknown paths with the app itself, so check it's really the graph page
+    fetch('graph-pow.html').then((r) => (r.ok ? r.text() : '')).then((t) => setOk(/<title>[^<]*Graph POW/i.test(t))).catch(() => setOk(false));
+  }, []);
+  if (!ok) return null;
+  return <button className="btn sm" title="Open Graph POW, the map of how this app's files connect" onClick={() => window.open('graph-pow.html', '_blank', 'noopener')}><Network size={14} /><span className="hide-sm">Graph POW</span></button>;
 }
 
 function EmergencyButton() {

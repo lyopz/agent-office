@@ -11,7 +11,8 @@
     "test": "vitest run",
     "typecheck": "tsc -b --noEmit",
     "proxy": "node server/ai-proxy.mjs",
-    "blender-bridge": "node server/blender-bridge.mjs"
+    "blender-bridge": "node server/blender-bridge.mjs",
+    "graph:pow": "node tools/graph-pow/build.mjs"
   },
   "dependencies": {
     "immer": "^10.1.1",
