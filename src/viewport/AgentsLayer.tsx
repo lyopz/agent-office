@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store/store';
 import { Character } from '../characters/Character';
 import type { AgentStatus, Rect, ViewMode } from '../model/types';
@@ -6,6 +6,15 @@ import { useShallow } from 'zustand/react/shallow';
 import { assetStore } from '../persistence/repository';
 import { G } from './OfficeLayers';
 import { capsulePos } from '../engine/tubes';
+import { SPRITE_FRAMES, SPRITE_H, SPRITE_W, bundledSprite, frameFor, lookKey, useSpriteLibrary } from '../characters/sprites';
+
+/** The Blender sprite sheet for this exact look, if one exists and rendered characters are on. */
+function useSpriteSheet(a: Parameters<typeof lookKey>[0] | undefined, enabled: boolean) {
+  const key = useMemo(() => (a && enabled ? lookKey(a) : null), [a, enabled]);
+  const imported = useSpriteLibrary((s) => (key ? s.imported.has(key) : false));
+  const stored = useAsset(key && imported && !bundledSprite(key) ? `sprite_${key}` : null);
+  return key ? bundledSprite(key) ?? stored : null;
+}
 
 export const STATUS_COLOR: Record<AgentStatus, string> = {
   idle: 'var(--muted)', working: 'var(--accent)', walking: 'var(--accent-blue)', thinking: 'var(--accent-purple)',
@@ -46,6 +55,8 @@ const AgentSprite = memo(function AgentSprite({ id, simple }: { id: string; simp
   const labels = useStore((s) => s.layers.labels);
   const view = agent ? resolveView(global, agent.appearance.preferredView) : 'top';
   const asset = useAsset(simple ? null : agent?.assets[view]?.assetId);
+  const rendered = useStore((s) => (s.prefs.characterStyle ?? 'rendered') === 'rendered');
+  const sheet = useSpriteSheet(agent?.appearance, rendered && !simple && view !== 'top');
   const [facing, setFacing] = useState<'left' | 'right'>(agent?.appearance.facing ?? 'right');
   const [turning, setTurning] = useState(false);
   useEffect(() => {
@@ -83,6 +94,8 @@ const AgentSprite = memo(function AgentSprite({ id, simple }: { id: string; simp
       <g transform={`translate(${tx} ${ty})`}>
         {asset
           ? <image href={asset} width={width} height={size} preserveAspectRatio="xMidYMax meet" />
+          : sheet
+          ? <SpriteFrameImage sheet={sheet} frame={frameFor(paused ? 'idle' : rt.status, rt.atDesk, frame)} flip={facing === 'left' && !(rt.status === 'working' && rt.atDesk)} size={size} label={agent.identity.name} />
           : <Character a={a} view={shownView} pose={pose} frame={frame} facing={facing} heading={heading} size={size} title={agent.identity.name} />}
       </g>
       {asset === null && agent.assets[view] && <text x={0} y={ty - 2} textAnchor="middle" className="tag">fallback</text>}
@@ -101,6 +114,21 @@ const AgentSprite = memo(function AgentSprite({ id, simple }: { id: string; simp
     </g>
   );
 });
+
+/** One frame of a Blender sprite strip, scaled to the character's height and mirrored when facing left. */
+function SpriteFrameImage({ sheet, frame, flip, size, label }: { sheet: string; frame: (typeof SPRITE_FRAMES)[number]; flip: boolean; size: number; label: string }) {
+  const i = SPRITE_FRAMES.indexOf(frame);
+  // the strip's frames leave headroom above the head; scale so the figure matches the drawn character's height
+  const h = size * 1.22, w = h * (SPRITE_W / SPRITE_H);
+  const x = (size * 0.625 - w) / 2, y = size - h;
+  return (
+    <svg x={x} y={y} width={w} height={h} viewBox={`${i * SPRITE_W} 0 ${SPRITE_W} ${SPRITE_H}`} overflow="hidden" role="img" aria-label={`${label}, rendered`}>
+      <g transform={flip ? `translate(${(2 * i + 1) * SPRITE_W} 0) scale(-1 1)` : undefined}>
+        <image href={sheet} width={SPRITE_W * SPRITE_FRAMES.length} height={SPRITE_H} />
+      </g>
+    </svg>
+  );
+}
 
 export function AgentPaths() {
   const agents = useStore((s) => s.runtime.agents);

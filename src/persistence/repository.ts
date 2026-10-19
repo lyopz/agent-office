@@ -4,7 +4,7 @@ import { parseOffice, stripSecrets } from '../model/schema';
 import type { OfficeDoc, RuntimeState } from '../model/types';
 
 export interface SavedVersion { id: string; officeId: string; name: string; savedAt: string; doc: OfficeDoc }
-export interface Preferences { autosave: boolean; viewMode: string; showDashboard: boolean; aiProvider: string; autoApplySafe: boolean; simSpeed: number; simRunning: boolean; demoTasks: boolean }
+export interface Preferences { autosave: boolean; viewMode: string; showDashboard: boolean; aiProvider: string; autoApplySafe: boolean; simSpeed: number; simRunning: boolean; demoTasks: boolean; characterStyle?: 'rendered' | 'drawn' }
 
 export interface OfficeRepository {
   loadCurrent(): { doc: OfficeDoc; runtime: Partial<RuntimeState> | null; savedAt: string } | null;

@@ -107,6 +107,19 @@ export function Toolbar() {
           <option value="auto">Per agent</option><option value="top">Top-down</option><option value="front">Front</option><option value="side">Side</option><option value="three-quarter">Three-quarter</option>
         </select>
       </label>
+      <CharacterStyle />
     </div>
+  );
+}
+
+/** Blender-rendered characters or the drawn ones. Rendered sprites are 3/4 views, so top-down stays drawn. */
+function CharacterStyle() {
+  const style = useStore((s) => s.prefs.characterStyle ?? 'rendered');
+  return (
+    <label className="row small muted" style={{ gap: 4 }} title="Rendered uses the Blender characters where a render matches the agent's current look">Characters
+      <select aria-label="Character style" value={style} onChange={(e) => useStore.getState().setPrefs({ characterStyle: e.target.value as 'rendered' | 'drawn' })}>
+        <option value="rendered">Rendered (Blender)</option><option value="drawn">Drawn</option>
+      </select>
+    </label>
   );
 }

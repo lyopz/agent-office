@@ -107,7 +107,7 @@ interface State {
 
 export const repo: OfficeRepository = new LocalStorageRepository();
 
-const DEFAULT_PREFS: Preferences = { autosave: true, viewMode: 'auto', showDashboard: true, aiProvider: 'mock', autoApplySafe: true, simSpeed: 1, simRunning: true, demoTasks: true };
+const DEFAULT_PREFS: Preferences = { autosave: true, viewMode: 'auto', showDashboard: true, aiProvider: 'mock', autoApplySafe: true, simSpeed: 1, simRunning: true, demoTasks: true, characterStyle: 'rendered' };
 
 function initial() {
   const saved = repo.loadCurrent();
