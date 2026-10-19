@@ -16,7 +16,7 @@ import { buildNav, type NavGraph } from '../engine/navigation';
 import { createTask, emptyRuntime, goTo, log, reconcileLayout, step, syncRuntime } from '../engine/simulation';
 import { sampleOffice, seedSampleRuntime } from '../model/sample';
 import { emptyOffice } from '../model/defaults';
-import { LocalStorageRepository, type OfficeRepository, type Preferences } from '../persistence/repository';
+import { createRepository, type LoadResult, type OfficeRepository, type Preferences, type SaveResult } from '../persistence/repository';
 import { exportOffice, parseOffice } from '../model/schema';
 import { markFrame } from '../ui/perf';
 
@@ -38,7 +38,7 @@ export interface HistoryEntry { doc: OfficeDoc; label: string }
 
 export interface CommitResult { ok: boolean; summary: string[]; errors: string[]; conflicts: Issue[]; doc?: OfficeDoc }
 
-export interface Preview { doc: OfficeDoc; ops: DocOp[]; runtimeOps: RuntimeOp[]; label: string; summary: string[]; issues: Issue[]; source: 'ai' | 'conflict' }
+export interface Preview { doc: OfficeDoc; ops: DocOp[]; runtimeOps: RuntimeOp[]; label: string; summary: string[]; issues: Issue[]; source: 'ai' | 'conflict' | 'autosort' }
 
 export type RuntimeOp =
   | { op: 'agent.goTo'; agentId: string; roomId: string | null; workstationId?: string | null }
@@ -95,7 +95,14 @@ interface State {
   setPrefs(p: Partial<Preferences>): void;
   notify(text: string, level?: 'info' | 'warn' | 'error'): void;
   tick(): void;
-  save(): void;
+  /** Write the office now (skipped when unchanged since the last save). Returns null when it could not save. */
+  save(): SaveResult | null;
+  /** save() for the Save now button / Ctrl+S: same, plus a toast saying what happened. */
+  saveNow(): void;
+  /** Set when the saved office was damaged on load; saving stays off until the user chooses. */
+  recovery: Extract<LoadResult, { status: 'corrupt' }> | null;
+  resolveRecovery(choice: 'backup' | 'fresh'): void;
+  saveError: string | null;
   saveVersion(name: string): void;
   restoreVersion(id: string): boolean;
   resetToSaved(): void;
@@ -105,12 +112,15 @@ interface State {
   newOffice(sample: boolean): void;
 }
 
-export const repo: OfficeRepository = new LocalStorageRepository();
+export const repo: OfficeRepository = createRepository();
 
 const DEFAULT_PREFS: Preferences = { autosave: true, viewMode: 'auto', showDashboard: true, aiProvider: 'mock', autoApplySafe: true, simSpeed: 1, simRunning: true, demoTasks: true, characterStyle: 'rendered' };
 
 function initial() {
-  const saved = repo.loadCurrent();
+  const loaded = repo.load();
+  // a damaged save is reported (recovery dialog), never replaced: the sample below is only a placeholder
+  const recovery = loaded.status === 'corrupt' ? loaded : null;
+  const saved = loaded.status === 'ok' ? loaded : null;
   const doc = saved?.doc ?? sampleOffice();
   const runtime: RuntimeState = { ...emptyRuntime(), ...(saved?.runtime ?? {}) } as RuntimeState;
   runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {}; runtime.usage ??= []; runtime.approvals ??= {}; runtime.alerts ??= {}; runtime.capsules ??= {}; runtime.policyHeld ??= []; runtime.arcadeSessions ??= []; runtime.assets ??= {};
@@ -119,8 +129,8 @@ function initial() {
   if (!saved) seedSampleRuntime(doc, runtime);
   if (!saved) log(runtime, { kind: 'system', agentId: null, simulated: false, message: 'Loaded sample office. Agents are simulated; no AI model is connected.' });
   let lastSaved = saved ? { doc, at: saved.savedAt } : null;
-  if (!saved) { try { lastSaved = { doc, at: repo.saveCurrent(doc, runtime) }; } catch { /* storage unavailable: stay unsaved */ } }
-  return { doc, runtime, nav, lastSaved };
+  if (loaded.status === 'empty') { try { lastSaved = { doc, at: repo.saveCurrent(doc, runtime).savedAt }; } catch { /* storage unavailable: stay unsaved */ } }
+  return { doc, runtime, nav, lastSaved, recovery };
 }
 
 function cloneRuntime(rt: RuntimeState): RuntimeState {
@@ -139,23 +149,17 @@ function pruneTasks(rt: RuntimeState) {
 export const useStore = create<State>((set, get) => {
   const init = initial();
   const prefs = { ...DEFAULT_PREFS, ...repo.loadPrefs() };
-  let saveTimer: ReturnType<typeof setTimeout> | undefined;
-  const scheduleSave = () => {
-    if (!get().prefs.autosave) return;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => get().save(), 800);
-  };
+  // autosave runs on a 60 s interval (useAutosave in ui/SaveStatus.tsx), not on every change
 
   const setDoc = (doc: OfficeDoc, prevDoc: OfficeDoc, patch: Partial<State> = {}) => {
     const runtime = cloneRuntime(get().runtime);
     const nav = reconcileLayout(prevDoc, doc, runtime);
     set({ doc, runtime, nav, issues: validate(doc), dirty: true, ...patch });
-    scheduleSave();
   };
 
   return {
     ...init,
-    past: [], future: [], dirty: false,
+    past: [], future: [], dirty: false, saveError: null,
     issues: validate(init.doc),
     prefs,
     mode: 'simulate', tool: 'select', furnitureType: 'desk', placeRotation: 0, selection: { kind: 'none' },
@@ -261,7 +265,6 @@ export const useStore = create<State>((set, get) => {
         }
         set({ runtime: rt });
       }
-      scheduleSave();
       return out;
     },
 
@@ -292,16 +295,38 @@ export const useStore = create<State>((set, get) => {
       step(doc, rt, nav, { demoTasks: prefs.demoTasks });
       if (rt.tick % 100 === 0) pruneTasks(rt);
       set({ runtime: rt });
-      if (rt.tick % 50 === 0) scheduleSave();
       markFrame('tick', performance.now() - t0, { agents: Object.keys(rt.agents).length, tasks: Object.keys(rt.tasks).length, events: rt.events.length });
     },
 
     save() {
-      const { doc, runtime } = get();
+      const { doc, runtime, recovery } = get();
+      if (recovery || repo.savingSuspended) return null;
       try {
-        const at = repo.saveCurrent(doc, runtime);
-        set({ lastSaved: { doc, at }, dirty: false });
-      } catch (e) { get().notify((e as Error).message, 'error'); }
+        const r = repo.saveCurrent(doc, runtime);
+        set({ lastSaved: { doc, at: r.savedAt }, dirty: false, saveError: null });
+        return r;
+      } catch (e) {
+        const msg = (e as Error).message;
+        if (get().saveError !== msg) get().notify(msg, 'error');
+        set({ saveError: msg });
+        return null;
+      }
+    },
+    saveNow() {
+      if (get().recovery) { get().notify('Saving is paused until you choose how to recover the damaged save.', 'warn'); return; }
+      const r = get().save();
+      if (!r) { const e = get().saveError; if (e) get().notify(e, 'error'); return; }
+      get().notify(r.status === 'saved' ? 'Office saved' : 'Already saved: nothing changed since the last save');
+    },
+    resolveRecovery(choice) {
+      const rec = get().recovery;
+      if (!rec) return;
+      repo.resumeSaving();
+      if (choice === 'backup' && rec.backup) get().loadDoc(rec.backup.doc, 'Restore backup', rec.backup.runtime ?? {});
+      else get().newOffice(true);
+      set({ recovery: null, past: [], future: [] });
+      const r = get().save();
+      get().notify(choice === 'backup' && rec.backup ? `Restored the backup from ${new Date(rec.backup.savedAt).toLocaleString()}${r ? '' : ' (not saved yet)'}` : `Started a fresh office${r ? '' : ' (not saved yet)'}`, r ? 'info' : 'warn');
     },
     saveVersion(name) {
       try { repo.saveVersion(name, get().doc); get().save(); get().notify(`Saved version “${name}”`); }

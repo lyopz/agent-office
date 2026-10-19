@@ -5,7 +5,8 @@ import type { AgentStatus, Rect, ViewMode } from '../model/types';
 import { useShallow } from 'zustand/react/shallow';
 import { assetStore } from '../persistence/repository';
 import { G } from './OfficeLayers';
-import { capsulePos } from '../engine/tubes';
+import { CAPSULE_LINGER, capsulePos } from '../engine/tubes';
+import { tubeDepth } from './TubeLayers';
 import { SPRITE_FRAMES, SPRITE_H, SPRITE_W, bundledSprite, frameFor, lookKey, useSpriteLibrary } from '../characters/sprites';
 
 /** The Blender sprite sheet for this exact look, if one exists and rendered characters are on. */
@@ -37,14 +38,17 @@ export function resolveView(global: string, preferred: ViewMode): Exclude<ViewMo
   return v === 'portrait' ? 'front' : v;
 }
 
-interface SpriteRt { x: number; y: number; status: AgentStatus; heading: 'left' | 'right' | 'up' | 'down'; atDesk: boolean }
+interface SpriteRt { x: number; y: number; status: AgentStatus; heading: 'left' | 'right' | 'up' | 'down'; atDesk: boolean; tube: number }
 
 const AgentSprite = memo(function AgentSprite({ id, simple }: { id: string; simple: boolean }) {
   const agent = useStore((s) => s.doc.agents[id]);
   // subscribe to the few runtime fields we draw, so idle agents don't re-render every tick
   const rt = useStore(useShallow((s): SpriteRt | null => {
     const r = s.runtime.agents[id];
-    return r ? { x: r.pos.x, y: r.pos.y, status: r.status, heading: r.heading, atDesk: r.status === 'working' && !!r.currentTaskId && !!s.runtime.tasks[r.currentTaskId]?.destination.workstationId } : null;
+    if (!r) return null;
+    // bubble campus: outside a room the agent rides a transport tube; depth eases them in and out at the ends
+    const tube = s.doc.settings.layoutPreset === 'bubble' && !r.roomId ? Math.round(tubeDepth(s.doc.rooms, r.pos) * 8) / 8 : 0;
+    return { x: r.pos.x, y: r.pos.y, status: r.status, heading: r.heading, atDesk: r.status === 'working' && !!r.currentTaskId && !!s.runtime.tasks[r.currentTaskId]?.destination.workstationId, tube };
   }));
   const motion = useStore((s) => s.doc.settings.animationIntensity);
   const speed = useStore((s) => s.prefs.simSpeed);
@@ -89,8 +93,24 @@ const AgentSprite = memo(function AgentSprite({ id, simple }: { id: string; simp
   const tx = -width / 2, ty = top ? -size / 2 : G * 0.45 - size;
   // a working agent at a desk faces the desk
   const heading = rt.status === 'working' ? 'up' : rt.heading;
+  // in a tube the agent is drawn into a travel pod: shrunk a little and wrapped in glass
+  const pod = rt.tube;
+  const shrink = 1 - pod * 0.38;
+  const horiz = rt.heading === 'left' || rt.heading === 'right';
   return (
-    <g data-kind="agent" data-id={id} className={`agent${agent.enabled ? '' : ' disabled'}${paused ? ' paused' : ''}`} style={{ cursor: 'pointer', transform: `translate(${cx}px, ${cy}px)`, ...glide }}>
+    <g data-kind="agent" data-id={id} className={`agent${agent.enabled ? '' : ' disabled'}${paused ? ' paused' : ''}${pod ? ' in-tube' : ''}`} style={{ cursor: 'pointer', transform: `translate(${cx}px, ${cy}px)`, ...glide }}>
+      {pod > 0 && (
+        <g className="tube-pod" opacity={pod} pointerEvents="none">
+          {rt.status === 'walking' && [0, 1, 2].map((i) => {
+            const back = rt.heading === 'right' ? -1 : rt.heading === 'left' ? 1 : 0, up = rt.heading === 'down' ? -1 : rt.heading === 'up' ? 1 : 0;
+            const o = (i - 1) * 5;
+            return <line key={i} className="pod-streak" x1={back * G * 0.6 + (horiz ? 0 : o)} y1={up * G * 0.6 + (horiz ? o : 0)} x2={back * G * (1.1 + i * 0.15) + (horiz ? 0 : o)} y2={up * G * (1.1 + i * 0.15) + (horiz ? o : 0)} stroke="#bff6ff" strokeOpacity={0.55} strokeWidth={1.5} strokeLinecap="round" />;
+          })}
+          <ellipse cx={0} cy={top ? 0 : -G * 0.25} rx={G * 0.62} ry={top ? G * 0.62 : G * 0.95} fill="rgba(160,235,255,.10)" stroke="url(#bubble-iris)" strokeWidth={1.6} />
+          <path d={`M${-G * 0.35},${(top ? 0 : -G * 0.25) - G * 0.45} q${G * 0.15},${-G * 0.2} ${G * 0.4},${-G * 0.22}`} fill="none" stroke="#fff" strokeOpacity={0.5} strokeWidth={1.5} strokeLinecap="round" />
+        </g>
+      )}
+      <g transform={pod ? `translate(0 ${top ? 0 : G * 0.4}) scale(${shrink}) translate(0 ${top ? 0 : -G * 0.4})` : undefined}>
       <ellipse cx={0} cy={top ? 0 : G * 0.4} rx={G * 0.62} ry={G * (top ? 0.62 : 0.24)} fill="none" stroke={col} strokeWidth={selected ? 3 : 1.5} opacity={selected ? 1 : 0.8} filter={selected ? 'url(#glow)' : undefined} />
       <g transform={`translate(${tx} ${ty})`}>
         {asset
@@ -98,6 +118,7 @@ const AgentSprite = memo(function AgentSprite({ id, simple }: { id: string; simp
           : sheet
           ? <SpriteFrameImage sheet={sheet} frame={frameFor(paused ? 'idle' : rt.status, rt.atDesk, frame)} flip={facing === 'left' && !(rt.status === 'working' && rt.atDesk)} size={size} label={agent.identity.name} />
           : <Character a={a} view={shownView} pose={pose} frame={frame} facing={facing} heading={heading} size={size} title={agent.identity.name} />}
+      </g>
       </g>
       {asset === null && agent.assets[view] && <text x={0} y={ty - 2} textAnchor="middle" className="tag">fallback</text>}
       {(rt.status === 'thinking' || rt.status === 'communicating' || rt.status === 'error' || paused) && (
@@ -169,19 +190,44 @@ export function useSimplified(view: Rect) {
   return { simple: limit > 0 && visible > limit, visible, limit };
 }
 
-/** Task capsules travelling through the pneumatic tube network. */
+/** Work capsules on the mail network, then a brief delivery receipt where they land. */
 export function CapsulesLayer() {
   const capsules = useStore((s) => s.runtime.capsules);
-  const list = Object.values(capsules).filter((c) => c.status === 'in-transit');
+  const tick = useStore((s) => s.runtime.tick);
+  const tasks = useStore((s) => s.runtime.tasks);
+  const agents = useStore((s) => s.doc.agents);
+  const list = Object.values(capsules);
   if (!list.length) return null;
   return (
     <g pointerEvents="none" className="capsules">
       {list.map((c) => {
         const p = capsulePos(c);
+        const t = tasks[c.taskId];
+        const who = c.recipientId ? agents[c.recipientId]?.identity.name ?? 'agent' : 'office';
+        const urgent = t?.priority === 'critical' || t?.priority === 'high';
+        if (c.status === 'delivered') {
+          const age = tick - (c.deliveredTick ?? tick);
+          const ok = c.acknowledged !== false;
+          const text = ok ? `✓ Delivered · ${who}` : `! Not acknowledged · ${who}`;
+          const w = text.length * 5.6 + 12;
+          return (
+            <g key={c.id} className="capsule-receipt" opacity={Math.max(0.2, 1 - age / CAPSULE_LINGER)} transform={`translate(${p.x * G} ${p.y * G - 16 - Math.min(age, 8)})`}>
+              <rect x={-w / 2} y={-9} width={w} height={15} rx={7.5} fill="var(--label-bg)" stroke={ok ? 'var(--accent)' : 'var(--warn)'} />
+              <text x={0} y={2} textAnchor="middle" className="bubble" fill={ok ? 'var(--accent)' : 'var(--warn)'}>{text}</text>
+            </g>
+          );
+        }
+        const ahead = c.path.slice(Math.floor(c.progress) + 1);
         return (
           <g key={c.id}>
-            <polyline points={c.path.map((q) => `${q.x * G},${q.y * G}`).join(' ')} fill="none" stroke="#d4a84a" strokeOpacity={0.35} strokeWidth={3} strokeDasharray="2 4" />
-            <rect x={p.x * G - 6} y={p.y * G - 3.5} width={12} height={7} rx={3.5} fill="#d4a84a" stroke="#6b4e12" filter="url(#glow)" />
+            <title>{`Capsule: ${t?.name ?? 'work item'} → ${who} (in transit)`}</title>
+            <polyline points={[p, ...ahead].map((q) => `${q.x * G},${q.y * G}`).join(' ')} fill="none" stroke="#ffd27a" strokeOpacity={0.7} strokeWidth={2} strokeDasharray="2 4" />
+            <g transform={`translate(${p.x * G} ${p.y * G})`}>
+              <rect x={-8} y={-5} width={16} height={10} rx={5} fill="#d4a84a" stroke="#6b4e12" filter="url(#glow)" />
+              <path d="M-4,-2.5 h8 v5 h-8z M-4,-2.5 l4,3 l4,-3" fill="none" stroke="#3a2a08" strokeWidth={1} />
+              {urgent && <rect x={-8} y={-5} width={3} height={10} rx={1.5} fill="var(--danger)" />}
+              <text x={0} y={-8} textAnchor="middle" className="bubble" fill="#ffd27a">{who}</text>
+            </g>
           </g>
         );
       })}

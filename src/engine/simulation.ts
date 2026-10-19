@@ -14,6 +14,7 @@ import { completeAssetTask, productionTask } from './production';
 import { searchLibrary } from './library';
 
 export const SPEED = 0.2; // cells per tick at animation speed 1
+export const TUBE_BOOST = 2.2; // transport tubes carry agents faster than walking
 const PRIORITY = { critical: 0, high: 1, normal: 2, low: 3 } as const;
 
 export function emptyRuntime(): RuntimeState { return { agents: {}, tasks: {}, events: [], tick: 0, usage: [], approvals: {}, alerts: {}, capsules: {}, policyHeld: [], arcadeSessions: [], assets: {} }; }
@@ -232,14 +233,16 @@ export function step(doc: OfficeDoc, rt: RuntimeState, nav: NavGraph, opts: Step
         const next = r.path[0];
         if (!next) { arrive(doc, rt, a); break; }
         const cur = cellOf(r.pos);
+        const inTube = doc.settings.layoutPreset === 'bubble' && !r.roomId;
         const atCell = Math.abs(r.pos.x - cur.x) < 1e-6 && Math.abs(r.pos.y - cur.y) < 1e-6;
         if (atCell) {
           if (!canStep(nav, cur, next)) { replan(doc, rt, nav, a.id); break; }
           const who = occupied.get(key(next.x, next.y));
-          if (who && who !== a.id && rt.agents[who]?.status !== 'walking' && r.path.length > 1 && r.waitTicks < 6) { r.waitTicks++; break; }
+          // pods in a transport tube slip past each other; on foot, wait briefly for the cell to clear
+          if (who && who !== a.id && !inTube && rt.agents[who]?.status !== 'walking' && r.path.length > 1 && r.waitTicks < 6) { r.waitTicks++; break; }
         }
         r.waitTicks = 0;
-        const sp = SPEED * a.appearance.animationSpeed * (a.appearance.walkPose === 'brisk' ? 1.3 : a.appearance.walkPose === 'casual' ? 0.8 : 1);
+        const sp = SPEED * a.appearance.animationSpeed * (a.appearance.walkPose === 'brisk' ? 1.3 : a.appearance.walkPose === 'casual' ? 0.8 : 1) * (inTube ? TUBE_BOOST : 1);
         const dx = next.x - r.pos.x, dy = next.y - r.pos.y;
         const dist = Math.hypot(dx, dy);
         if (Math.abs(dx) > 1e-6) r.heading = dx > 0 ? 'right' : 'left';

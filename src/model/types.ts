@@ -13,6 +13,7 @@ export const ROOM_TYPES = [
   'storage', 'break', 'security', 'reception', 'custom',
   'executive', 'library', 'finance', 'engineering', 'design', 'studio', 'market',
   'ops-floor', 'arcade', 'blender-studio',
+  'royal-lounge',
 ] as const;
 export type RoomType = (typeof ROOM_TYPES)[number];
 
@@ -96,6 +97,8 @@ export const FURNITURE_TYPES = [
   'compact-desk', 'task-board', 'supply-station', 'lane-marker',
   // atmosphere
   'sculpture', 'floor-light', 'wall-panel', 'window', 'deco-robot', 'aquarium', 'wall-art', 'ambient-machine',
+  // royal lounge
+  'briefing-board', 'throne', 'lounge-sofa', 'crown-chandelier', 'holo-fountain',
 ] as const;
 export type FurnitureType = (typeof FURNITURE_TYPES)[number];
 
@@ -325,7 +328,11 @@ export interface OfficeSettings {
   collisionRule: 'warn' | 'prevent';  // object placement overlapping another object
   animationIntensity: 'off' | 'subtle' | 'full';
   idleWandering: boolean;      // purely cosmetic idle movement
+  /** How the campus is drawn and how Auto Sort packs it: classic grid offices, or floating bubble rooms joined by transport tubes. */
+  layoutPreset: LayoutPreset;
 }
+export const LAYOUT_PRESETS = ['grid', 'bubble'] as const;
+export type LayoutPreset = (typeof LAYOUT_PRESETS)[number];
 
 // ---------- Themes ----------
 
@@ -554,6 +561,8 @@ export interface Capsule {
   path: Point[]; progress: number;            // index into path (float)
   status: 'in-transit' | 'delivered';
   recipientId: ID | null;
+  deliveredTick?: number;                     // tick the capsule arrived; it stays visible briefly with its delivery status
+  acknowledged?: boolean;                     // the recipient confirmed it on arrival
 }
 
 export interface RuntimeState {

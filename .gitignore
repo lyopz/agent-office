@@ -5,3 +5,4 @@ test-results
 .env
 tsconfig.tsbuildinfo
 graphify-out
+release

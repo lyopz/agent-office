@@ -23,6 +23,7 @@ export interface ParseContext {
 }
 
 const ROOM_SYNONYMS: [RegExp, RoomType][] = [
+  [/\b(royal lounge|king'?s lounge|throne room|briefing room)\b/, 'royal-lounge'],
   [/\b(engineering|engineer)\b/, 'engineering'], [/\b(library|archive|librarian)\b/, 'library'], [/\b(executive|exec suite|president)\b/, 'executive'],
   [/\b(finance|treasury|accounting)\b/, 'finance'], [/\bdesign lab\b|\bdesign\b/, 'design'], [/\b(studio|creative)\b/, 'studio'], [/\b(market intel|market|analytics)\b/, 'market'],
   [/\b(research|lab|laboratory)\b/, 'research'], [/\bserver/, 'server'], [/\b(conference|meeting)\b/, 'meeting'],

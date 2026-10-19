@@ -9,6 +9,7 @@ import { raiseAlert } from './alerts';
 import { worldRect } from './spatial';
 
 export const CAPSULE_SPEED = 0.8; // cells per tick
+export const CAPSULE_LINGER = 24;  // ticks a delivered capsule stays on screen showing its delivery status
 
 export function tubeStations(doc: OfficeDoc): Furniture[] {
   return Object.values(doc.furniture).filter((f) => FURNITURE_META[f.type]?.fn === 'tube');
@@ -39,6 +40,33 @@ function duct(a: Point, b: Point): Point[] {
   return pts;
 }
 
+/**
+ * The dedicated mail network: every station has a spoke to a central routing
+ * hub (a Routing Hub object if there is one, else the stations' centre).
+ * Capsules ride spoke → hub → spoke, separate from the tubes agents travel in.
+ */
+export function mailHub(doc: OfficeDoc): Point | null {
+  const hub = Object.values(doc.furniture).find((f) => f.type === 'routing-hub' && doc.rooms[f.roomId]);
+  if (hub) return stationCenter(doc, hub);
+  const st = tubeStations(doc); if (!st.length) return null;
+  const cs = st.map((f) => stationCenter(doc, f));
+  return { x: Math.round(cs.reduce((t, c) => t + c.x, 0) / cs.length), y: Math.round(cs.reduce((t, c) => t + c.y, 0) / cs.length) };
+}
+
+export function mailNetwork(doc: OfficeDoc): { hub: Point; spokes: { stationId: string; points: Point[] }[] } | null {
+  const hub = mailHub(doc); if (!hub) return null;
+  return { hub, spokes: tubeStations(doc).map((f) => ({ stationId: f.id, points: duct(stationCenter(doc, f), hub) })) };
+}
+
+function mailRoute(doc: OfficeDoc, from: Furniture, to: Furniture): Point[] {
+  const a = stationCenter(doc, from), b = stationCenter(doc, to);
+  const hub = mailHub(doc);
+  if (from.id === to.id || !hub) return duct(a, b);
+  const out = duct(a, hub);
+  const back = duct(b, hub).reverse();
+  return [...out, ...back.slice(1)];
+}
+
 export function capsulePos(c: Capsule): Point {
   const i = Math.min(c.path.length - 1, Math.floor(c.progress)); const f = c.progress - i;
   const p = c.path[i], q = c.path[Math.min(c.path.length - 1, i + 1)];
@@ -52,7 +80,7 @@ export function dispatchViaTube(doc: OfficeDoc, rt: RuntimeState, taskId: string
   const to = stationFor(doc, t.agentId, rt.agents[t.agentId]?.roomId);
   const from = (fromStationId && doc.furniture[fromStationId]) || (fromAgentId ? stationFor(doc, fromAgentId, rt.agents[fromAgentId]?.roomId) : null) || tubeStations(doc)[0];
   if (!to || !from) return { capsule: null, message: 'No tube stations in the office — add one from the object library' };
-  const cap: Capsule = { id: uid('cap'), taskId, fromId: from.id, toId: to.id, path: duct(stationCenter(doc, from), stationCenter(doc, to)), progress: 0, status: 'in-transit', recipientId: t.agentId };
+  const cap: Capsule = { id: uid('cap'), taskId, fromId: from.id, toId: to.id, path: mailRoute(doc, from, to), progress: 0, status: 'in-transit', recipientId: t.agentId };
   rt.capsules = { ...rt.capsules, [cap.id]: cap };
   rt.tasks[taskId] = { ...t, status: 'in-transit', deliveredVia: 'tube', handoff: t.handoff ? { ...t.handoff, fromAgentId } : t.handoff };
   const name = doc.agents[t.agentId]?.identity.name ?? 'agent';
@@ -64,15 +92,19 @@ export function dispatchViaTube(doc: OfficeDoc, rt: RuntimeState, taskId: string
 export function stepCapsules(doc: OfficeDoc, rt: RuntimeState, speed = 1, now = new Date()) {
   let changed = false;
   for (const c0 of Object.values(rt.capsules)) {
-    if (c0.status !== 'in-transit') { delete rt.capsules[c0.id]; changed = true; continue; }
+    if (c0.status !== 'in-transit') {
+      if (rt.tick - (c0.deliveredTick ?? -Infinity) > CAPSULE_LINGER) { delete rt.capsules[c0.id]; changed = true; }
+      continue;
+    }
     const c = { ...c0, progress: c0.progress + CAPSULE_SPEED * speed };
     changed = true;
     if (c.progress < c.path.length - 1) { rt.capsules[c.id] = c; continue; }
-    c.progress = c.path.length - 1; c.status = 'delivered';
+    c.progress = c.path.length - 1; c.status = 'delivered'; c.deliveredTick = rt.tick;
     rt.capsules[c.id] = c;
     const t = rt.tasks[c.taskId]; if (!t) continue;
     const a = c.recipientId ? doc.agents[c.recipientId] : undefined;
-    if (a && a.enabled && a.identity.status === 'active') {
+    c.acknowledged = !!(a && a.enabled && a.identity.status === 'active');
+    if (c.acknowledged && a) {
       rt.tasks[t.id] = { ...t, status: 'queued', acknowledgedBy: a.id, acknowledgedAt: now.toISOString() };
       log(rt, { kind: 'tube', agentId: a.id, simulated: false, message: `${a.identity.name} acknowledged capsule “${t.name}”` });
     } else {

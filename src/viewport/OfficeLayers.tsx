@@ -78,6 +78,44 @@ export function FurnitureShape({ f, x, y, w, h, display, ghost }: { f: Pick<Furn
       detail = Array.from({ length: n }, (_, i) => <rect key={i} x={ix + 3 + i * (iw - 6) / n} y={iy + 1} width={(iw - 6) / n - 2} height={5} fill={scr} />);
       break;
     }
+    // royal lounge: violet bodies, gold trim, restrained glow
+    case 'briefing-board': {
+      const cols = ['var(--success, var(--accent))', 'var(--accent-blue)', 'var(--danger)', 'var(--muted)'];
+      const cw = (iw - 8) / 4;
+      detail = <><rect x={ix + 1} y={iy + 1} width={iw - 2} height={ih - 2} fill="#0c0818" stroke={ROYAL_GOLD} strokeWidth={1.2} />
+        <rect x={ix + 3} y={iy + 2.5} width={iw * 0.3} height={2} fill={ROYAL_GOLD} opacity={0.8} />
+        {cols.map((c, i) => <g key={i}><rect x={ix + 4 + i * cw} y={iy + 6} width={cw - 3} height={Math.max(2, ih - 9)} fill={c} opacity={0.14} />{[0, 1].map((k) => <rect key={k} x={ix + 5 + i * cw} y={iy + 7 + k * 4} width={(cw - 5) * (k ? 0.6 : 1)} height={2} fill={c} opacity={0.75} />)}</g>)}</>;
+      break;
+    }
+    case 'throne':
+      detail = <><rect x={ix + 1} y={iy + 1} width={iw - 2} height={ih * 0.3} rx={2} fill="#3a2458" stroke={ROYAL_GOLD} strokeWidth={1} />
+        <path d={`M${cx - iw * 0.28},${iy + 1} l${iw * 0.093},-3 l${iw * 0.093},3 l${iw * 0.093},-4 l${iw * 0.093},4 l${iw * 0.093},-3 l${iw * 0.093},3`} fill="none" stroke={ROYAL_GOLD} strokeWidth={1.2} />
+        <rect x={ix + iw * 0.2} y={iy + ih * 0.36} width={iw * 0.6} height={ih * 0.5} rx={3} fill="#4a2c70" />
+        <rect x={ix + 1} y={iy + ih * 0.34} width={iw * 0.14} height={ih * 0.56} rx={2} fill={ROYAL_GOLD} opacity={0.55} />
+        <rect x={ix + iw * 0.86 - 1} y={iy + ih * 0.34} width={iw * 0.14} height={ih * 0.56} rx={2} fill={ROYAL_GOLD} opacity={0.55} />
+        <circle cx={cx} cy={iy + ih * 0.16} r={1.6} fill="var(--accent-purple)" /></>;
+      break;
+    case 'lounge-sofa':
+      detail = <><rect x={ix} y={iy} width={iw} height={5} rx={2} fill="#3e2662" />
+        {[0, 1, 2].map((i) => <rect key={i} x={ix + 2 + i * (iw - 4) / 3} y={iy + 6} width={(iw - 4) / 3 - 2} height={Math.max(3, ih - 8)} rx={2} fill="#4a2c70" />)}
+        <line x1={ix + 1} x2={ix + iw - 1} y1={iy + 5.5} y2={iy + 5.5} stroke={ROYAL_GOLD} strokeOpacity={0.7} strokeWidth={0.8} /></>;
+      break;
+    case 'crown-chandelier': {
+      round = true; bodyless = true;
+      const n = 8;
+      detail = <><circle cx={cx} cy={cy} r={rr} fill="#ffe7a8" opacity={0.08} />
+        <circle cx={cx} cy={cy} r={rr * 0.72} fill="none" stroke={ROYAL_GOLD} strokeWidth={1.5} />
+        {Array.from({ length: n }, (_, i) => { const a = (i / n) * Math.PI * 2; return <circle key={i} cx={cx + Math.cos(a) * rr * 0.72} cy={cy + Math.sin(a) * rr * 0.72} r={1.8} fill="#ffe7a8" opacity={0.85} />; })}
+        <circle cx={cx} cy={cy} r={rr * 0.22} fill="var(--accent-purple)" opacity={0.6} /></>;
+      break;
+    }
+    case 'holo-fountain':
+      round = true;
+      detail = <><circle cx={cx} cy={cy} r={rr} fill="#141a30" stroke={ROYAL_GOLD} strokeWidth={1.5} />
+        <circle cx={cx} cy={cy} r={rr * 0.75} fill="#0b2238" />
+        <circle className="fountain-ripple" cx={cx} cy={cy} r={rr * 0.5} fill="none" stroke="var(--accent-blue)" strokeOpacity={0.5} style={{ transformOrigin: `${cx}px ${cy}px` }} />
+        <circle cx={cx} cy={cy} r={rr * 0.2} fill="var(--accent-purple)" opacity={0.7} /></>;
+      break;
     case 'plant': round = true; detail = <><circle cx={cx} cy={cy} r={rr} fill="#1f6b3a" /><circle cx={cx - 3} cy={cy - 2} r={rr / 2} fill="#2f8f4e" /></>; break;
     case 'lamp': case 'floor-light': round = true; detail = <circle cx={cx} cy={cy} r={6} fill="#ffe28a" opacity={0.6} filter="url(#glow)" />; break;
     case 'aquarium': detail = <><rect x={ix + 2} y={iy + 2} width={iw - 4} height={ih - 4} fill="#0b4a6b" opacity={0.9} /><circle cx={ix + iw * 0.3} cy={cy} r={2} fill="#ffb14a" /><circle cx={ix + iw * 0.7} cy={cy + 2} r={1.6} fill="#ff6f91" /></>; break;
@@ -101,9 +139,11 @@ export function FurnitureShape({ f, x, y, w, h, display, ghost }: { f: Pick<Furn
       }
   }
   const tint = ghost === 'bad' ? 'var(--danger)' : ghost === 'ok' ? 'var(--accent)' : undefined;
+  const openable = f.type === 'briefing-board' && !ghost;
   return (
-    <g data-kind={ghost ? undefined : 'furniture'} data-id={f.id} className={`furniture${f.arcade && !ghost ? ' playable' : ''}`} opacity={ghost ? 0.75 : 1} pointerEvents={f.arcade && !ghost ? 'visiblePainted' : undefined}>
+    <g data-kind={ghost ? undefined : 'furniture'} data-id={f.id} className={`furniture${f.arcade && !ghost ? ' playable' : ''}${openable ? ' openable' : ''}`} opacity={ghost ? 0.75 : 1} pointerEvents={(f.arcade || openable) && !ghost ? 'visiblePainted' : undefined}>
       {f.arcade && !ghost && <title>{`Play ${f.label ?? 'arcade game'}`}</title>}
+      {openable && <title>Open the hourly briefing</title>}
       {!round && !bodyless && <rect className="f-body" x={ix} y={iy} width={iw} height={ih} rx={2} fill={body} stroke={tint ?? 'color-mix(in srgb, var(--accent) 35%, transparent)'} strokeWidth={tint ? 2 : 1} />}
       {detail}
       {round && tint && <circle cx={cx} cy={cy} r={rr + 1} fill="none" stroke={tint} strokeWidth={2} />}
@@ -112,6 +152,7 @@ export function FurnitureShape({ f, x, y, w, h, display, ghost }: { f: Pick<Furn
   );
 }
 
+const ROYAL_GOLD = '#d9b45a';
 const ARCADE_SCREEN: Record<string, string> = { flappy: '#4cc9ff', pacman: '#ffd166', pong: '#39ff88' };
 
 export const RoomShape = memo(function RoomShape({
