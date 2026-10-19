@@ -61,7 +61,7 @@ describe('AI Headquarters acceptance', () => {
   test('2. changing an outfit keeps the agent identity, permissions and memory', () => {
     let doc = sampleOffice();
     const before = doc.agents.agent_codex;
-    doc = ok(doc, [{ op: 'agent.update', id: 'agent_codex', patch: { appearance: { top: 'armor', topColor: '#552222' } } }]);
+    doc = ok(doc, [{ op: 'agent.removeUniform', id: 'agent_codex' }, { op: 'agent.update', id: 'agent_codex', patch: { appearance: { top: 'armor', topColor: '#552222' } } }]);
     const after = doc.agents.agent_codex;
     expect(after.appearance.top).toBe('armor');
     for (const k of ['identity', 'permissions', 'memory', 'skills', 'ai', 'budget', 'personality'] as const) expect(after[k]).toEqual(before[k]);
@@ -246,6 +246,7 @@ describe('AI Headquarters acceptance', () => {
       { op: 'furniture.moveMany', ids: ['tube_library'], dx: 1, dy: 0 },
       { op: 'appearance.update', patch: { mode: 'light' } },
       { op: 'room.applyPalette', roomIds: ['room_library'], patch: { wallColor: '#4a2d7a' } },
+      { op: 'agent.removeUniform', id: 'agent_codex' },
       { op: 'agent.update', id: 'agent_codex', patch: { appearance: { top: 'robe', topColor: '#331155' } } },
       { op: 'alerts.update', patch: { sounds: { warning: { soundId: 'chime' } }, quietHours: { enabled: true, start: '22:00', end: '07:00' }, thresholds: { repeatedFailures: 4 } } },
     ]);

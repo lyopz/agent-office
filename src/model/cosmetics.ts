@@ -35,62 +35,69 @@ const acc = (id: string, extra: Partial<CosmeticItem> = {}): CosmeticItem => {
   return { id: `cos_${id}`, name: a.label, category: 'accessory', slot: 'accessories', accessoryId: id, rarity: 'common', functionalTool: a.functionalTool, ...extra };
 };
 
+/**
+ * The built-in wardrobe: sci-fi only, four items per wearable slot. Functional
+ * equipment stays as its own group because it mirrors tool permissions.
+ */
+export const WARDROBE_SLOTS = ['headwear', 'glasses', 'top', 'bottom', 'gloves', 'belt', 'shoes', 'accessories', 'equipment', 'robotic', 'effects'] as const;
+export const ITEMS_PER_SLOT = 4;
+
 export const BUILTIN_COSMETICS: CosmeticItem[] = [
-  // head and face
-  item('ar-glasses', 'Augmented-reality glasses', 'head', 'glasses', { glasses: 'ar-glasses' }, { collection: 'Archive collection' }),
-  item('data-visor', 'Data visor', 'head', 'glasses', { glasses: 'visor' }),
-  item('round-glasses', 'Round glasses', 'head', 'glasses', { glasses: 'round' }),
+  // headwear
+  item('comm-headset', 'Comms headset', 'head', 'headwear', { headwear: 'headset' }),
+  item('flight-helmet', 'Flight helmet', 'head', 'headwear', { headwear: 'helmet', headwearColor: '#2a3440' }, { rarity: 'uncommon' }),
   item('breather-mask', 'Breather mask', 'head', 'headwear', { headwear: 'mask' }, { rarity: 'uncommon' }),
-  item('full-helmet', 'Sealed helmet', 'head', 'headwear', { headwear: 'full-helmet' }, { rarity: 'rare' }),
-  item('comm-headset', 'Headset', 'head', 'headwear', { headwear: 'headset' }),
+  item('full-helmet', 'Sealed void helmet', 'head', 'headwear', { headwear: 'full-helmet' }, { rarity: 'rare' }),
+  // eyewear
+  item('ar-glasses', 'Augmented-reality glasses', 'head', 'glasses', { glasses: 'ar-glasses' }),
+  item('data-visor', 'Data visor', 'head', 'glasses', { glasses: 'visor' }),
+  item('tactical-lenses', 'Tactical lenses', 'head', 'glasses', { glasses: 'square' }),
+  item('scan-monocles', 'Scanner lenses', 'head', 'glasses', { glasses: 'round' }, { rarity: 'uncommon' }),
+  // tops
+  item('command-suit', 'Command suit', 'clothing', 'top', { top: 'suit', shoulders: 'metallic' }, { rarity: 'rare' }),
+  item('flight-jacket', 'Flight jacket', 'clothing', 'top', { top: 'jacket', shoulders: 'pads' }),
+  item('archive-coat', 'High-collar long coat', 'clothing', 'top', { top: 'longcoat' }, { rarity: 'uncommon' }),
+  item('exo-armor', 'Exo-armor plating', 'clothing', 'top', { top: 'armor', shoulders: 'armored' }, { rarity: 'rare' }),
+  // bottoms
+  item('flight-trousers', 'Flight trousers', 'clothing', 'bottom', { bottom: 'pants', bottomColor: '#1c2128' }),
+  item('armored-greaves', 'Armored greaves', 'clothing', 'bottom', { bottom: 'pants', bottomColor: '#3a3f46' }, { rarity: 'uncommon' }),
+  item('tech-skirt', 'Tech-weave skirt', 'clothing', 'bottom', { bottom: 'skirt', bottomColor: '#14161c' }),
+  item('zero-g-shorts', 'Zero-G shorts', 'clothing', 'bottom', { bottom: 'shorts', bottomColor: '#24303a' }),
+  // gloves
+  item('tech-gloves', 'Tech gloves', 'clothing', 'gloves', { gloves: 'tech' }),
+  item('holo-gloves', 'Holo-touch gloves', 'clothing', 'gloves', { gloves: 'tech', gloveColor: '#4cc9ff' }, { rarity: 'uncommon' }),
+  item('power-gloves', 'Power gloves', 'clothing', 'gloves', { gloves: 'work', gloveColor: '#3a2a14' }),
+  item('command-gloves', 'Command gloves', 'clothing', 'gloves', { gloves: 'formal', gloveColor: '#e8e8e8' }),
+  // belts
+  item('utility-belt', 'Utility belt', 'clothing', 'belt', { belt: 'utility' }),
+  item('tool-rig', 'Tool rig harness', 'clothing', 'belt', { belt: 'harness' }),
+  item('command-belt', 'Command belt', 'clothing', 'belt', { belt: 'belt' }),
+  item('cartridge-belt', 'Cartridge belt', 'clothing', 'belt', { belt: 'utility' }, { accessoryId: 'data-cartridges', rarity: 'uncommon' }),
+  // footwear
+  item('mag-boots', 'Mag boots', 'clothing', 'shoes', { shoes: 'boots', shoeColor: '#111316' }),
+  item('grav-boots', 'Grav boots', 'clothing', 'shoes', { shoes: 'boots', shoeColor: '#2a3440' }, { rarity: 'uncommon' }),
+  item('deck-shoes', 'Polished deck shoes', 'clothing', 'shoes', { shoes: 'dress', shoeColor: '#0b0c0e' }),
+  item('runner-sneakers', 'Station runners', 'clothing', 'shoes', { shoes: 'sneakers', shoeColor: '#e8ecef' }),
+  // accessories (decorative)
+  acc('wrist-display'), acc('holo-badge', { rarity: 'uncommon' }), acc('rank-insignia'), acc('floating-assistant', { rarity: 'legendary' }),
+  // hand-held equipment
+  item('tablet', 'Data slate', 'accessory', 'equipment', { equipment: 'tablet' }),
+  item('holo-catalog', 'Holographic tablet', 'accessory', 'equipment', { equipment: 'holo-catalog' }, { rarity: 'uncommon' }),
+  item('drafting-tablet', 'Drafting tablet', 'accessory', 'equipment', { equipment: 'drafting-tablet' }),
+  item('field-laptop', 'Field laptop', 'accessory', 'equipment', { equipment: 'laptop' }),
+  // cybernetics
   item('robot-eyepiece', 'Robotic eyepiece', 'head', 'robotic', { robotic: 'eyepiece' }, { rarity: 'uncommon' }),
   item('robot-jaw', 'Robotic jaw', 'head', 'robotic', { robotic: 'jaw' }, { rarity: 'rare' }),
   item('half-face', 'Half-face plating', 'head', 'robotic', { robotic: 'half-face' }, { rarity: 'rare' }),
-  item('android-shell', 'Full android shell', 'head', 'robotic', { robotic: 'full' }, { rarity: 'legendary', collection: 'Synthetics' }),
-  item('circuit-marks', 'Circuit markings', 'head', 'faceMarkings', { faceMarkings: 'circuit' }, { rarity: 'uncommon' }),
-  item('scar', 'Scar', 'head', 'faceMarkings', { faceMarkings: 'scar' }),
-  item('eye-cyan', 'Cyan eyes', 'head', 'eyeColor', { eyeColor: '#4cc9ff' }),
-  item('eye-amber', 'Amber eyes', 'head', 'eyeColor', { eyeColor: '#f2b544' }),
-  // clothing
-  item('exec-suit', 'Futuristic formal suit', 'clothing', 'top', { top: 'suit', shoulders: 'metallic' }, { collection: 'Executive line', rarity: 'rare' }),
-  item('armored-tailoring', 'Armored tailoring', 'clothing', 'shoulders', { shoulders: 'armored' }, { collection: 'Executive line', rarity: 'rare' }),
-  item('utility-jacket', 'Utility jacket', 'clothing', 'top', { top: 'jacket' }),
-  item('scholar-robe', 'Scholarly robe', 'clothing', 'top', { top: 'robe' }, { collection: 'Archive collection', rarity: 'uncommon' }),
-  item('archive-coat', 'High-collar long coat', 'clothing', 'top', { top: 'longcoat' }, { collection: 'Archive collection', rarity: 'uncommon' }),
-  item('armor-workwear', 'Armor-inspired workwear', 'clothing', 'top', { top: 'armor' }, { collection: 'Foundry workwear', rarity: 'uncommon' }),
-  item('lab-coat', 'Lab coat', 'clothing', 'top', { top: 'labcoat' }),
-  item('ops-uniform', 'Ops uniform', 'clothing', 'top', { top: 'uniform' }),
-  item('coverall', 'Coverall', 'clothing', 'top', { top: 'coverall' }, { collection: 'Foundry workwear' }),
-  item('casual-hoodie', 'Casual hoodie', 'clothing', 'top', { top: 'hoodie' }),
-  item('tee', 'T-shirt', 'clothing', 'top', { top: 'tshirt' }),
-  item('polished-boots', 'Polished boots', 'clothing', 'shoes', { shoes: 'boots', shoeColor: '#111316' }),
-  item('formal-shoes', 'Formal shoes', 'clothing', 'shoes', { shoes: 'dress' }),
-  item('tech-gloves', 'Tech gloves', 'clothing', 'gloves', { gloves: 'tech' }),
-  item('work-gloves', 'Work gloves', 'clothing', 'gloves', { gloves: 'work', gloveColor: '#6b4a2a' }),
-  item('formal-gloves', 'Formal gloves', 'clothing', 'gloves', { gloves: 'formal', gloveColor: '#e8e8e8' }),
-  item('belt', 'Belt', 'clothing', 'belt', { belt: 'belt' }),
-  item('harness', 'Utility harness', 'clothing', 'belt', { belt: 'harness' }, { collection: 'Foundry workwear' }),
-  // accessories
-  acc('wrist-display'), acc('rank-insignia'), acc('exec-insignia', { rarity: 'rare', collection: 'Executive line' }), acc('shoulder-patch'), acc('lapel-pin'),
-  acc('holo-badge', { rarity: 'uncommon' }), acc('illuminated-tie', { rarity: 'uncommon', collection: 'Executive line' }),
-  acc('floating-assistant', { rarity: 'legendary' }), acc('data-device'), acc('data-cartridges', { collection: 'Archive collection' }),
-  item('briefcase', 'Briefcase', 'accessory', 'equipment', { equipment: 'briefcase' }, { collection: 'Executive line' }),
-  item('tablet', 'Tablet', 'accessory', 'equipment', { equipment: 'tablet' }),
-  item('holo-catalog', 'Holographic tablet', 'accessory', 'equipment', { equipment: 'holo-catalog' }, { collection: 'Archive collection' }),
-  item('drafting-tablet', 'Drafting tablet', 'accessory', 'equipment', { equipment: 'drafting-tablet' }),
-  // functional equipment
-  acc('diagnostic-visor', { rarity: 'uncommon', tags: ['equipment'] }), acc('catalog-interface', { tags: ['equipment'] }), acc('drafting-rig', { tags: ['equipment'] }),
-  acc('tool-harness', { tags: ['equipment'] }), acc('comms-relay', { tags: ['equipment'] }), acc('ledger-slate', { tags: ['equipment'] }),
+  item('android-shell', 'Full android shell', 'head', 'robotic', { robotic: 'full' }, { rarity: 'legendary' }),
   // effects (restrained by default)
-  item('aura', 'Subtle aura', 'effect', 'effects', { effects: { aura: true } as Appearance['effects'] }),
   item('holo-outline', 'Holographic outline', 'effect', 'effects', { effects: { holoOutline: true } as Appearance['effects'] }, { rarity: 'uncommon' }),
   item('eye-glow', 'Eye glow', 'effect', 'effects', { effects: { eyeGlow: true } as Appearance['effects'] }),
   item('energy-accents', 'Energy accents', 'effect', 'effects', { effects: { energyAccents: true } as Appearance['effects'] }),
-  item('particles', 'Ambient particles', 'effect', 'effects', { effects: { particles: true } as Appearance['effects'] }, { rarity: 'rare' }),
-  item('robotics-anim', 'Robotic animation', 'effect', 'effects', { effects: { robotics: true } as Appearance['effects'] }, { rarity: 'rare', collection: 'Synthetics' }),
-  // seasonal / event
-  item('gala-suit', 'Winter gala suit', 'clothing', 'top', { top: 'suit', topColor: '#1b2a4a', trimColor: '#cfd8e8' }, { collection: 'Winter gala (seasonal)', rarity: 'rare' }),
-  item('neon-jacket', 'Neon nights jacket', 'clothing', 'top', { top: 'jacket', topColor: '#2a1440', trimColor: '#ff6fb5' }, { collection: 'Neon nights (event)', rarity: 'rare' }),
+  item('aura', 'Subtle aura', 'effect', 'effects', { effects: { aura: true } as Appearance['effects'] }),
+  // functional equipment: mirrors a tool permission, so it isn't part of the wardrobe count
+  acc('diagnostic-visor', { rarity: 'uncommon', tags: ['equipment'] }), acc('catalog-interface', { tags: ['equipment'] }), acc('drafting-rig', { tags: ['equipment'] }),
+  acc('tool-harness', { tags: ['equipment'] }), acc('comms-relay', { tags: ['equipment'] }), acc('ledger-slate', { tags: ['equipment'] }),
 ];
 
 /** Fields an outfit may change. Body, face and identity-defining traits are never part of an outfit. */

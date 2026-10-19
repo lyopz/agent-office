@@ -397,3 +397,18 @@ table.data tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transp
 }
 .furniture.playable { cursor: pointer; }
 .furniture.playable:hover .f-body { stroke: var(--accent); stroke-width: 2; }
+
+/* locked role uniforms */
+fieldset.plain { border: 0; margin: 0; padding: 0; min-width: 0; }
+fieldset.card.plain { border: 1px solid var(--border); padding: var(--sp-3); }
+fieldset.plain:disabled { opacity: 0.55; }
+.uniform-banner { display: flex; align-items: center; gap: 10px; padding: var(--sp-2) var(--sp-3); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 8%, var(--panel-2)); font-size: var(--fs-sm, 13px); }
+.locked-chip { display: inline-flex; align-items: center; gap: 3px; }
+
+/* Blender character renders */
+.char-renders { display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
+.char-renders .lineup { width: 100%; max-height: 320px; object-fit: contain; background: var(--bg); border: 1px solid var(--border); }
+.char-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: var(--sp-2); }
+.char-grid figure { margin: 0; border: 1px solid var(--border); background: var(--bg); text-align: center; }
+.char-grid img { width: 100%; aspect-ratio: 2 / 3; object-fit: contain; display: block; }
+.char-grid figcaption { font-size: var(--fs-xs); padding: 4px; }

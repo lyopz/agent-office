@@ -1,13 +1,13 @@
 // Schema validation + migrations for saved/imported offices.
 import { z } from 'zod';
-import { DEFAULT_APPEARANCE, DEFAULT_OUTFITS, builtinRoomTemplates, makeAgent, withAppearance } from './defaults';
+import { DEFAULT_APPEARANCE, DEFAULT_OUTFITS, ROLE_UNIFORMS, builtinRoomTemplates, makeAgent, roleUniformId, withAppearance } from './defaults';
 import { FURNITURE_MATERIALS, FURNITURE_TYPES, ROOM_TYPES, type OfficeDoc } from './types';
-import { BUILTIN_COSMETICS } from './cosmetics';
+import { BUILTIN_COSMETICS, OUTFIT_FIELDS } from './cosmetics';
 import { defaultAppearanceSettings } from './themes';
 import { defaultAlertSettings } from './alertDefaults';
 import { TOKEN_FREE_VERIFIED, defaultArcade, defaultControl } from './control';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const id = z.string().min(1).max(120);
 const num = z.number().finite();
@@ -127,7 +127,7 @@ export const officeSchema = z.object({
   rooms: z.record(room), corridors: z.record(corridor), furniture: z.record(furniture), agents: z.record(agent),
   outfitTemplates: z.array(z.object({
     id, name: z.string(), patch: z.record(z.unknown()), kind: z.enum(['outfit', 'uniform']).optional(),
-    department: z.string().max(120).optional(), approved: z.boolean().optional(), occasion: z.string().max(120).optional(),
+    department: z.string().max(120).optional(), approved: z.boolean().optional(), occasion: z.string().max(120).optional(), locked: z.boolean().optional(),
   })).default([]),
   roomTemplates: z.array(z.unknown()).default([]),
   cosmetics: z.array(cosmetic).max(500),
@@ -191,6 +191,24 @@ const migrations: Record<number, (d: Raw) => Raw> = {
     d.schemaVersion = 4;
     return d;
   },
+  // v4 → v5: sci-fi wardrobe (4 items per slot) and locked role uniforms.
+  // Custom items and saved outfits are kept; only the built-in catalogue is replaced.
+  4: (d) => {
+    const custom = (Array.isArray(d.cosmetics) ? d.cosmetics : []).filter((c: Raw) => c?.custom);
+    d.cosmetics = [...BUILTIN_COSMETICS.map((c) => JSON.parse(JSON.stringify(c))), ...custom];
+    d.outfitTemplates = Array.isArray(d.outfitTemplates) ? d.outfitTemplates : [];
+    for (const u of ROLE_UNIFORMS) if (!d.outfitTemplates.some((t: Raw) => t?.id === u.id)) d.outfitTemplates.push(JSON.parse(JSON.stringify(u)));
+    // lock an agent into its role uniform only if it is already dressed exactly that way, so no one's look changes
+    for (const a of Object.values((d.agents ?? {}) as Record<string, Raw>)) {
+      const u = a?.archetype && ROLE_UNIFORMS.find((x) => x.id === roleUniformId(a.archetype));
+      if (!u || a.uniformId !== undefined) continue;
+      const look = withAppearance(DEFAULT_APPEARANCE, a.appearance ?? {});
+      const same = OUTFIT_FIELDS.every((k) => JSON.stringify(look[k]) === JSON.stringify((u.patch as Raw)[k]));
+      a.uniformId = same ? u.id : null;
+    }
+    d.schemaVersion = 5;
+    return d;
+  },
 };
 
 function fillAgent(a: Raw): Raw {
@@ -236,6 +254,7 @@ export function parseOffice(input: unknown): ParseResult {
       if (e.kind === 'corridor' && !doc.corridors[e.corridorId]) errs.push(`${c.name} joins missing hallway ${e.corridorId}`);
     }
     for (const [k, r] of Object.entries(doc.rooms)) if (r.id !== k) errs.push(`Room key ${k} doesn't match its id`);
+    for (const a of Object.values(doc.agents)) if (a.uniformId && !doc.outfitTemplates.some((t) => t.id === a.uniformId && t.locked)) a.uniformId = null;
     for (const p of Object.values(doc.projects)) if (p.ownerAgentId && !doc.agents[p.ownerAgentId]) p.ownerAgentId = null;
     for (const [k, dep] of Object.entries(doc.departments)) { if (dep.id !== k) errs.push(`Department key ${k} doesn't match its id`); dep.excludedAgentIds = dep.excludedAgentIds.filter((x) => doc.agents[x]); }
     doc.arcade.tokenFreeVerified = TOKEN_FREE_VERIFIED;

@@ -270,6 +270,8 @@ export interface Agent {
   /** Appearance the agent was created with; "Restore default appearance" returns here. */
   defaultAppearance?: Appearance;
   archetype?: string;
+  /** A locked uniform the agent is wearing; its cosmetics can't be changed piece by piece. */
+  uniformId?: ID | null;
   budget: AgentBudget;
   assets: VisualAssets;
 }
@@ -285,6 +287,7 @@ export interface OutfitTemplate {
   department?: string;        // uniforms: the department they're approved for
   approved?: boolean;         // uniforms must be approved before applying to a department
   occasion?: string;          // seasonal / event label
+  locked?: boolean;           // a fixed role uniform: worn whole, never edited or accessorised
 }
 
 export type CosmeticCategory = 'head' | 'clothing' | 'accessory' | 'effect';

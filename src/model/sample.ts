@@ -234,8 +234,8 @@ function addProductionWing(doc0: OfficeDoc): OfficeDoc {
     { op: 'agent.createFromArchetype', archetype: 'ecommerce', name: 'MERCH', id: 'agent_merch', roomId: 'room_market', workstationId: 'ws_merch' },
     { op: 'agent.createFromArchetype', archetype: 'ecommerce', name: 'CART', id: 'agent_cart', roomId: 'room_market', workstationId: 'ws_cart' },
   ]);
-  run([{ op: 'agent.update', id: 'agent_rig', patch: { appearance: { hairStyle: 'short', hairColor: '#c0c0c0', topColor: '#1a1a2a', glasses: 'none', headwear: 'headset' } } },
-    { op: 'agent.update', id: 'agent_quest', patch: { appearance: { hairStyle: 'ponytail', hairColor: '#ffd166', topColor: '#14304a', trimColor: '#4cc9ff', accent: '#4cc9ff' } } },
+  run([{ op: 'agent.update', id: 'agent_rig', patch: { appearance: { hairStyle: 'short', hairColor: '#c0c0c0' } } },
+    { op: 'agent.update', id: 'agent_quest', patch: { appearance: { hairStyle: 'ponytail', hairColor: '#ffd166' } } },
     { op: 'agent.update', id: 'agent_cart', patch: { appearance: { hairStyle: 'buzz', hairColor: '#1a1410', skinTone: '#7a4a2a' } } }]);
   const floor: DocOp[] = [];
   for (let i = 1; i <= 24; i++) floor.push({ op: 'agent.createFromArchetype', archetype: 'ops-worker', name: `OPS-${String(i).padStart(2, '0')}`, id: `agent_ops${i}`, roomId: 'room_floor' });

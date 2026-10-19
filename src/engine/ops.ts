@@ -47,6 +47,7 @@ export type DocOp =
   | { op: 'room.applyPalette'; roomIds: string[]; paletteId?: string; patch?: Partial<RoomAppearance> }
   | { op: 'agent.createFromArchetype'; archetype: string; name: string; id?: string; roomId?: string | null; workstationId?: string }
   | { op: 'agent.restoreAppearance'; id: string }
+  | { op: 'agent.removeUniform'; id: string }
   | { op: 'cosmetic.upsert'; item: CosmeticItem }
   | { op: 'cosmetic.delete'; id: string }
   | { op: 'cosmetic.apply'; itemId: string; agentIds: string[] }
@@ -450,6 +451,7 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
       if (!ARCHETYPE[o.archetype]) { errors.push(`Unknown archetype ${o.archetype}`); return; }
       const a = agentFromArchetype(o.archetype, o.name);
       if (o.id) a.id = o.id;
+      if (a.uniformId && !doc.outfitTemplates.some((t) => t.id === a.uniformId && t.locked)) a.uniformId = null;
       doc.agents[a.id] = a;
       summary.push(`Created ${ARCHETYPE[o.archetype].label} ${a.identity.name}`);
       if (o.roomId) {
@@ -472,8 +474,19 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
       const a = doc.agents[o.id];
       if (!a) { errors.push('Agent not found'); return; }
       a.appearance = withAppearance(a.defaultAppearance ?? a.appearance);
+      const u = lockedUniform(doc, a);
+      if (u) a.appearance = withAppearance(a.appearance, outfitPatch(u)); // a locked uniform stays on
       stripUnauthorisedEquipment(a, summary);
       summary.push(`Restored ${a.identity.name}'s default appearance`);
+      return;
+    }
+    case 'agent.removeUniform': {
+      const a = doc.agents[o.id];
+      if (!a) { errors.push('Agent not found'); return; }
+      const u = lockedUniform(doc, a);
+      if (!u) { errors.push(`${a.identity.name} isn't wearing a locked uniform`); return; }
+      a.uniformId = null;
+      summary.push(`${a.identity.name} took off the ${u.name}; the look is unchanged and can now be customised`);
       return;
     }
     case 'cosmetic.upsert': {
@@ -491,6 +504,8 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
       if (!it) { errors.push('Cosmetic item not found'); return; }
       for (const id of o.agentIds) {
         const a = doc.agents[id]; if (!a) { errors.push('Agent not found'); return; }
+        const u = lockedUniform(doc, a);
+        if (u) { errors.push(uniformLockedMessage(a.identity.name, u.name)); return; }
         const tool = it.functionalTool ?? (it.accessoryId ? ACCESSORY[it.accessoryId]?.functionalTool : undefined);
         if (tool && !a.permissions.allowedTools.includes(tool)) {
           errors.push(`${it.name} represents the “${tool}” tool, which ${a.identity.name} isn't allowed to use. Grant it in Permissions first, or pick a decorative item.`);
@@ -505,6 +520,8 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
     case 'cosmetic.remove': {
       const it = doc.cosmetics.find((c) => c.id === o.itemId); const a = doc.agents[o.agentId];
       if (!it || !a) { errors.push('Item or agent not found'); return; }
+      const u = lockedUniform(doc, a);
+      if (u) { errors.push(uniformLockedMessage(a.identity.name, u.name)); return; }
       const def = a.defaultAppearance ?? a.appearance;
       if (it.accessoryId) a.appearance.accessories = a.appearance.accessories.filter((x) => x !== it.accessoryId);
       for (const k of Object.keys(it.patch ?? {}) as (keyof Appearance)[]) {
@@ -527,6 +544,7 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
     case 'outfit.update': {
       const t = doc.outfitTemplates.find((x) => x.id === o.id);
       if (!t) { errors.push('Outfit not found'); return; }
+      if (t.locked && Object.keys(o.patch).some((k) => k !== 'occasion')) { errors.push(`“${t.name}” is a locked role uniform. Duplicate it to make an editable outfit.`); return; }
       Object.assign(t, o.patch, { id: t.id });
       summary.push(`Updated outfit ${t.name}`);
       return;
@@ -534,7 +552,7 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
     case 'outfit.duplicate': {
       const t = doc.outfitTemplates.find((x) => x.id === o.id);
       if (!t) { errors.push('Outfit not found'); return; }
-      doc.outfitTemplates.push({ ...JSON.parse(JSON.stringify(t)), id: o.newId ?? uid('outfit'), name: `${t.name} copy` });
+      doc.outfitTemplates.push({ ...JSON.parse(JSON.stringify(t)), id: o.newId ?? uid('outfit'), name: `${t.name} copy`, locked: false, kind: 'outfit', approved: true });
       summary.push(`Duplicated outfit ${t.name}`);
       return;
     }
@@ -553,6 +571,8 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
           summary.push(`${a.identity.name}: left off ${missing.map((d) => d.label).join(', ')} (needs the ${missing.map((d) => d.functionalTool).join(', ')} tool)`);
         }
         a.appearance = withAppearance(a.appearance as Appearance, patch);
+        // a locked uniform is worn whole; any other outfit takes it off
+        a.uniformId = t.locked ? t.id : null;
       }
       summary.push(`Applied outfit “${t.name}” to ${o.agentIds.map((id) => doc.agents[id].identity.name).join(', ')}`);
       return;
@@ -667,6 +687,12 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
       if (!a) { errors.push(`Agent ${o.id} not found`); return; }
       const p = o.patch as Record<string, unknown>;
       if ('id' in p) { errors.push('Agent IDs are immutable'); return; }
+      if ('uniformId' in p && p.uniformId !== null && p.uniformId !== a.uniformId) { errors.push('Put a uniform on with “Wear”, not by editing the agent'); return; }
+      const u = lockedUniform(doc, a);
+      const look = p.appearance as Record<string, unknown> | undefined;
+      if (u && look && Object.keys(look).some((k) => (OUTFIT_FIELDS as string[]).includes(k) && JSON.stringify(look[k]) !== JSON.stringify((a.appearance as unknown as Record<string, unknown>)[k]))) {
+        errors.push(uniformLockedMessage(a.identity.name, u.name)); return;
+      }
       const before = new Set(a.appearance.accessories);
       deepMerge(a, p);
       const added = a.appearance.accessories.filter((x) => !before.has(x)).map((x) => ACCESSORY[x]).filter((d) => d?.functionalTool && !a.permissions.allowedTools.includes(d.functionalTool));
@@ -737,11 +763,24 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
       doc.outfitTemplates.push(o.template); summary.push(`Saved outfit ${o.template.name}`);
       return;
     case 'template.delete':
+      if (doc.outfitTemplates.some((t) => t.id === o.id && t.locked)) { errors.push('Locked role uniforms can’t be deleted'); return; }
       doc.roomTemplates = doc.roomTemplates.filter((t) => t.id !== o.id);
       doc.outfitTemplates = doc.outfitTemplates.filter((t) => t.id !== o.id);
       summary.push('Deleted template');
       return;
   }
+}
+
+/** The locked uniform an agent is wearing, if any. */
+export function lockedUniform(doc: OfficeDoc, a: Agent) {
+  return a.uniformId ? doc.outfitTemplates.find((t) => t.id === a.uniformId && t.locked) : undefined;
+}
+const uniformLockedMessage = (who: string, uniform: string) =>
+  `${who} is wearing the locked ${uniform}. Cosmetics can't be added to or removed from it. Take the uniform off first, or dress them in a different outfit.`;
+function outfitPatch(t: OutfitTemplate): Partial<Appearance> {
+  const patch: Partial<Appearance> = {};
+  for (const k of OUTFIT_FIELDS) if (k in t.patch) (patch as Record<string, unknown>)[k] = JSON.parse(JSON.stringify((t.patch as Record<string, unknown>)[k]));
+  return patch;
 }
 
 /** Functional equipment must match real permissions: drop items whose tool was revoked. */

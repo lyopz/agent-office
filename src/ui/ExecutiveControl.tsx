@@ -11,6 +11,7 @@ import { TOKEN_FREE_VERIFIED } from '../model/control';
 import { GAME_META } from '../arcade/types';
 import { confirmAction } from './primitives';
 import { bridgeRequest, useBridge, useBrowserMetrics } from './resources';
+import { CharacterRenders } from './CharacterRenders';
 import { perfSnapshot } from './perf';
 import { useArcade } from './ArcadeHost';
 
@@ -282,10 +283,12 @@ function Production() {
       </div>
       <p className="note">Agents move items through creation, preview, export and integration. Review and approval are yours. Publishing to Roblox needs your approval and a connected Roblox account, which this app doesn’t have.</p>
 
+      <CharacterRenders bridge={bridge} />
+
       <h3>Render status wall</h3>
       <table className="data"><thead><tr><th>Job</th><th>Agent or file</th><th>Status</th><th>Progress</th><th>Source</th><th /></tr></thead><tbody>
         {bridge.jobs.slice().reverse().map((j) => (
-          <tr key={j.id}><td>{j.kind} · {j.id}</td><td className="small">{j.file} → {j.output}</td><td><span className={`rstate rstate-${j.status}`}>{j.status}</span></td><td>—</td><td><span className="badge live">Blender</span></td>
+          <tr key={j.id}><td>{j.kind} · {j.id}</td><td className="small">{j.kind === 'characters' ? `${j.outputs?.length ?? 0} files` : `${j.file} → ${j.output}`}</td><td><span className={`rstate rstate-${j.status}`}>{j.status}</span></td><td>—</td><td><span className="badge live">Blender</span></td>
             <td>{j.status === 'running' && <button className="btn sm danger" title="Renders can’t pause; cancelling stops the Blender process" onClick={async () => { try { await bridgeRequest(doc.control.blenderBridgeUrl, `/jobs/${j.id}/cancel`, {}); bridge.refresh(); } catch (e) { notify((e as Error).message, 'error'); } }}>Cancel</button>}</td></tr>
         ))}
         {renders.map((t) => (

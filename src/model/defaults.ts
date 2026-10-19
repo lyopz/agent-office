@@ -4,7 +4,7 @@ import type {
   RoomTemplate, RoomType,
 } from './types';
 import { FURNITURE_META, ROOM_META } from './catalog';
-import { ARCHETYPE, BUILTIN_COSMETICS } from './cosmetics';
+import { ARCHETYPE, ARCHETYPES, BUILTIN_COSMETICS, OUTFIT_FIELDS } from './cosmetics';
 import { defaultAppearanceSettings } from './themes';
 import { defaultAlertSettings } from './alertDefaults';
 import { defaultArcade, defaultControl } from './control';
@@ -159,15 +159,25 @@ export function withAppearance(base: Appearance, patch: Partial<Appearance> = {}
 export const SKIN_TONES = ['#f6d7c3', '#e8b897', '#c68a64', '#a0663f', '#7a4a2a', '#4f3020', '#9fd8c0', '#b8c4ff'];
 
 export const APPEARANCE_PRESETS: { name: string; patch: Partial<Appearance> }[] = [
-  { name: 'Ops operator', patch: { top: 'uniform', topColor: '#13402a', headwear: 'headset', headwearColor: '#39ff88', equipment: 'tablet' } },
-  { name: 'Lab researcher', patch: { top: 'labcoat', topColor: '#e8eef0', glasses: 'round', equipment: 'clipboard' } },
-  { name: 'Field mechanic', patch: { top: 'coverall', topColor: '#d9772b', headwear: 'hardhat', headwearColor: '#f2c230', shoes: 'boots', shoeColor: '#4a3020', equipment: 'wrench', artStyle: 'realistic', preferredView: 'side' } },
-  { name: 'Executive', patch: { top: 'suit', topColor: '#1c2230', bottomColor: '#1c2230', shoes: 'dress', shoeColor: '#111', jewelry: 'badge' } },
-  { name: 'Netrunner', patch: { top: 'hoodie', topColor: '#2a1440', glasses: 'visor', accent: '#b57bff', artStyle: 'neon', hairStyle: 'mohawk', hairColor: '#b57bff' } },
-  { name: 'Security', patch: { top: 'vest', topColor: '#26313a', headwear: 'helmet', headwearColor: '#26313a', shoes: 'boots', equipment: 'tablet' } },
+  { name: 'Deck officer', patch: { top: 'uniform', topColor: '#1a2a3a', trimColor: '#4cc9ff', headwear: 'headset', headwearColor: '#1a1a1a', shoes: 'boots', equipment: 'tablet', accent: '#4cc9ff' } },
+  { name: 'Netrunner', patch: { top: 'jacket', topColor: '#2a1440', trimColor: '#b57bff', glasses: 'visor', gloves: 'tech', accent: '#b57bff' } },
+  { name: 'Void engineer', patch: { top: 'armor', topColor: '#3a3f46', trimColor: '#ff9f43', shoulders: 'armored', belt: 'utility', shoes: 'boots', shoeColor: '#111316', accent: '#ff9f43' } },
+  { name: 'Archive scholar', patch: { top: 'longcoat', topColor: '#2a1f4a', trimColor: '#c9d6e8', glasses: 'ar-glasses', equipment: 'holo-catalog', accent: '#5ad1ff' } },
 ];
 
-export const DEFAULT_OUTFITS: OutfitTemplate[] = APPEARANCE_PRESETS.map((p, i) => ({ id: `outfit_${i}`, name: p.name, patch: p.patch }));
+/** Locked role uniforms: one per role. Cosmetics can't be added to or removed from them piece by piece. */
+export const roleUniformId = (archetypeId: string) => `uniform_${archetypeId}`;
+export const ROLE_UNIFORMS: OutfitTemplate[] = ARCHETYPES.filter((t) => t.id !== 'custom').map((t) => {
+  const full = withAppearance(DEFAULT_APPEARANCE, t.appearance);
+  const patch: Partial<Appearance> = {};
+  for (const k of OUTFIT_FIELDS) (patch as Record<string, unknown>)[k] = JSON.parse(JSON.stringify(full[k]));
+  return { id: roleUniformId(t.id), name: `${t.title} uniform`, patch, kind: 'uniform', department: t.department, approved: true, locked: true };
+});
+
+export const DEFAULT_OUTFITS: OutfitTemplate[] = [
+  ...APPEARANCE_PRESETS.map((p, i) => ({ id: `outfit_${i}`, name: p.name, patch: p.patch })),
+  ...ROLE_UNIFORMS,
+];
 
 export function makeAgent(name: string, title: string, department: string, appearance: Partial<Appearance> = {}): Agent {
   return {
@@ -208,6 +218,7 @@ export function agentFromArchetype(archetypeId: string, name: string): Agent {
   const t = ARCHETYPE[archetypeId] ?? ARCHETYPE.custom;
   const a = makeAgent(name, t.title, t.department, t.appearance);
   a.archetype = t.id;
+  if (t.id !== 'custom') a.uniformId = roleUniformId(t.id);
   a.identity.roleDescription = t.roleDescription;
   a.identity.bio = t.responsibilities.length ? `Responsibilities: ${t.responsibilities.join('; ')}.` : '';
   a.personality.traits = [...t.traits]; a.personality.communicationStyle = t.communicationStyle;
@@ -232,9 +243,9 @@ export function builtinRoomTemplates(): RoomTemplate[] {
 
 export function emptyOffice(name = 'New Office'): OfficeDoc {
   return {
-    schemaVersion: 4, id: uid('office'), name,
+    schemaVersion: 5, id: uid('office'), name,
     settings: { gridSize: 24, bounds: null, hallwayMode: 'hybrid', minCorridorWidth: 1, defaultCorridorWidth: 2, collisionRule: 'warn', animationIntensity: 'subtle', idleWandering: false },
-    rooms: {}, corridors: {}, furniture: {}, agents: {}, outfitTemplates: DEFAULT_OUTFITS, roomTemplates: builtinRoomTemplates(),
+    rooms: {}, corridors: {}, furniture: {}, agents: {}, outfitTemplates: JSON.parse(JSON.stringify(DEFAULT_OUTFITS)), roomTemplates: builtinRoomTemplates(),
     cosmetics: BUILTIN_COSMETICS.map((c) => ({ ...c })), appearance: defaultAppearanceSettings(), alertSettings: defaultAlertSettings(),
     projects: {}, library: {}, departments: {}, control: defaultControl(), arcade: defaultArcade(),
   };

@@ -10,7 +10,7 @@ export interface BridgeMetrics {
   gpu: { name: string; memUsedMb: number; memTotalMb: number; utilPct: number }[] | null;
   blenderJobs: number; measuredAt: string;
 }
-export interface BridgeJob { id: string; kind: 'render' | 'export'; file: string; output: string; status: 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled'; startedAt: string; endedAt: string | null; log: string }
+export interface BridgeJob { id: string; kind: 'render' | 'export' | 'characters'; file?: string; output?: string; outputs?: string[]; status: 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled'; startedAt: string; endedAt: string | null; log: string }
 export interface BridgeState { status: 'off' | 'checking' | 'connected' | 'unreachable'; blender: string | null; metrics: BridgeMetrics | null; jobs: BridgeJob[]; error?: string }
 
 export function browserMetrics(): BrowserMetrics {

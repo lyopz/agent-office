@@ -11,6 +11,22 @@ import { Character } from '../characters/Character';
 import { assetStore } from '../persistence/repository';
 import { useAsset } from '../viewport/AgentsLayer';
 import { confirmAction } from './primitives';
+import { lockedUniform } from '../engine/ops';
+import { Lock } from 'lucide-react';
+
+/** Shown wherever an agent's look can be edited while a locked uniform is on. */
+export function UniformBanner({ agent }: { agent: Agent }) {
+  const doc = useStore((s) => s.doc);
+  const u = lockedUniform(doc, agent);
+  if (!u) return null;
+  return (
+    <div className="uniform-banner" role="status">
+      <Lock size={14} aria-hidden />
+      <span className="grow"><b>{agent.identity.name}</b> is wearing the locked <b>{u.name}</b>. Its clothing, accessories and effects can't be changed piece by piece. Face, hair and body can still be edited.</span>
+      <button className="btn sm" onClick={() => useStore.getState().commit([{ op: 'agent.removeUniform', id: agent.id }], `Take off ${u.name}`)}>Take off uniform</button>
+    </div>
+  );
+}
 
 const CATS: { id: CosmeticCategory | 'all' | 'equipped'; label: string }[] = [
   { id: 'all', label: 'All' }, { id: 'equipped', label: 'Wearing' }, { id: 'head', label: 'Head & face' }, { id: 'clothing', label: 'Clothing' }, { id: 'accessory', label: 'Accessories' }, { id: 'effect', label: 'Effects' },
@@ -56,6 +72,7 @@ export function Wardrobe({ agent }: { agent: Agent }) {
   });
   const others = Object.values(doc.agents).filter((x) => x.id !== agent.id);
   const outfits = doc.outfitTemplates;
+  const uniform = lockedUniform(doc, agent);
 
   const addCustom = async (file: File | null, name: string, category: CosmeticCategory) => {
     let assetId: string | null = null;
@@ -71,6 +88,7 @@ export function Wardrobe({ agent }: { agent: Agent }) {
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
+      <UniformBanner agent={agent} />
       <div className="card">
         <h4>Outfits</h4>
         <p className="note">An outfit changes clothing, accessories and effects only. Name, role, face, responsibilities and permissions stay exactly as they are.</p>
@@ -83,7 +101,7 @@ export function Wardrobe({ agent }: { agent: Agent }) {
         <div className="outfit-list">
           {outfits.map((t) => (
             <div key={t.id} className="outfit-row">
-              <span className="grow"><b>{t.name}</b> {t.kind === 'uniform' && <span className="chip">{t.approved ? 'approved uniform' : 'uniform · needs approval'}{t.department ? ` · ${t.department}` : ''}</span>}{t.occasion && <span className="chip">{t.occasion}</span>}</span>
+              <span className="grow"><b>{t.name}</b> {t.locked && <span className="chip locked-chip"><Lock size={10} aria-hidden /> locked</span>}{uniform?.id === t.id && <span className="chip">wearing</span>} {t.kind === 'uniform' && <span className="chip">{t.approved ? 'approved uniform' : 'uniform · needs approval'}{t.department ? ` · ${t.department}` : ''}</span>}{t.occasion && <span className="chip">{t.occasion}</span>}</span>
               <button className="btn sm" onClick={() => commit([{ op: 'outfit.apply', outfitId: t.id, agentIds: [agent.id] }], `Dress ${agent.identity.name} in ${t.name}`)}>Wear</button>
               <select aria-label={`Apply ${t.name} to another agent`} value="" onChange={(e) => e.target.value && commit([{ op: 'outfit.apply', outfitId: t.id, agentIds: [e.target.value] }], `Apply ${t.name}`)}>
                 <option value="">Apply to…</option>{others.map((o) => <option key={o.id} value={o.id}>{o.identity.name}</option>)}
@@ -94,7 +112,7 @@ export function Wardrobe({ agent }: { agent: Agent }) {
                 <option value="">No occasion</option>{['Spring', 'Summer', 'Autumn', 'Winter', 'Holiday', 'Launch day', 'Board meeting'].map((o) => <option key={o}>{o}</option>)}
               </select>
               <button className="btn sm" onClick={() => commit([{ op: 'outfit.duplicate', id: t.id }], 'Duplicate outfit')}>Duplicate</button>
-              <button className="btn sm danger" onClick={() => commit([{ op: 'template.delete', id: t.id }], 'Delete outfit')}>Delete</button>
+              {!t.locked && <button className="btn sm danger" onClick={() => commit([{ op: 'template.delete', id: t.id }], 'Delete outfit')}>Delete</button>}
             </div>
           ))}
           {!outfits.length && <p className="note">No saved outfits yet.</p>}
@@ -109,7 +127,7 @@ export function Wardrobe({ agent }: { agent: Agent }) {
           <select aria-label="Collection" value={collection} onChange={(e) => setCollection(e.target.value)}><option value="">All collections</option>{collections.map((c) => <option key={c}>{c}</option>)}</select>
         </div>
         <div className="chips" role="tablist">{CATS.map((c) => <button key={c.id} role="tab" aria-selected={cat === c.id} className="chip-btn" onClick={() => setCat(c.id)}>{c.label}</button>)}</div>
-        <p className="note">Rarity is only a label for collecting. It never changes what an agent may do.</p>
+        <p className="note">Four sci-fi pieces per slot. Rarity is only a label for collecting. It never changes what an agent may do.</p>
         <div className="cos-grid">
           {items.map((it) => {
             const tool = toolFor(it);
@@ -123,7 +141,9 @@ export function Wardrobe({ agent }: { agent: Agent }) {
                   <div className="small" style={{ color: RARITY_COLOR[it.rarity ?? 'common'] }}>{it.rarity ?? 'common'}{it.collection ? ` · ${it.collection}` : ''}</div>
                   {tool && <div className="small" style={{ color: locked ? 'var(--warn)' : 'var(--accent)' }}>{locked ? `Needs “${tool}” tool` : `Equipment · ${tool}`}</div>}
                 </div>
-                {wearing
+                {uniform
+                  ? <button className="btn sm" disabled title={`Locked by the ${uniform.name}`}>{wearing ? 'Remove' : 'Wear'}</button>
+                  : wearing
                   ? <button className="btn sm" onClick={() => commit([{ op: 'cosmetic.remove', itemId: it.id, agentId: agent.id }], `Remove ${it.name}`)}>Remove</button>
                   : <button className="btn sm" disabled={locked} title={locked ? `Grant the ${tool} tool in Permissions to wear this` : undefined} onClick={() => commit([{ op: 'cosmetic.apply', itemId: it.id, agentIds: [agent.id] }], `Equip ${it.name}`)}>Wear</button>}
                 {it.custom && <button className="btn icon sm danger" aria-label={`Delete ${it.name}`} onClick={() => confirmAction({ title: `Delete ${it.name}?`, confirmLabel: 'Delete', danger: true, body: 'Agents keep their current look; the item just leaves the inventory.', onConfirm: () => commit([{ op: 'cosmetic.delete', id: it.id }], 'Delete cosmetic') })}>×</button>}
