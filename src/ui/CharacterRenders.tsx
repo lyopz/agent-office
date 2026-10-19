@@ -69,6 +69,12 @@ function RenderGallery({ base, job }: { base: string; job: BridgeJob }) {
   return (
     <div className="char-renders">
       <p className="small ok">Rendered by Blender{job.endedAt ? ` at ${new Date(job.endedAt).toLocaleTimeString()}` : ''}. Files are in your Blender projects folder under exports/{files[0]?.split('/').slice(0, -1).join('/')}.</p>
+      {files.some((f) => f.endsWith('characters.blend')) && (
+        <div className="row"><button className="btn sm primary" onClick={async () => {
+          try { await bridgeRequest(base, `/jobs/${job.id}/open`, {}); useStore.getState().notify('Opening the scene in Blender on your computer'); }
+          catch (e) { useStore.getState().notify((e as Error).message, 'error'); }
+        }}>Open in Blender</button><span className="small muted">Opens characters.blend with every character, ready to edit.</span></div>
+      )}
       {lineup && <a href={url(lineup)} target="_blank" rel="noreferrer"><img className="lineup" src={url(lineup)} alt="Lineup of every rendered character" /></a>}
       <div className="char-grid">
         {shots.map((f) => {

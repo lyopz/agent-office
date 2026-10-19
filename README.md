@@ -138,13 +138,23 @@ The arcade policy is **Human only** by default and is enforced in the engine, no
 
 The per-game caps (Flappy 100 points or 3 minutes, Pac-Man 10,000 points or 5 minutes, Pong 11 points or 5 minutes) and the matches-per-day limit are editable on the Arcade tab. They are kept in the saved session history, so a reload doesn't reset the daily count.
 
-### Characters
+### Characters and wardrobe
 
-Characters are still drawn as SVG at the same size. They now sit at a desk (with a chair) while working, gesture while talking, turn briefly to face front when changing direction, and glide smoothly between cells. Cosmetics stay attached in every pose. A true 3D character pipeline from Blender would need a 3D renderer in the app, which this version doesn't have.
+Characters are still drawn as SVG at the same size. They now sit at a desk (with a chair) while working, gesture while talking, turn briefly to face front when changing direction, and glide smoothly between cells. Cosmetics stay attached in every pose.
 
-### Schema version 4
+**Wardrobe.** The built-in wardrobe is sci-fi only, with four items in each slot: headwear, eyewear, tops, bottoms, gloves, belts, footwear, accessories, hand-held equipment, cybernetics and effects. Functional equipment (diagnostic visor, ledger slate and so on) is listed separately because it mirrors a tool permission.
 
-Saved files now include `departments`, `control` and `arcade`. Version 3 files migrate with every department running, no emergency stop and the arcade set to human only.
+**Locked role uniforms.** Every role has a fixed uniform, and agents created from a role start in it. While it is on, cosmetics can't be added to it or removed from it, and its clothing can't be edited piece by piece, in the app, through the AI console or by import. Face, hair and body stay editable. "Take off uniform" unlocks the agent without changing the look; wearing a different outfit also takes it off. The uniforms themselves can't be edited or deleted, but "Duplicate" makes an editable copy.
+
+**Blender renders.** With the bridge running, Control → Production → *Character renders* sends the characters' appearance (nothing else) to Blender, which builds each one in 3D from `tools/blender/build_characters.py`. You get a 3/4 portrait PNG and a GLB per character, a labelled lineup and `characters.blend` with the whole cast. "Open in Blender" opens that scene on your computer. Files land in `exports/characters/<job>/` in your Blender projects folder. The script also runs on its own:
+
+```bash
+blender --background --factory-startup --python tools/blender/build_characters.py -- roster.json out/
+```
+
+### Schema version 5
+
+Version 4 added `departments`, `control` and `arcade`; version 3 files migrate with every department running, no emergency stop and the arcade set to human only. Version 5 adds locked uniforms. Migrating replaces only the built-in wardrobe (custom items and saved outfits are kept), adds the role uniforms, and locks an agent only if it is already dressed exactly in its role uniform, so nobody's look changes.
 
 ## What is simulated and what is live
 
@@ -272,7 +282,7 @@ A performance test builds an office of 48 rooms, more than 570 objects and 60 ag
 
 ### Executive control tests
 
-`tests/departments.test.ts` covers safe pause and resume with progress kept, the three render policies and saves, exclusions and the emergency pause, pause all and resume selected, enabling agents and batch assignment, task limits and resource policies, save and migration, 40 agents on the operations floor (under 15 ms per tick, no errors, no two agents on one cell), the production pipeline and its simulated labels, the human-only arcade lock and logging, and the character poses. `tests/arcade.test.ts` covers the three games, their caps and the daily limits.
+`tests/departments.test.ts` covers safe pause and resume with progress kept, the three render policies and saves, exclusions and the emergency pause, pause all and resume selected, enabling agents and batch assignment, task limits and resource policies, save and migration, 40 agents on the operations floor (under 15 ms per tick, no errors, no two agents on one cell), the production pipeline and its simulated labels, the human-only arcade lock and logging, and the character poses. `tests/arcade.test.ts` covers the three games, their caps and the daily limits. `tests/wardrobe.test.ts` covers the four-per-slot wardrobe, the uniform lock in every path that could change it, and the v4 → v5 migration.
 
 ## Extending
 
