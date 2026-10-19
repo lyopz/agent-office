@@ -506,3 +506,10 @@ fieldset.plain:disabled { opacity: 0.55; }
 .recovery-body p { margin: 0 0 10px; color: var(--text); }
 .recovery-body code { color: var(--accent); }
 .recovery-confirm { border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent); padding: 10px; border-radius: var(--radius); margin-top: 6px; }
+/* keep every page tab visible; the office name gives way first */
+.topbar > nav.seg, .topbar > .brand, .topbar .save-status { flex-shrink: 0; }
+.topbar .office-name { min-width: 80px; flex-shrink: 1; }
+.topbar > * { flex-shrink: 0; }
+.topbar > .office-name, .topbar > .spacer { flex-shrink: 1; }
+@media (max-width: 1750px) { .topbar .save-rel, .topbar .brand small { display: none; } }
+@media (max-width: 1500px) { .topbar > .badge, .topbar .sound-lbl { display: none; } }

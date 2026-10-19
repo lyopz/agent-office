@@ -62,7 +62,7 @@ export function SaveStatus() {
     <span className="save-status" data-state={state} title={detail}>
       <span className="save-dot" role="img" aria-label={text} />
       <span className="save-text hide-sm" aria-live="polite">
-        {text}{state === 'saved' && lastSaved && <span className="muted"> · {relativeTime(lastSaved, now)}</span>}
+        {text}{state === 'saved' && lastSaved && <span className="muted save-rel"> · {relativeTime(lastSaved, now)}</span>}
       </span>
       <button className="btn sm" disabled={paused} onClick={() => useStore.getState().saveNow()} title="Save now (Ctrl+S)" aria-label="Save now">
         <Save size={14} /><span className="hide-sm">Save now</span>

@@ -53,7 +53,7 @@ export function AlertBell() {
       <button className="btn sm" aria-expanded={open} aria-label={`Alerts: ${unacked.length} need attention`} title="Alert centre" onClick={() => setOpen(!open)} style={worst ? { borderColor: SEV_COLOR[worst], color: SEV_COLOR[worst] } : undefined}>
         {unacked.length ? <BellRing size={14} /> : <Bell size={14} />}{unacked.length > 0 && <span className="count">{unacked.length}</span>}
       </button>
-      {!soundUnlocked() && <button className="btn sm hide-sm" title="Browsers block sound until you allow it" onClick={() => unlockAudio()}><Volume2 size={14} />Enable sound</button>}
+      {!soundUnlocked() && <button className="btn sm hide-sm" aria-label="Enable sound" title="Browsers block sound until you allow it" onClick={() => unlockAudio()}><Volume2 size={14} /><span className="sound-lbl">Enable sound</span></button>}
       {open && <AlertDrawer onClose={() => setOpen(false)} />}
     </div>
   );
