@@ -19,6 +19,8 @@ import { useAlertDelivery } from './ui/AlertCenter';
 import { ExecutiveControl } from './ui/ExecutiveControl';
 import { ArcadeHost } from './ui/ArcadeHost';
 import { BriefingHost } from './ui/BriefingBoard';
+import { useAutosave } from './ui/SaveStatus';
+import { RecoveryDialog } from './ui/RecoveryDialog';
 
 function useSimulationLoop() {
   const running = useStore((s) => s.prefs.simRunning);
@@ -71,6 +73,7 @@ export function App() {
   useShortcuts();
   useApplyTheme();
   useAlertDelivery();
+  useAutosave();
   const page = useStore((s) => s.page);
   const mode = useStore((s) => s.mode);
   const tool = useStore((s) => s.tool);
@@ -108,6 +111,7 @@ export function App() {
       </div>
       <ProfileDrawer />
       <ConflictDialog />
+      <RecoveryDialog />
       <ConfirmDialog />
       <Toast />
       <ArcadeHost />

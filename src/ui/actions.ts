@@ -50,7 +50,7 @@ export function useShortcuts() {
       const k = e.key.toLowerCase();
       if (mod && k === 'z') { e.preventDefault(); if (e.shiftKey) s.redo(); else s.undo(); return; }
       if (mod && k === 'y') { e.preventDefault(); s.redo(); return; }
-      if (mod && k === 's') { e.preventDefault(); s.save(); s.notify('Saved'); return; }
+      if (mod && k === 's') { e.preventDefault(); s.saveNow(); return; }
       if (mod && k === 'd') {
         e.preventDefault();
         if (s.selection.kind === 'room') s.commit(s.selection.ids.map((id) => ({ op: 'room.duplicate', id })), 'Duplicate room');
