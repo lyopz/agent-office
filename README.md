@@ -78,6 +78,74 @@ The sample office now includes the NEXUS-7 Headquarters wing: an executive suite
 - **Business.** The dashboard shows projects with budgets and usage records, approvals, tube handoffs and the knowledge library. A spend above an agent's limit, an action on the owner's approval list, or a tool the agent hasn't been granted pauses the task until you approve it. Priority tasks travel between rooms in pneumatic-tube capsules, and the recipient acknowledges them on arrival.
 - **Performance.** Rooms and hallways outside the view are not drawn. Collision checks use a spatial index. A drag is drawn as a temporary overlay and committed once when you let go. The gauge button shows frame and tick timings.
 
+## Executive control, production and the arcade
+
+The **Control** page in the top bar has four tabs. The red **Emergency pause** button next to it stops every agent after a confirmation.
+
+### Departments
+
+Agents belong to a department by the department name on their profile. Each department row has an on/off switch, active and paused counts, its task count, a workload bar and a state chip:
+
+| State | Meaning |
+|---|---|
+| Running | Agents take new work. |
+| Pausing | The department is paused, but protected work (a save, or a render under the *finish* policy) is still finishing. |
+| Paused | Every non-excluded agent is frozen and its work is held. |
+| Blocked | A resource policy or the department's task limit is holding new work. Running work continues. |
+| Error | An agent in the department can't reach its destination. |
+
+The header buttons pause all departments, resume the selected rows, or trigger the emergency pause. Expanding a row lets you exclude agents from bulk actions, enable or disable all of its agents, set a maximum number of simultaneous tasks, choose the render policy, mark it essential and assign a batch of tasks round-robin.
+
+**Safe pause.** Pausing never deletes work:
+
+- Paused agents take no new work and stop moving and animating. Their bubble shows "II".
+- A task in progress is held with its progress and resumes from there.
+- Saves always finish.
+- Renders follow the department's render policy. *Finish* lets the render complete. *Defer* holds it at the last 25 % checkpoint. *Cancel* cancels it and logs that.
+- The emergency pause holds everything, renders included, at a checkpoint. Only saves finish.
+
+### Resources
+
+The Resources tab shows only figures that are actually measured. In the browser that is the tab's own JS memory, the device memory class and the CPU core count. System RAM, CPU, GPU memory, GPU utilisation and Blender jobs come from the Blender bridge (below) when it is running. Otherwise they read **Unavailable**. Per-department usage is always labelled unavailable, because agent "work" is simulated and nothing measures a department's real share.
+
+The policies (prioritise rendering, background task limit, pause non-essential departments under heavy load, auto-resume) only ever hold **new** work. They never stop a task that is already running, and every hold is logged and raised as an info alert. Executive, Operations and Finance are essential by default.
+
+### Rooms
+
+- **Operations floor.** Built for 20 to 40 agents, with compact desks in rows and a central walkway. When more agents are visible than Settings → *Simplify above* (30 by default), agents are drawn as simple markers. Agents outside the view are not drawn. Batch assignment spreads tasks across the department's enabled agents.
+- **Game Development Arcade.** Home of the Roblox and Blender production team (LUAU, QUEST, PROBE) and the three arcade cabinets.
+- **Blender Design Studio.** 3D workstations, a render wall, a preview turntable, a review table and a material library, staffed by MESH and RIG.
+
+### Production pipeline
+
+Production items move through *assigned → creating → preview → review → approved → exported → integrated*. Agents do the creation, preview and export stages; integration is done by the QA integrator. Review is yours: **Approve** or **Request changes** on the Production tab.
+
+Every stage reached by simulation is marked simulated, and each card says "Simulated progress only: no Blender or Roblox file has been produced". A card only shows a real file once the bridge has produced one and it has been attached. Roblox publishing is not connected.
+
+**Planning mode.** Without the bridge, the studio runs in planning mode: the pipeline, reviews and render wall all work, but nothing is rendered. To render and export for real, run the bridge on the machine that has Blender:
+
+```bash
+BLENDER_PROJECT_DIR=~/blender-projects npm run blender-bridge   # listens on 127.0.0.1:8790
+```
+
+Then enter `http://127.0.0.1:8790` under Control → Resources. The bridge only accepts `.blend` files inside `BLENDER_PROJECT_DIR` and writes output to its `exports/` folder. `tools/blender/export_glb.py` exports GLB. Optional variables are `BLENDER_BIN`, `BRIDGE_PORT`, `BRIDGE_ORIGIN` and `BRIDGE_MAX_JOBS`. Blender is a content-creation tool only. The app never needs it to run.
+
+### Arcade
+
+Click a cabinet in Simulate mode, or use the Arcade tab, to play **Sky Hopper** (Flappy Bird style), **Maze Muncher** (Pac-Man style) or **Classic Pong** (first to 11). Your games have no caps and are recorded separately from any agent limits.
+
+The arcade policy is **Human only** by default and is enforced in the engine, not just the interface. Agents can't be assigned an arcade machine as a workstation, sent to one, or given a task at one; every attempt is rejected and logged as a policy warning. *Agent play disabled* is the same for agents. *Token-free* agent play is locked off by a code constant (`TOKEN_FREE_VERIFIED = false` in `src/model/control.ts`). Settings, imports and AI commands can't switch it on.
+
+The per-game caps (Flappy 100 points or 3 minutes, Pac-Man 10,000 points or 5 minutes, Pong 11 points or 5 minutes) and the matches-per-day limit are editable on the Arcade tab. They are kept in the saved session history, so a reload doesn't reset the daily count.
+
+### Characters
+
+Characters are still drawn as SVG at the same size. They now sit at a desk (with a chair) while working, gesture while talking, turn briefly to face front when changing direction, and glide smoothly between cells. Cosmetics stay attached in every pose. A true 3D character pipeline from Blender would need a 3D renderer in the app, which this version doesn't have.
+
+### Schema version 4
+
+Saved files now include `departments`, `control` and `arcade`. Version 3 files migrate with every department running, no emergency stop and the arcade set to human only.
+
 ## What is simulated and what is live
 
 | Area | Status |
@@ -201,6 +269,10 @@ The 15 tests from the headquarters specification live in `tests/hq.acceptance.te
 | 15 | No overwhelm | 600 ticks of routine work produce at most 3 audible alerts. Info never sounds, and critical still sounds through quiet hours and mute. |
 
 A performance test builds an office of 48 rooms, more than 570 objects and 60 agents, and checks the timing of placement checks, a group move with validation, and simulation ticks.
+
+### Executive control tests
+
+`tests/departments.test.ts` covers safe pause and resume with progress kept, the three render policies and saves, exclusions and the emergency pause, pause all and resume selected, enabling agents and batch assignment, task limits and resource policies, save and migration, 40 agents on the operations floor (under 15 ms per tick, no errors, no two agents on one cell), the production pipeline and its simulated labels, the human-only arcade lock and logging, and the character poses. `tests/arcade.test.ts` covers the three games, their caps and the daily limits.
 
 ## Extending
 

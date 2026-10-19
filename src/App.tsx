@@ -15,6 +15,8 @@ import { ObjectLibrary } from './ui/ObjectLibrary';
 import { PerfPanel } from './ui/PerfPanel';
 import { useApplyTheme } from './ui/ThemeEditor';
 import { useAlertDelivery } from './ui/AlertCenter';
+import { ExecutiveControl } from './ui/ExecutiveControl';
+import { ArcadeHost } from './ui/ArcadeHost';
 
 function useSimulationLoop() {
   const running = useStore((s) => s.prefs.simRunning);
@@ -91,6 +93,7 @@ export function App() {
         </main>
       )}
       {page === 'dashboard' && <main style={{ overflow: 'auto', minHeight: 0 }}><Dashboard /></main>}
+      {page === 'control' && <main style={{ overflow: 'auto', minHeight: 0 }}><ExecutiveControl /></main>}
       {page === 'settings' && <main style={{ overflow: 'auto', minHeight: 0 }}><Settings /></main>}
       <div>
         <Console />
@@ -104,6 +107,7 @@ export function App() {
       <ConflictDialog />
       <ConfirmDialog />
       <Toast />
+      <ArcadeHost />
     </div>
   );
 }

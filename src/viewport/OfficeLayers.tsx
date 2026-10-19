@@ -50,7 +50,7 @@ export const CorridorShape = memo(function CorridorShape({ c, selected, ghost }:
 });
 
 /** One object, drawn from its library entry: a body in its material plus a glyph for what it does. */
-export function FurnitureShape({ f, x, y, w, h, display, ghost }: { f: Pick<Furniture, 'type' | 'color' | 'material' | 'workstation' | 'label'> & { id?: string }; x: number; y: number; w: number; h: number; display?: string; ghost?: 'ok' | 'bad' }) {
+export function FurnitureShape({ f, x, y, w, h, display, ghost }: { f: Pick<Furniture, 'type' | 'color' | 'material' | 'workstation' | 'label'> & Partial<Pick<Furniture, 'arcade'>> & { id?: string }; x: number; y: number; w: number; h: number; display?: string; ghost?: 'ok' | 'bad' }) {
   const px = x * G, py = y * G, pw = w * G, ph = h * G;
   const ix = px + 3, iy = py + 3, iw = pw - 6, ih = ph - 6;
   const meta = FURNITURE_META[f.type];
@@ -60,8 +60,24 @@ export function FurnitureShape({ f, x, y, w, h, display, ghost }: { f: Pick<Furn
   const body = (f.material && MATERIAL_COLOR[f.material]) || f.color;
   const cx = px + pw / 2, cy = py + ph / 2, rr = Math.min(pw, ph) / 2 - 3;
   let detail: React.ReactNode = null;
-  let round = false;
+  let round = false, bodyless = false;
   switch (f.type) {
+    case 'arcade-cabinet': {
+      const c = ARCADE_SCREEN[f.arcade?.game ?? 'pong'];
+      detail = <><rect x={ix + 2} y={iy + 2} width={iw - 4} height={ih * 0.55} fill="#05060a" stroke={c} strokeWidth={1} /><rect className="arcade-glow" x={ix + 4} y={iy + 4} width={iw - 8} height={ih * 0.55 - 4} fill={c} opacity={0.35} /><circle cx={cx - 3} cy={iy + ih * 0.8} r={1.6} fill="#ff5d73" /><circle cx={cx + 3} cy={iy + ih * 0.8} r={1.6} fill="#ffd166" /></>;
+      break;
+    }
+    case 'render-wall':
+      detail = ['var(--muted)', 'var(--accent-orange)', 'var(--accent)', 'var(--accent)', 'var(--accent-orange)', 'var(--danger)', 'var(--muted)', 'var(--accent)'].map((c, i) => <rect key={i} x={ix + 3 + i * (iw - 6) / 8} y={iy + 3} width={(iw - 6) / 8 - 2} height={ih - 6} fill={c} opacity={0.55} />);
+      break;
+    case 'preview-stage': round = true; detail = <><circle cx={cx} cy={cy} r={rr} fill="#0c1820" stroke={scr} strokeOpacity={0.6} /><path className="turntable" d={`M${cx},${cy - rr * 0.55} L${cx + rr * 0.45},${cy + rr * 0.35} L${cx - rr * 0.45},${cy + rr * 0.35}Z`} fill={scr} opacity={0.7} style={{ transformOrigin: `${cx}px ${cy}px` }} /></>; break;
+    case 'lane-marker': bodyless = true; detail = <line x1={px + 2} x2={px + pw - 2} y1={cy} y2={cy} stroke="var(--accent)" strokeOpacity={0.35} strokeWidth={3} strokeDasharray="4 3" />; break;
+    case 'task-board': detail = [0, 1, 2].map((i) => <g key={i}><rect x={ix + 3 + i * iw / 3} y={iy + 2} width={iw / 3 - 6} height={ih - 4} fill={scr} opacity={0.18} />{[0, 1].map((k) => <rect key={k} x={ix + 5 + i * iw / 3} y={iy + 4 + k * 5} width={iw / 3 - 10} height={3} fill={i === 2 ? 'var(--accent)' : i === 1 ? 'var(--accent-blue)' : 'var(--muted)'} />)}</g>); break;
+    case 'workstation-3d': case 'dev-desk': {
+      const n = f.type === 'workstation-3d' ? 3 : 2;
+      detail = Array.from({ length: n }, (_, i) => <rect key={i} x={ix + 3 + i * (iw - 6) / n} y={iy + 1} width={(iw - 6) / n - 2} height={5} fill={scr} />);
+      break;
+    }
     case 'plant': round = true; detail = <><circle cx={cx} cy={cy} r={rr} fill="#1f6b3a" /><circle cx={cx - 3} cy={cy - 2} r={rr / 2} fill="#2f8f4e" /></>; break;
     case 'lamp': case 'floor-light': round = true; detail = <circle cx={cx} cy={cy} r={6} fill="#ffe28a" opacity={0.6} filter="url(#glow)" />; break;
     case 'aquarium': detail = <><rect x={ix + 2} y={iy + 2} width={iw - 4} height={ih - 4} fill="#0b4a6b" opacity={0.9} /><circle cx={ix + iw * 0.3} cy={cy} r={2} fill="#ffb14a" /><circle cx={ix + iw * 0.7} cy={cy + 2} r={1.6} fill="#ff6f91" /></>; break;
@@ -86,14 +102,17 @@ export function FurnitureShape({ f, x, y, w, h, display, ghost }: { f: Pick<Furn
   }
   const tint = ghost === 'bad' ? 'var(--danger)' : ghost === 'ok' ? 'var(--accent)' : undefined;
   return (
-    <g data-kind={ghost ? undefined : 'furniture'} data-id={f.id} className="furniture" opacity={ghost ? 0.75 : 1}>
-      {!round && <rect className="f-body" x={ix} y={iy} width={iw} height={ih} rx={2} fill={body} stroke={tint ?? 'color-mix(in srgb, var(--accent) 35%, transparent)'} strokeWidth={tint ? 2 : 1} />}
+    <g data-kind={ghost ? undefined : 'furniture'} data-id={f.id} className={`furniture${f.arcade && !ghost ? ' playable' : ''}`} opacity={ghost ? 0.75 : 1} pointerEvents={f.arcade && !ghost ? 'visiblePainted' : undefined}>
+      {f.arcade && !ghost && <title>{`Play ${f.label ?? 'arcade game'}`}</title>}
+      {!round && !bodyless && <rect className="f-body" x={ix} y={iy} width={iw} height={ih} rx={2} fill={body} stroke={tint ?? 'color-mix(in srgb, var(--accent) 35%, transparent)'} strokeWidth={tint ? 2 : 1} />}
       {detail}
       {round && tint && <circle cx={cx} cy={cy} r={rr + 1} fill="none" stroke={tint} strokeWidth={2} />}
       {statusColor && <circle cx={px + pw - 5} cy={py + 5} r={2.5} fill={statusColor} />}
     </g>
   );
 }
+
+const ARCADE_SCREEN: Record<string, string> = { flappy: '#4cc9ff', pacman: '#ffd166', pong: '#39ff88' };
 
 export const RoomShape = memo(function RoomShape({
   room, furniture, selected, invalid, occupancy, showLabel, showBoundary, construct,

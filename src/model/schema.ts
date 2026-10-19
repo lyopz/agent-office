@@ -5,8 +5,9 @@ import { FURNITURE_MATERIALS, FURNITURE_TYPES, ROOM_TYPES, type OfficeDoc } from
 import { BUILTIN_COSMETICS } from './cosmetics';
 import { defaultAppearanceSettings } from './themes';
 import { defaultAlertSettings } from './alertDefaults';
+import { TOKEN_FREE_VERIFIED, defaultArcade, defaultControl } from './control';
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const id = z.string().min(1).max(120);
 const num = z.number().finite();
@@ -43,6 +44,7 @@ const furniture = z.object({
   rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]), color, blocking: z.boolean(), workstation: workstation.optional(),
   label: z.string().max(120).optional(), material: z.enum(FURNITURE_MATERIALS).optional(), groupId: z.string().max(120).optional(),
   tube: z.object({ stationName: z.string().max(120), department: z.string().max(120) }).optional(),
+  arcade: z.object({ game: z.enum(['flappy', 'pacman', 'pong']), theme: z.string().max(60) }).optional(),
 });
 
 // Agents are validated loosely and then filled from defaults, so older files gain new fields.
@@ -100,6 +102,24 @@ const cosmetic = z.object({
   functionalTool: z.string().max(80).optional(), custom: z.boolean().optional(), assetId: id.nullable().optional(), tags: z.array(z.string().max(40)).optional(),
 });
 
+const department = z.object({
+  id, name: z.string().min(1).max(120), color, description: z.string().max(500).default(''),
+  mode: z.enum(['running', 'paused']), essential: z.boolean(), maxConcurrent: num.int().min(1).nullable(),
+  excludedAgentIds: z.array(id).max(500), renderPolicy: z.enum(['finish', 'cancel', 'defer']),
+});
+const control = z.object({
+  emergencyStop: z.boolean(),
+  policy: z.object({ prioritizeRendering: z.boolean(), backgroundLimit: num.int().min(1).max(200), pauseNonessential: z.boolean(), autoResume: z.boolean() }),
+  simplifyAbove: num.int().min(0).max(1000),
+  blenderBridgeUrl: z.string().max(300).refine((u) => u === '' || /^https?:\/\/[^\s]+$/.test(u), 'must be an http(s) URL'),
+});
+const gameLimit = z.object({ maxScore: num.int().min(1).max(1_000_000), maxSessionSec: num.min(10).max(3600) });
+const arcade = z.object({
+  policy: z.enum(['human-only', 'agent-disabled', 'token-free']),
+  limits: z.object({ flappy: gameLimit, pacman: gameLimit, pong: gameLimit }),
+  maxAgentMatchesPerDay: num.int().min(0).max(100), tokenFreeVerified: z.boolean(),
+});
+
 export const officeSchema = z.object({
   schemaVersion: z.number().int(),
   id, name: z.string().max(200),
@@ -115,6 +135,9 @@ export const officeSchema = z.object({
   alertSettings,
   projects: z.record(project),
   library: z.record(knowledge),
+  departments: z.record(department),
+  control,
+  arcade,
 });
 
 const SECRET_KEYS = /^(api[-_]?key|secret|token|password|authorization|credential)s?$/i;
@@ -158,6 +181,14 @@ const migrations: Record<number, (d: Raw) => Raw> = {
     d.projects ??= {};
     d.library ??= {};
     d.schemaVersion = 3;
+    return d;
+  },
+  // v3 → v4: departments and executive control, the arcade.
+  3: (d) => {
+    d.departments ??= {};
+    d.control ??= defaultControl();
+    d.arcade ??= defaultArcade();
+    d.schemaVersion = 4;
     return d;
   },
 };
@@ -206,6 +237,9 @@ export function parseOffice(input: unknown): ParseResult {
     }
     for (const [k, r] of Object.entries(doc.rooms)) if (r.id !== k) errs.push(`Room key ${k} doesn't match its id`);
     for (const p of Object.values(doc.projects)) if (p.ownerAgentId && !doc.agents[p.ownerAgentId]) p.ownerAgentId = null;
+    for (const [k, dep] of Object.entries(doc.departments)) { if (dep.id !== k) errs.push(`Department key ${k} doesn't match its id`); dep.excludedAgentIds = dep.excludedAgentIds.filter((x) => doc.agents[x]); }
+    doc.arcade.tokenFreeVerified = TOKEN_FREE_VERIFIED;
+    if (doc.arcade.policy === 'token-free' && !TOKEN_FREE_VERIFIED) { doc.arcade.policy = 'human-only'; warnings.push('Token-free agent arcade play is not verified; policy reset to human only'); }
     if (!doc.appearance.themes.some((t) => t.id === doc.appearance.themeId)) doc.appearance.themeId = doc.appearance.themes[0].id;
     if (errs.length) return { ok: false, errors: errs.slice(0, 12) };
     doc.schemaVersion = SCHEMA_VERSION;

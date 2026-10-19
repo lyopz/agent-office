@@ -1,6 +1,6 @@
 import { saveFile } from '../persistence/saveFile';
 import { useRef, useState } from 'react';
-import { Download, FolderOpen, History, Pause, Play, Redo2, Save, Undo2, Upload } from 'lucide-react';
+import { Download, FolderOpen, History, OctagonX, Pause, Play, Redo2, Save, Undo2, Upload } from 'lucide-react';
 import { useStore } from '../store/store';
 import { repo } from '../store/store';
 import { confirmAction } from './primitives';
@@ -36,11 +36,12 @@ export function TopBar() {
       <span className="brand">AGENT//HQ<small className="hide-sm">sim v0.2</small></span>
       <input className="office-name" aria-label="Office name" defaultValue={name} key={name} onBlur={(e) => e.target.value.trim() && e.target.value !== name && s.commit([{ op: 'office.rename', name: e.target.value.trim() }], 'Rename office')} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
       <nav className="seg" aria-label="Pages">
-        {(['office', 'dashboard', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p[0].toUpperCase() + p.slice(1)}</button>)}
+        {(['office', 'dashboard', 'control', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'control' ? 'Control' : p[0].toUpperCase() + p.slice(1)}</button>)}
       </nav>
       <span className="spacer" />
       <AlertBell />
       <button className="btn icon sm" aria-label={prefs.simRunning ? 'Pause simulation' : 'Run simulation'} title={prefs.simRunning ? 'Pause simulation' : 'Run simulation'} onClick={() => s.setPrefs({ simRunning: !prefs.simRunning })}>{prefs.simRunning ? <Pause size={14} /> : <Play size={14} />}</button>
+      <EmergencyButton />
       <select className="hide-sm" aria-label="Simulation speed" value={prefs.simSpeed} onChange={(e) => s.setPrefs({ simSpeed: Number(e.target.value) })} style={{ width: 64, minHeight: 26 }}>
         {[0.5, 1, 2, 4].map((v) => <option key={v} value={v}>{v}×</option>)}
       </select>
@@ -91,4 +92,11 @@ function VersionsMenu({ onClose }: { onClose: () => void }) {
       </div>
     </div>
   );
+}
+
+function EmergencyButton() {
+  const on = useStore((st) => st.doc.control.emergencyStop);
+  const { commit } = useStore.getState();
+  if (on) return <button className="btn sm danger pressed" aria-pressed="true" title="Every agent is stopped; click to lift" onClick={() => commit([{ op: 'control.update', patch: { emergencyStop: false } }], 'Lift emergency pause')}><OctagonX size={14} /><span className="hide-sm">Stopped · resume</span></button>;
+  return <button className="btn icon sm" aria-label="Emergency pause all agents" title="Emergency pause: stop every agent now (progress is kept)" onClick={() => confirmAction({ title: 'Emergency pause every agent?', danger: true, confirmLabel: 'Pause everything', body: 'All agents stop at once. Running tasks are held with their progress, and nothing is deleted. Lift it here or on the Control page.', onConfirm: () => commit([{ op: 'control.update', patch: { emergencyStop: true } }], 'Emergency pause') })}><OctagonX size={14} /></button>;
 }

@@ -6,7 +6,7 @@ import type { Appearance, ViewMode } from '../model/types';
 import { shade } from './color';
 import { EquipmentExtra, FrontBack, FrontBody, FrontFaceExtras, FrontOver, SideExtras, TopExtras, handColor } from './extras';
 
-export type Pose = 'idle' | 'walk' | 'work';
+export type Pose = 'idle' | 'walk' | 'work' | 'sit' | 'talk';
 
 export interface CharacterProps {
   a: Appearance;
@@ -160,13 +160,15 @@ function Front({ c, turn }: { c: Ctx; turn: number }) {
   const tw = TW[a.build];
   const x0 = 50 - tw / 2, hx = 50 + turn * 5;
   const step = pose === 'walk' ? [0, 3, 0, -3][frame % 4] : 0;
-  const typing = pose === 'work' && (a.workPose === 'typing' || a.workPose === 'tinkering');
-  const bob = pose === 'work' ? (frame % 2) * 1.5 : 0;
+  const sit = pose === 'sit';
+  const talk = pose === 'talk';
+  const typing = (pose === 'work' || sit) && (a.workPose === 'typing' || a.workPose === 'tinkering');
+  const bob = pose === 'work' || sit ? (frame % 2) * 1.5 : 0;
   const leg = legColor(a);
   const shorts = a.bottom === 'shorts' && a.top !== 'coverall';
   const skirt = a.bottom === 'skirt' && a.top !== 'coverall';
   const lw = tw / 2 - 2;
-  const legEndL = 146 - Math.max(0, step), legEndR = 146 - Math.max(0, -step);
+  const legEndL = sit ? 128 : 146 - Math.max(0, step), legEndR = sit ? 128 : 146 - Math.max(0, -step);
   const boots = a.shoes === 'boots';
   const sleeve = sleeveColor(a);
   const armTop = 60;
@@ -178,6 +180,7 @@ function Front({ c, turn }: { c: Ctx; turn: number }) {
       {[{ x: x0 + 2, end: legEndL }, { x: 51, end: legEndR }].map((l, i) => (
         <g key={i}>
           <rect x={l.x} y={98} width={lw - 1} height={l.end - 98} fill={shorts || skirt ? a.skinTone : leg} {...s} />
+          {sit && <ellipse cx={l.x + (lw - 1) / 2} cy={106} rx={lw / 2 + 1.5} ry={6} fill={shorts || skirt ? a.skinTone : shade(leg, 0.08)} {...s} />}
           {shorts && <rect x={l.x} y={98} width={lw - 1} height={20} fill={leg} {...s} />}
           <rect x={l.x - 1.5} y={l.end - (boots ? 9 : 2)} width={lw + 2} height={boots ? 14 : 7} rx={a.shoes === 'dress' ? 2 : 3} fill={a.shoeColor} {...s} />
         </g>
@@ -188,6 +191,10 @@ function Front({ c, turn }: { c: Ctx; turn: number }) {
       {/* far arm / near arm */}
       {!crossed && [{ x: x0 - 8, sw: step, side: -1 }, { x: x0 + tw, sw: -step, side: 1 }].map((arm, i) => {
         if (hips) return <g key={i}><path d={`M${arm.x + 4},${armTop} L${arm.x + 4 + arm.side * 6},${82} L${arm.x + 4 - arm.side * 1},${96}`} stroke={sleeve} strokeWidth={8} fill="none" strokeLinecap="round" /><circle cx={arm.x + 4 - arm.side} cy={96} r={4.2} fill={handColor(a)} {...s} /></g>;
+        if (talk && i === 1) {
+          const lift = [0, 4, 2, 5][frame % 4];
+          return <g key={i}><rect x={arm.x} y={armTop} width={8} height={20} rx={4} fill={sleeve} {...s} /><rect x={arm.x + 2} y={armTop + 4 - lift} width={8} height={18} rx={4} transform={`rotate(-35 ${arm.x + 4} ${armTop + 18})`} fill={sleeve} {...s} /><circle cx={arm.x + 15} cy={armTop - 2 - lift} r={4.2} fill={handColor(a)} {...s} /></g>;
+        }
         if (typing) return <g key={i}><rect x={arm.x} y={armTop} width={8} height={22} rx={4} fill={sleeve} {...s} /><rect x={i ? arm.x - 12 : arm.x} y={78 + bob * (i ? -1 : 1)} width={20} height={7} rx={3.5} fill={sleeve} {...s} /><circle cx={i ? arm.x - 12 : arm.x + 20} cy={81.5 + bob * (i ? -1 : 1)} r={4} fill={handColor(a)} {...s} /></g>;
         const len = 36 + arm.sw;
         return <g key={i}><rect x={arm.x} y={armTop} width={8} height={len} rx={4} fill={a.top === 'tshirt' ? a.skinTone : sleeve} {...s} />{a.top === 'tshirt' && <rect x={arm.x} y={armTop} width={8} height={12} rx={3} fill={sleeve} {...s} />}<circle cx={arm.x + 4} cy={armTop + len + 2} r={4.4} fill={handColor(a)} {...s} /></g>;
@@ -357,6 +364,19 @@ function Top({ c }: { c: Ctx }) {
   );
 }
 
+/** Seat drawn behind a seated character, in the room's furniture tones. */
+function Chair({ a }: { a: Appearance }) {
+  const col = shade(a.accent, -0.75);
+  return (
+    <g>
+      <rect x={30} y={62} width={40} height={52} rx={6} fill={col} stroke="#061009" strokeWidth={1} />
+      <rect x={24} y={116} width={52} height={9} rx={4} fill={shade(col, 0.15)} stroke="#061009" strokeWidth={1} />
+      <rect x={47} y={125} width={6} height={18} fill="#1a1d20" />
+      <rect x={34} y={143} width={32} height={4} rx={2} fill="#1a1d20" />
+    </g>
+  );
+}
+
 const HEADING_ROT = { up: 0, right: 90, down: 180, left: 270 } as const;
 
 function CharacterImpl({ a, view, pose = 'idle', frame = 0, facing, heading = 'down', size = 64, assetUrl, title }: CharacterProps) {
@@ -394,7 +414,10 @@ function CharacterImpl({ a, view, pose = 'idle', frame = 0, facing, heading = 'd
       <Defs c={c} />
       <ellipse cx={50} cy={152} rx={22} ry={4} fill="#000" opacity={0.35} />
       <g transform={`${flip ? 'translate(100 0) scale(-1 1) ' : ''}translate(50 152) scale(${0.92 + (h - 1) * 0.6} ${h}) translate(-50 -152)`} filter={glow}>
-        {view === 'side' ? <Side c={c} /> : <Front c={c} turn={view === 'three-quarter' ? 0.35 : 0} />}
+        {pose === 'sit' && view !== 'side' && <Chair a={a} />}
+        {view === 'side'
+          ? <Side c={pose === 'sit' ? { ...c, pose: 'work' } : pose === 'talk' ? { ...c, pose: 'idle' } : c} />
+          : <g transform={pose === 'sit' ? 'translate(0 12)' : undefined}><Front c={c} turn={view === 'three-quarter' ? 0.35 : 0} /></g>}
       </g>
     </svg>
   );

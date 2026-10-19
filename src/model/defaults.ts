@@ -7,6 +7,7 @@ import { FURNITURE_META, ROOM_META } from './catalog';
 import { ARCHETYPE, BUILTIN_COSMETICS } from './cosmetics';
 import { defaultAppearanceSettings } from './themes';
 import { defaultAlertSettings } from './alertDefaults';
+import { defaultArcade, defaultControl } from './control';
 
 export const uid = (prefix: string) => `${prefix}_${nanoid(8)}`;
 export const now = () => new Date().toISOString();
@@ -16,6 +17,7 @@ export function makeFurniture(type: FurnitureType, roomId: string, x: number, y:
   const m = FURNITURE_META[type];
   const f: Furniture = { id: uid('fur'), type, roomId, x, y, w: m.w, h: m.h, rotation: 0, color: m.color, blocking: m.blocking, ...extra };
   if (m.fn === 'tube' && !f.tube) f.tube = { stationName: m.label, department: '' };
+  if (m.fn === 'arcade' && !f.arcade) f.arcade = { game: 'pong', theme: 'neon' };
   return f;
 }
 
@@ -99,6 +101,21 @@ export function furniturePreset(type: RoomType, w: number, h: number): Omit<Furn
     case 'market':
       list.push(f('multi-monitor', 1, 2, { workstation: workstation('Market Analysis Station', ['six-screen rig'], ['market data']) }));
       list.push(f('market-display', 1, 0), f('comparison-wall', 4, 0));
+      break;
+    case 'ops-floor':
+      for (let y = 2; y + 1 < h - 1; y += 3) for (let x = 1; x < w - 1; x += 2) {
+        if (x === Math.floor(w / 2) || x === Math.floor(w / 2) - 1) continue; // central walkway
+        list.push(f('compact-desk', x, y, { workstation: workstation(`Floor Desk ${list.length + 1}`, ['terminal'], ['task queue']) }));
+      }
+      list.push(f('task-board', 1, 0));
+      break;
+    case 'arcade':
+      list.push(f('dev-desk', 1, 2, { workstation: workstation('Dev Desk', ['dual monitors', 'Roblox Studio'], ['scripting']) }));
+      list.push(f('arcade-cabinet', w - 2, 1, { arcade: { game: 'pong', theme: 'classic' } }), f('project-display', 1, 0));
+      break;
+    case 'blender-studio':
+      list.push(f('workstation-3d', 1, 2, { workstation: workstation('3D Workstation', ['three monitors', 'pen display'], ['modelling']) }));
+      list.push(f('render-wall', 1, 0), f('preview-stage', w - 3, h - 3));
       break;
     default:
       break;
@@ -206,6 +223,7 @@ export function builtinRoomTemplates(): RoomTemplate[] {
     ['office', 7, 6], ['research', 10, 7], ['server', 8, 6], ['meeting', 9, 7], ['workshop', 9, 7],
     ['storage', 6, 5], ['break', 8, 6], ['security', 7, 6], ['reception', 9, 6], ['operations', 16, 10],
     ['executive', 12, 8], ['library', 12, 8], ['finance', 9, 6], ['engineering', 11, 7], ['design', 11, 7], ['studio', 10, 7], ['market', 10, 6],
+    ['ops-floor', 24, 16], ['arcade', 16, 10], ['blender-studio', 14, 9],
   ];
   return types.map(([t, w, h]) => ({
     id: `tpl_${t}`, name: ROOM_META[t].label, type: t, w, h, appearance: roomAppearance(t), furniture: furniturePreset(t, w, h),
@@ -214,10 +232,10 @@ export function builtinRoomTemplates(): RoomTemplate[] {
 
 export function emptyOffice(name = 'New Office'): OfficeDoc {
   return {
-    schemaVersion: 3, id: uid('office'), name,
+    schemaVersion: 4, id: uid('office'), name,
     settings: { gridSize: 24, bounds: null, hallwayMode: 'hybrid', minCorridorWidth: 1, defaultCorridorWidth: 2, collisionRule: 'warn', animationIntensity: 'subtle', idleWandering: false },
     rooms: {}, corridors: {}, furniture: {}, agents: {}, outfitTemplates: DEFAULT_OUTFITS, roomTemplates: builtinRoomTemplates(),
     cosmetics: BUILTIN_COSMETICS.map((c) => ({ ...c })), appearance: defaultAppearanceSettings(), alertSettings: defaultAlertSettings(),
-    projects: {}, library: {},
+    projects: {}, library: {}, departments: {}, control: defaultControl(), arcade: defaultArcade(),
   };
 }

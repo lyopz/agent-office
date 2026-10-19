@@ -1,5 +1,6 @@
 // Spatial index for objects. A uniform bucket grid keeps collision checks
 // proportional to the objects near a point, not to every object in the office.
+import { isDraft } from 'immer';
 import type { Furniture, FurnitureType, OfficeDoc, Rect, Room } from '../model/types';
 import { FURNITURE_META } from '../model/catalog';
 import { doorInsideCells, rectsOverlap } from './geometry';
@@ -41,14 +42,16 @@ const indexCache = new WeakMap<object, { rooms: unknown; grid: SpatialGrid<Furni
 
 /** Index of all objects in world coordinates, cached per furniture map. */
 export function objectIndex(doc: OfficeDoc): SpatialGrid<Furniture> {
-  const hit = indexCache.get(doc.furniture);
+  // inside an immer draft the maps mutate in place, so a cached index would go stale mid-batch
+  const draft = isDraft(doc.furniture) || isDraft(doc.rooms);
+  const hit = draft ? undefined : indexCache.get(doc.furniture);
   if (hit && hit.rooms === doc.rooms) return hit.grid;
   const grid = new SpatialGrid<Furniture>();
   for (const f of Object.values(doc.furniture)) {
     const r = doc.rooms[f.roomId]; if (!r) continue;
     grid.insert(f, worldRect(r, f));
   }
-  indexCache.set(doc.furniture, { rooms: doc.rooms, grid });
+  if (!draft) indexCache.set(doc.furniture, { rooms: doc.rooms, grid });
   return grid;
 }
 

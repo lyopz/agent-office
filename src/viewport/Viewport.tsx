@@ -2,11 +2,12 @@
 // handles, room creation, hallway editing, doors, furniture and agent placement.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { selectedFurniture, useStore } from '../store/store';
+import { useArcade } from '../ui/ArcadeHost';
 import type { Furniture, Point, Rect, Room } from '../model/types';
 import type { DocOp } from '../engine/ops';
 import { applyOps } from '../engine/ops';
 import { boundsOf, clampDoor, rectsOverlap, snap } from '../engine/geometry';
-import { AgentPaths, AgentsLayer, CapsulesLayer } from './AgentsLayer';
+import { AgentPaths, AgentsLayer, CapsulesLayer, useSimplified } from './AgentsLayer';
 import { CorridorShape, FloorPatterns, FurnitureShape, G, RoomShape, corridorPx, useFurnitureByRoom } from './OfficeLayers';
 import { checkPlacement, footprint } from '../engine/spatial';
 import { FURNITURE_META } from '../model/catalog';
@@ -172,6 +173,13 @@ export function Viewport() {
       return;
     }
     if (kind === 'agent') { setUi({ selection: { kind: 'agent', id } }); return; }
+    if (kind === 'furniture' && !construct && doc.furniture[id]?.arcade) {
+      // arcade machines open the owner's game; agents can never trigger this path
+      (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+      setUi({ selection: { kind: 'furniture', id, ids: [id] } });
+      useArcade.getState().open(doc.furniture[id].arcade!.game);
+      return;
+    }
     if (kind === 'furniture') {
       const cur = selectedFurniture(selection);
       let ids = [id];
@@ -436,7 +444,7 @@ export function Viewport() {
           {drag?.type === 'rooms' && drag.moved && drag.ids.map((id) => { const r = doc.rooms[id]; return <rect key={id} x={r.x * G} y={r.y * G} width={r.w * G} height={r.h * G} fill="none" stroke="var(--muted)" strokeDasharray="4 4" pointerEvents="none" />; })}
           {(drag?.type === 'rooms' || drag?.type === 'resize') && selRoom && <text x={selRoom.x * G} y={selRoom.y * G - 8} className="room-label" fill={overlapping.size ? 'var(--danger)' : 'var(--accent)'}>{`x ${selRoom.x}  y ${selRoom.y}  ${selRoom.w}×${selRoom.h}${overlapping.size ? '  OVERLAP' : ''}`}</text>}
           {layers.paths && <AgentPaths />}
-          <AgentsLayer />
+          <AgentsLayer view={view} />
           <CapsulesLayer />
           {hallwayDraft && doc.rooms[hallwayDraft.roomId] && <rect x={doc.rooms[hallwayDraft.roomId].x * G - 4} y={doc.rooms[hallwayDraft.roomId].y * G - 4} width={doc.rooms[hallwayDraft.roomId].w * G + 8} height={doc.rooms[hallwayDraft.roomId].h * G + 8} fill="none" stroke="var(--accent-blue)" strokeWidth={3} strokeDasharray="10 6" className="march" pointerEvents="none" />}
         </g>
@@ -444,6 +452,7 @@ export function Viewport() {
       <div className="scanlines" aria-hidden />
       {menu && <ContextMenu {...menu} onClose={() => setMenu(null)} />}
       <Minimap width={size.w} height={size.h} />
+      <SimplifiedBadge view={view} />
       <div className="zoom-ctl" role="group" aria-label="Zoom">
         <button onClick={() => setUi({ camera: { ...camera, zoom: Math.min(3, camera.zoom * 1.2) } })} aria-label="Zoom in">+</button>
         <span>{Math.round(camera.zoom * 100)}%</span>
@@ -463,4 +472,10 @@ export function segmentMove(points: Point[], index: number, d: number, horizonta
   if (i + 1 === pts.length - 1) pts.push({ ...pts[pts.length - 1] });
   if (horizontal) { pts[i].y += d; pts[i + 1].y += d; } else { pts[i].x += d; pts[i + 1].x += d; }
   return pts;
+}
+
+function SimplifiedBadge({ view }: { view: Rect }) {
+  const { simple, visible, limit } = useSimplified(view);
+  if (!simple) return null;
+  return <div className="lod-badge" role="status" title={`More than ${limit} agents are visible, so characters are drawn as simple markers. Zoom in or change the limit in Settings → Office.`}>Simplified view · {visible} agents</div>;
 }

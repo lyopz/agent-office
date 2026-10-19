@@ -4,12 +4,13 @@
 import { produce, type Draft } from 'immer';
 import type {
   Agent, AlertSettings, Appearance, AppearanceSettings, CorridorEndpoint, Corridor, CosmeticItem, Door, Furniture, FurnitureMaterial, FurnitureType,
-  KnowledgeEntry, OfficeDoc, OfficeSettings, OutfitTemplate, Point, Project, Rect, Room, RoomAppearance, RoomTemplate, RoomType, ThemeDef,
+  ArcadeSettings, ControlSettings, Department, KnowledgeEntry, OfficeDoc, OfficeSettings, OutfitTemplate, Point, Project, Rect, Room, RoomAppearance, RoomTemplate, RoomType, ThemeDef,
 } from '../model/types';
 import { agentFromArchetype, furniturePreset, makeAgent, makeFurniture, makeRoom, uid, withAppearance } from '../model/defaults';
 import { FURNITURE_META } from '../model/catalog';
 import { ACCESSORY, ARCHETYPE, OUTFIT_FIELDS } from '../model/cosmetics';
 import { ROOM_PALETTES } from '../model/themes';
+import { TOKEN_FREE_VERIFIED, departmentId, departmentList, makeDepartment } from '../model/control';
 import { checkPlacement, findObjectSpot, footprint } from './spatial';
 import { clampDoor, doorFacing, manhattan, polylineCells, rectsOverlap, roomCenter } from './geometry';
 import { updateCorridors } from './routing';
@@ -75,7 +76,12 @@ export type DocOp =
   | { op: 'office.rename'; name: string }
   | { op: 'template.saveRoom'; template: RoomTemplate }
   | { op: 'template.saveOutfit'; template: OutfitTemplate }
-  | { op: 'template.delete'; id: string };
+  | { op: 'template.delete'; id: string }
+  | { op: 'department.update'; name: string; patch: Partial<Omit<Department, 'id' | 'name'>> }
+  | { op: 'departments.setMode'; ids: string[] | 'all'; mode: Department['mode'] }
+  | { op: 'department.setAgentsEnabled'; id: string; enabled: boolean }
+  | { op: 'control.update'; patch: DeepPartial<ControlSettings> }
+  | { op: 'arcade.update'; patch: DeepPartial<ArcadeSettings> };
 
 export interface ApplyResult { doc: OfficeDoc; summary: string[]; errors: string[] }
 
@@ -326,6 +332,7 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
       const f = doc.furniture[o.id];
       if (!f) { errors.push('Furniture not found'); return; }
       const { workstation, roomId, ...rest } = o.patch;
+      if (workstation && (f.arcade || rest.arcade)) { errors.push('Arcade machines are for the owner only and can’t be agent workstations'); return; }
       Object.assign(f, rest);
       if (roomId && roomId !== f.roomId && doc.rooms[roomId]) {
         const old = doc.rooms[f.roomId]; if (old) old.furnitureIds = old.furnitureIds.filter((x) => x !== f.id);
@@ -586,6 +593,47 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
     case 'project.upsert':
       doc.projects[o.project.id] = o.project; summary.push(`Saved project ${o.project.name}`);
       return;
+    case 'department.update': {
+      const id = departmentId(o.name);
+      const d = doc.departments[id] ?? makeDepartment(o.name);
+      Object.assign(d, o.patch);
+      d.excludedAgentIds = d.excludedAgentIds.filter((x) => doc.agents[x]);
+      doc.departments[id] = d;
+      summary.push(`Updated department ${d.name}`);
+      return;
+    }
+    case 'departments.setMode': {
+      const all = departmentList(doc as OfficeDoc);
+      const targets = o.ids === 'all' ? all : all.filter((d) => (o.ids as string[]).includes(d.id));
+      if (!targets.length) { errors.push('No matching departments'); return; }
+      for (const d of targets) doc.departments[d.id] = { ...(doc.departments[d.id] ?? d), mode: o.mode };
+      summary.push(`${o.mode === 'paused' ? 'Paused' : 'Resumed'} ${targets.map((d) => d.name).join(', ')}`);
+      return;
+    }
+    case 'department.setAgentsEnabled': {
+      const d = departmentList(doc as OfficeDoc).find((x) => x.id === o.id);
+      if (!d) { errors.push('Department not found'); return; }
+      let n = 0;
+      for (const a of Object.values(doc.agents)) {
+        if (departmentId(a.identity.department || 'General') !== d.id || d.excludedAgentIds.includes(a.id)) continue;
+        a.enabled = o.enabled; a.identity.status = o.enabled ? 'active' : 'paused'; n++;
+      }
+      if (o.enabled) doc.departments[d.id] = { ...(doc.departments[d.id] ?? d), mode: 'running' };
+      summary.push(`${o.enabled ? 'Enabled' : 'Disabled'} ${n} agent${n === 1 ? '' : 's'} in ${d.name}`);
+      return;
+    }
+    case 'control.update':
+      deepMerge(doc.control, o.patch);
+      summary.push(o.patch.emergencyStop === true ? 'Emergency pause: all agents stopped' : o.patch.emergencyStop === false ? 'Emergency pause lifted' : 'Updated executive control settings');
+      return;
+    case 'arcade.update': {
+      const { tokenFreeVerified: _ignored, ...patch } = o.patch; // verification comes from code, never from a setting
+      deepMerge(doc.arcade, patch);
+      doc.arcade.tokenFreeVerified = TOKEN_FREE_VERIFIED;
+      if (doc.arcade.policy === 'token-free' && !TOKEN_FREE_VERIFIED) { errors.push('Token-free agent play can’t be enabled: no verified model-free play path exists yet'); return; }
+      summary.push(`Arcade policy: ${doc.arcade.policy}`);
+      return;
+    }
     case 'project.delete':
       if (!doc.projects[o.id]) { errors.push('Project not found'); return; }
       summary.push(`Deleted project ${doc.projects[o.id].name}`); delete doc.projects[o.id];
@@ -660,6 +708,7 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
     }
     case 'workstation.assign': {
       const f = doc.furniture[o.furnitureId];
+      if (f?.arcade) { errors.push('Arcade machines are for the owner only and can’t be assigned to agents'); return; }
       if (!f?.workstation) { errors.push('Workstation not found'); return; }
       for (const g of Object.values(doc.furniture)) if (g.workstation && g.workstation.assignedAgentId === o.agentId && o.agentId) g.workstation.assignedAgentId = null;
       const prev = f.workstation.assignedAgentId;

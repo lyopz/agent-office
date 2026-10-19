@@ -3,7 +3,10 @@
 //  - runtime  : persistent simulation state (tasks, positions, activity log); not undoable
 //  - ui       : ephemeral view state (selection, camera, tools) — never saved
 import { create } from 'zustand';
-import type { AlertSeverity, OfficeDoc, RuntimeState, Task } from '../model/types';
+import type { AlertSeverity, ArcadeSession, AssetKind, GameId, OfficeDoc, RuntimeState, Task } from '../model/types';
+import { agentArcadeAttempt, isArcade, recordArcadeSession } from '../engine/arcadePolicy';
+import { attachRealFile, createAsset, reviewAsset } from '../engine/production';
+import { departmentId } from '../model/control';
 import { acknowledgeAlert, raiseAlert, resolveAlert, testAlert, type AlertInput } from '../engine/alerts';
 import { decideApproval, recordUsage, requestAction, type ActionRequest } from '../engine/governance';
 import { dispatchViaTube } from '../engine/tubes';
@@ -11,7 +14,7 @@ import { applyOps, type DocOp } from '../engine/ops';
 import { newErrors, validate, type Issue } from '../engine/validate';
 import { buildNav, type NavGraph } from '../engine/navigation';
 import { createTask, emptyRuntime, goTo, log, reconcileLayout, step, syncRuntime } from '../engine/simulation';
-import { sampleOffice } from '../model/sample';
+import { sampleOffice, seedSampleRuntime } from '../model/sample';
 import { emptyOffice } from '../model/defaults';
 import { LocalStorageRepository, type OfficeRepository, type Preferences } from '../persistence/repository';
 import { exportOffice, parseOffice } from '../model/schema';
@@ -48,6 +51,12 @@ export type RuntimeOp =
   | { op: 'usage.record'; agentId: string | null; projectId: string | null; taskId?: string | null; credits: number; kind?: 'model' | 'tool' | 'purchase'; simulated?: boolean }
   | { op: 'task.dispatchTube'; taskId: string; fromAgentId: string | null }
   | { op: 'task.fail'; id: string; reason: string }
+  | { op: 'tasks.batch'; departmentId: string; name: string; count: number; workUnits?: number; projectId?: string | null }
+  | { op: 'asset.create'; name: string; kind: AssetKind; ownerAgentId: string | null; projectId?: string | null }
+  | { op: 'asset.review'; id: string; approve: boolean; note?: string }
+  | { op: 'asset.attachFile'; id: string; file: string }
+  | { op: 'arcade.agentPlay'; agentId: string; game: GameId }
+  | { op: 'arcade.recordSession'; game: GameId; score: number; durationSec: number; result: ArcadeSession['result'] }
   | { op: 'history.undo' } | { op: 'history.redo' };
 
 interface State {
@@ -73,7 +82,7 @@ interface State {
   conflict: { ops: DocOp[]; label: string; issues: Issue[] } | null;
   profileAgentId: string | null;
   profileTab: string;
-  page: 'office' | 'dashboard' | 'settings';
+  page: 'office' | 'dashboard' | 'control' | 'settings';
   toast: { id: number; text: string; level: 'info' | 'warn' | 'error' } | null;
   hallwayDraft: { roomId: string; doorId: string } | null;
 
@@ -104,9 +113,10 @@ function initial() {
   const saved = repo.loadCurrent();
   const doc = saved?.doc ?? sampleOffice();
   const runtime: RuntimeState = { ...emptyRuntime(), ...(saved?.runtime ?? {}) } as RuntimeState;
-  runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {}; runtime.usage ??= []; runtime.approvals ??= {}; runtime.alerts ??= {}; runtime.capsules ??= {};
+  runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {}; runtime.usage ??= []; runtime.approvals ??= {}; runtime.alerts ??= {}; runtime.capsules ??= {}; runtime.policyHeld ??= []; runtime.arcadeSessions ??= []; runtime.assets ??= {};
   const nav = buildNav(doc);
   syncRuntime(doc, runtime, nav);
+  if (!saved) seedSampleRuntime(doc, runtime);
   if (!saved) log(runtime, { kind: 'system', agentId: null, simulated: false, message: 'Loaded sample office. Agents are simulated; no AI model is connected.' });
   let lastSaved = saved ? { doc, at: saved.savedAt } : null;
   if (!saved) { try { lastSaved = { doc, at: repo.saveCurrent(doc, runtime) }; } catch { /* storage unavailable: stay unsaved */ } }
@@ -118,7 +128,7 @@ function cloneRuntime(rt: RuntimeState): RuntimeState {
   for (const [k, a] of Object.entries(rt.agents)) agents[k] = { ...a, pos: { ...a.pos }, path: a.path.slice() };
   const tasks: RuntimeState['tasks'] = {};
   for (const [k, t] of Object.entries(rt.tasks)) tasks[k] = { ...t };
-  return { ...rt, agents, tasks, events: rt.events.slice(), usage: rt.usage, approvals: { ...rt.approvals }, alerts: { ...rt.alerts }, capsules: { ...rt.capsules } };
+  return { ...rt, agents, tasks, events: rt.events.slice(), usage: rt.usage, approvals: { ...rt.approvals }, alerts: { ...rt.alerts }, capsules: { ...rt.capsules }, assets: { ...rt.assets } };
 }
 
 function pruneTasks(rt: RuntimeState) {
@@ -186,6 +196,29 @@ export const useStore = create<State>((set, get) => {
         if (o.op === 'history.redo') { get().redo(); out.push('Redid change'); continue; }
         const { doc, nav } = get();
         const rt = cloneRuntime(get().runtime);
+        if ((o.op === 'agent.goTo' || o.op === 'task.create') && o.agentId && isArcade(doc, o.workstationId)) {
+          const g = doc.furniture[o.workstationId!].arcade!.game;
+          out.push(agentArcadeAttempt(doc, rt, o.agentId, g, o.op === 'agent.goTo' ? 'move request' : 'task').reason);
+          set({ runtime: rt }); continue;
+        }
+        if (o.op === 'arcade.agentPlay') out.push(agentArcadeAttempt(doc, rt, o.agentId, o.game, 'play request').reason);
+        if (o.op === 'arcade.recordSession') { recordArcadeSession(rt, { agentId: null, game: o.game, startedAt: new Date(Date.now() - o.durationSec * 1000).toISOString(), durationSec: o.durationSec, score: o.score, result: o.result, reward: 0 }); out.push('Session recorded'); }
+        if (o.op === 'asset.create') { const a = createAsset(rt, { name: o.name, kind: o.kind, ownerAgentId: o.ownerAgentId, projectId: o.projectId ?? null }); log(rt, { kind: 'production', agentId: o.ownerAgentId, simulated: false, message: `New production item “${a.name}” assigned${o.ownerAgentId ? ` to ${doc.agents[o.ownerAgentId]?.identity.name}` : ''}` }); out.push(`Created ${a.name}`); }
+        if (o.op === 'asset.review') out.push(reviewAsset(rt, o.id, o.approve, o.note) ? (o.approve ? 'Approved' : 'Changes requested') : 'Not awaiting review');
+        if (o.op === 'asset.attachFile') out.push(attachRealFile(rt, o.id, o.file) ? 'Attached' : 'Asset not found');
+        if (o.op === 'tasks.batch') {
+          const members = Object.values(doc.agents).filter((a) => departmentId(a.identity.department || 'General') === o.departmentId && a.enabled);
+          if (!members.length) out.push('No agents in that department');
+          else {
+            const n = Math.max(1, Math.min(200, Math.floor(o.count)));
+            for (let i = 0; i < n; i++) {
+              const a = members[i % members.length];
+              createTask(rt, { name: n > 1 ? `${o.name} (${i + 1}/${n})` : o.name, agentId: a.id, workUnits: o.workUnits ?? 40, projectId: o.projectId ?? null, costPerUnit: 0.01, simulated: true, destination: { roomId: a.schedule.assignedRoomId, workstationId: a.schedule.preferredWorkstationId } });
+            }
+            log(rt, { kind: 'system', agentId: null, simulated: false, message: `Batch: queued ${n} × “${o.name}” across ${Math.min(n, members.length)} agents` });
+            out.push(`Queued ${n} tasks across ${Math.min(n, members.length)} agents`);
+          }
+        }
         if (o.op === 'agent.goTo') out.push(goTo(doc, rt, nav, o.agentId, o.roomId, o.workstationId ?? null).message);
         if (o.op === 'task.create') {
           const t = createTask(rt, { ...(o.id ? { id: o.id } : {}), name: o.name, description: o.description ?? '', agentId: o.agentId, priority: o.priority ?? 'normal', destination: { roomId: o.roomId ?? null, workstationId: o.workstationId ?? null }, simulated: o.simulated ?? true, deadline: o.deadline, dependencies: o.dependencies ?? [], projectId: o.projectId ?? null, handoff: o.handoff, costPerUnit: o.costPerUnit, ...(o.workUnits ? { workUnits: o.workUnits } : {}) });
@@ -315,6 +348,7 @@ export const useStore = create<State>((set, get) => {
       const doc = sample ? sampleOffice() : emptyOffice('Blank Office');
       const prev = get().doc;
       const rt = emptyRuntime(); const nav = buildNav(doc); syncRuntime(doc, rt, nav);
+      if (sample) seedSampleRuntime(doc, rt);
       set({ runtime: rt });
       setDoc(doc, prev, { past: [...get().past, { doc: prev, label: 'New office' }].slice(-100), future: [], selection: { kind: 'none' } });
     },
