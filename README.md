@@ -188,6 +188,40 @@ The board shows "Last refreshed hh:mm". It refreshes every 60 seconds while it i
 
 Cancelled tasks are left out. `buildBriefing` is a pure function. It returns `generatedAt`, the window, the totals, the items, `byTeam`, `byProject`, `attention` and `idleAgents`. `taskHistory(runtime, taskId)` builds the timeline for one task.
 
+### Neural Command Campus: bubble office, tubes and Auto Sort
+
+**Layout preset.** The toolbar's *Layout* menu switches between **grid offices** and the **bubble office** (`settings.layoutPreset`). The sample office starts as a bubble office.
+
+- Rooms float as translucent, iridescent bubbles with a glossy rim, and hallways become glass transport tubes.
+- Fills stay faint and the sheen sits on the edges, so agents, labels and activity stay readable.
+- Tubes attach wherever a room's doorway is, and they reroute as rooms move.
+
+**Tube travel.** In the bubble office, an agent leaving a room is drawn into a travel pod: it shrinks a little, glass wraps around it and streaks trail behind. The tube then carries it about twice as fast as walking, and pods pass each other without waiting. On arrival it is released at the far end. Each agent's tube leg is lit while it travels, so the active route reads at a glance.
+
+**Mail tubes.** Work items travel on their own network: thin brass pipes from every tube station to a routing hub. The hub is the Routing Hub object if there is one, otherwise the centre of the stations.
+- Capsules are brass pills with an envelope mark, and urgent ones get a red band.
+- A capsule follows station → hub → station, labelled with its recipient.
+- After it lands, a short receipt shows *Delivered* or *Not acknowledged*.
+
+**Auto Sort.** The toolbar's *Auto Sort* button proposes a new arrangement and shows it as a preview: arrows from each room's current place to its new one, plus a short list of what moves and why. Rooms are placed strongest links first. How strongly two rooms are linked depends on:
+- shared teams;
+- agent interactions: handoffs, work visits, supervision and shared projects;
+- shared resources: the tube station a room relies on, the break room and the servers;
+- existing hallways.
+
+Within a team the gap between rooms is narrow, and between teams it is wider. The bubble preset leaves more space than the grid preset.
+
+The sort moves rooms, re-aims single-hallway doors at their new neighbours and reroutes every hallway or tube, all in one step. You can choose:
+- **Apply**;
+- **Apply and adjust**, which applies and then selects the moved rooms in construction mode so you can drag them;
+- **Cancel**.
+
+*Undo sort* (or Ctrl+Z) reverts the whole sort. When nothing would bring collaborating rooms meaningfully closer, it says the campus is already well arranged. The engine is `src/engine/autosort.ts` (`roomAffinity`, `planAutoSort`) and is pure until you apply.
+
+### Schema version 6
+
+Version 6 adds `settings.layoutPreset`. Older files migrate to the grid preset, so their look doesn't change, and gain the Royal Lounge room template.
+
 ### Schema version 5
 
 Version 4 added `departments`, `control` and `arcade`; version 3 files migrate with every department running, no emergency stop and the arcade set to human only. Version 5 adds locked uniforms. Migrating replaces only the built-in wardrobe (custom items and saved outfits are kept), adds the role uniforms, and locks an agent only if it is already dressed exactly in its role uniform, so nobody's look changes.
