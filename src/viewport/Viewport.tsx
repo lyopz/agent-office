@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { selectedFurniture, useStore } from '../store/store';
 import { useArcade } from '../ui/ArcadeHost';
+import { useBriefing } from '../ui/BriefingBoard';
 import type { Furniture, Point, Rect, Room } from '../model/types';
 import type { DocOp } from '../engine/ops';
 import { applyOps } from '../engine/ops';
@@ -183,6 +184,12 @@ export function Viewport() {
       (e.currentTarget as Element).releasePointerCapture(e.pointerId);
       setUi({ selection: { kind: 'furniture', id, ids: [id] } });
       useArcade.getState().open(doc.furniture[id].arcade!.game);
+      return;
+    }
+    if (kind === 'furniture' && !construct && doc.furniture[id]?.type === 'briefing-board') {
+      (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+      setUi({ selection: { kind: 'furniture', id, ids: [id] } });
+      useBriefing.getState().show(id);
       return;
     }
     if (kind === 'furniture') {

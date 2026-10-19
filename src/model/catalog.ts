@@ -101,6 +101,12 @@ export const FURNITURE_META: Record<FurnitureType, ObjectMeta> = {
   aquarium: m('Aquarium display', 'atmosphere', 2, 1, 'none', '#0c2a3a', 'Holographic aquarium.'),
   'wall-art': m('Wall art', 'atmosphere', 2, 1, 'none', '#2a1a2a', 'Framed art.', { blocking: false, wall: true }),
   'ambient-machine': m('Ambient machinery', 'atmosphere', 1, 1, 'none', '#22261e', 'Humming pipes and gauges.'),
+  // royal lounge
+  'briefing-board': m('Hourly briefing board', 'business', 5, 1, 'display', '#1a1430', 'Wall screen with the past hour: done, active, blocked and queued work. Click it to open the briefing.', { wall: true }),
+  throne: m('Command throne', 'furniture', 2, 2, 'seating', '#2a1a3a', 'High-backed seat facing the briefing board.'),
+  'lounge-sofa': m('Velvet lounge sofa', 'furniture', 3, 1, 'seating', '#2e1c46', 'Deep three-seat sofa with gold trim.'),
+  'crown-chandelier': m('Crown chandelier', 'atmosphere', 2, 2, 'none', '#3a2e14', 'Ceiling-hung ring of light; agents walk beneath it.', { blocking: false }),
+  'holo-fountain': m('Holographic fountain', 'atmosphere', 2, 2, 'none', '#141a30', 'Basin with a slow holographic water column.'),
 };
 
 export const CATEGORY_LABEL: Record<ObjectCategory, string> = {
@@ -135,4 +141,5 @@ export const ROOM_META: Record<RoomType, RoomMeta> = {
   'ops-floor': { label: 'Operations floor', accent: '#39ff88', floor: 'grid', purpose: 'High-capacity floor for simple, repetitive tasks.' },
   arcade: { label: 'Game development arcade', accent: '#ff6fb5', floor: 'carpet', purpose: 'Roblox game development and playtesting; arcade machines are for the owner.' },
   'blender-studio': { label: 'Blender design studio', accent: '#ff9f43', floor: 'tile', purpose: 'Modelling, rigging, animation and asset export.' },
+  'royal-lounge': { label: 'Royal lounge', accent: '#e0b84a', floor: 'carpet', purpose: 'Rest between tasks and review the hourly briefing board.' },
 };

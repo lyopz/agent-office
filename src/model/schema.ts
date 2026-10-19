@@ -214,6 +214,9 @@ const migrations: Record<number, (d: Raw) => Raw> = {
   5: (d) => {
     d.settings ??= {};
     d.settings.layoutPreset ??= 'grid';
+    // the Royal Lounge joins the built-in room templates
+    d.roomTemplates = Array.isArray(d.roomTemplates) ? d.roomTemplates : [];
+    for (const t of builtinRoomTemplates()) if (t.type === 'royal-lounge' && !d.roomTemplates.some((x: Raw) => x?.id === t.id)) d.roomTemplates.push(t);
     d.schemaVersion = 6;
     return d;
   },

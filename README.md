@@ -165,6 +165,29 @@ npm run graph:pow -- --from path/to/graph-pow.html # or install a Graph POW page
 
 The page loads d3 from cdnjs, so it needs an internet connection.
 
+### Royal Lounge and the hourly briefing
+
+The **King's Lounge** (room type `royal-lounge`, south-east of the Blender studio, reached by the Royal Walk and Court Hall) is a lounge for resting between tasks: like the break room, it restores energy. It has a throne and velvet sofas (seating objects), a crown chandelier, a holographic fountain and a **briefing board** on the north wall. You can add more lounges from the *Royal lounge* room template, or with an AI command such as "add a throne room".
+
+**Opening the board.** Click the briefing board in Simulate mode, or use **Briefing** in the office toolbar. The board covers the last hour of work:
+
+- A summary strip counts **Done**, **Active**, **Blocked** and **Queued** work. Each has its own colour, icon and label, and clicking one filters the list to it.
+- Every item shows the agent, the task and its status, with the completion time, or for active work an ETA (from its progress so far, or estimated from its work units).
+- You can filter by team, project and status, and group by team (the agent's department) or by project.
+- Select an item to see its details: the agent, team, project, priority and progress, its timestamps, the reason it is blocked, handoff notes, and its history (approvals and log lines).
+- With nothing selected, the side panel shows **Needs attention** (blockers, overdue work and stuck agents) and **Idle agents**.
+
+The board shows "Last refreshed hh:mm". It refreshes every 60 seconds while it is open, and **Refresh** updates it straight away. Esc closes the selected item first, then the board. Office shortcuts are off while the board is open, and the fountain's ripple respects *reduce motion*.
+
+**Buckets** (`src/engine/briefing.ts`, `buildBriefing(doc, runtime, now, { windowMinutes = 60, msPerTick })`):
+
+- *Done* means tasks completed inside the window.
+- *Active* means active tasks, and tasks in transit through a tube.
+- *Blocked* means tasks waiting for approval, paused or held, failed inside the window, queued behind a failed or cancelled dependency, or active while their agent is in an error state.
+- *Queued* means everything else that is waiting.
+
+Cancelled tasks are left out. `buildBriefing` is a pure function. It returns `generatedAt`, the window, the totals, the items, `byTeam`, `byProject`, `attention` and `idleAgents`. `taskHistory(runtime, taskId)` builds the timeline for one task.
+
 ### Schema version 5
 
 Version 4 added `departments`, `control` and `arcade`; version 3 files migrate with every department running, no emergency stop and the arcade set to human only. Version 5 adds locked uniforms. Migrating replaces only the built-in wardrobe (custom items and saved outfits are kept), adds the role uniforms, and locks an agent only if it is already dressed exactly in its role uniform, so nobody's look changes.
@@ -296,6 +319,8 @@ A performance test builds an office of 48 rooms, more than 570 objects and 60 ag
 ### Executive control tests
 
 `tests/departments.test.ts` covers safe pause and resume with progress kept, the three render policies and saves, exclusions and the emergency pause, pause all and resume selected, enabling agents and batch assignment, task limits and resource policies, save and migration, 40 agents on the operations floor (under 15 ms per tick, no errors, no two agents on one cell), the production pipeline and its simulated labels, the human-only arcade lock and logging, and the character poses. `tests/arcade.test.ts` covers the three games, their caps and the daily limits. `tests/wardrobe.test.ts` covers the four-per-slot wardrobe, the uniform lock in every path that could change it, and the v4 → v5 migration.
+
+`tests/briefing.test.ts` covers the briefing: bucket assignment for every task status, the one-hour window, grouping and filters, blockers, attention and idle agents, ETAs, task history, the lounge in the sample (reachable on foot), the lounge template, save and reload, the furniture drawings, and rendering the board.
 
 ## Extending
 

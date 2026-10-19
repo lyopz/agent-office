@@ -117,6 +117,16 @@ export function furniturePreset(type: RoomType, w: number, h: number): Omit<Furn
       list.push(f('workstation-3d', 1, 2, { workstation: workstation('3D Workstation', ['three monitors', 'pen display'], ['modelling']) }));
       list.push(f('render-wall', 1, 0), f('preview-stage', w - 3, h - 3));
       break;
+    case 'royal-lounge': {
+      // briefing board centred on the north wall, throne facing it, sofas either side
+      const mid = Math.floor(w / 2);
+      list.push(f('briefing-board', Math.max(1, mid - 2), 0));
+      list.push(f('crown-chandelier', mid - 1, Math.max(2, Math.floor(h / 2) - 2)));
+      list.push(f('throne', mid - 1, Math.min(h - 3, Math.floor(h / 2) + 1)));
+      list.push(f('lounge-sofa', 1, 2), f('lounge-sofa', w - 4, 2));
+      list.push(f('holo-fountain', 1, h - 3), f('plant', w - 2, h - 2));
+      break;
+    }
     default:
       break;
   }
@@ -134,7 +144,7 @@ export function makeRoom(type: RoomType, x: number, y: number, w: number, h: num
     id: uid('room'), name: name ?? ROOM_META[type].label, type, x, y, w, h, rotation: 0,
     walls: { thickness: 2, style: 'solid' }, doors: [], appearance: roomAppearance(type),
     furnitureIds: [], assignedAgentIds: [], purpose: ROOM_META[type].purpose || ROOM_META[type].label,
-    special: type === 'break' ? 'restores-energy' : undefined,
+    special: type === 'break' || type === 'royal-lounge' ? 'restores-energy' : undefined,
   };
 }
 
@@ -234,7 +244,7 @@ export function builtinRoomTemplates(): RoomTemplate[] {
     ['office', 7, 6], ['research', 10, 7], ['server', 8, 6], ['meeting', 9, 7], ['workshop', 9, 7],
     ['storage', 6, 5], ['break', 8, 6], ['security', 7, 6], ['reception', 9, 6], ['operations', 16, 10],
     ['executive', 12, 8], ['library', 12, 8], ['finance', 9, 6], ['engineering', 11, 7], ['design', 11, 7], ['studio', 10, 7], ['market', 10, 6],
-    ['ops-floor', 24, 16], ['arcade', 16, 10], ['blender-studio', 14, 9],
+    ['ops-floor', 24, 16], ['arcade', 16, 10], ['blender-studio', 14, 9], ['royal-lounge', 14, 10],
   ];
   return types.map(([t, w, h]) => ({
     id: `tpl_${t}`, name: ROOM_META[t].label, type: t, w, h, appearance: roomAppearance(t), furniture: furniturePreset(t, w, h),

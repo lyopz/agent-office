@@ -13,6 +13,7 @@ export const ROOM_TYPES = [
   'storage', 'break', 'security', 'reception', 'custom',
   'executive', 'library', 'finance', 'engineering', 'design', 'studio', 'market',
   'ops-floor', 'arcade', 'blender-studio',
+  'royal-lounge',
 ] as const;
 export type RoomType = (typeof ROOM_TYPES)[number];
 
@@ -96,6 +97,8 @@ export const FURNITURE_TYPES = [
   'compact-desk', 'task-board', 'supply-station', 'lane-marker',
   // atmosphere
   'sculpture', 'floor-light', 'wall-panel', 'window', 'deco-robot', 'aquarium', 'wall-art', 'ambient-machine',
+  // royal lounge
+  'briefing-board', 'throne', 'lounge-sofa', 'crown-chandelier', 'holo-fountain',
 ] as const;
 export type FurnitureType = (typeof FURNITURE_TYPES)[number];
 

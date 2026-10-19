@@ -1,12 +1,13 @@
 import {
   AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
-  AlignVerticalDistributeCenter, Armchair, Gauge, CheckCircle2, DoorOpen, Grid3x3, Hand, Magnet, Monitor, MousePointer2,
+  AlignVerticalDistributeCenter, Armchair, Crown, Gauge, CheckCircle2, DoorOpen, Grid3x3, Hand, Magnet, Monitor, MousePointer2,
   Redo2, Route, ScanLine, Spline, SquareDashed, SquarePlus, Trash2, Undo2, UserPlus, Workflow,
 } from 'lucide-react';
 import { selectedFurniture, useStore, type Tool } from '../store/store';
 import type { DocOp } from '../engine/ops';
 import { deleteSelection, duplicateFurniture } from './actions';
 import { AutoSortButton, LayoutPresetSelect } from './AutoSort';
+import { useBriefing } from './BriefingBoard';
 
 const TOOLS: { id: Tool; label: string; key: string; icon: typeof MousePointer2 }[] = [
   { id: 'select', label: 'Select / move / resize', key: 'V', icon: MousePointer2 },
@@ -105,6 +106,7 @@ export function Toolbar() {
       <button className="btn icon sm" disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo" onClick={undo}><Undo2 size={15} /></button>
       <button className="btn icon sm" disabled={!canRedo} title="Redo (Ctrl+Shift+Z)" aria-label="Redo" onClick={redo}><Redo2 size={15} /></button>
       <span className="spacer" />
+      <button className="btn sm" title="Hourly briefing: done, active, blocked and queued work" onClick={() => useBriefing.getState().show()}><Crown size={14} aria-hidden="true" />Briefing</button>
       <button className="btn icon sm" aria-pressed={layers.perf} title="Performance diagnostics" aria-label="Performance diagnostics" onClick={() => setLayer('perf', !layers.perf)}><Gauge size={15} /></button>
       <label className="row small muted" style={{ gap: 4 }}>View
         <select aria-label="Character view" value={view} onChange={(e) => { setUi({ view: e.target.value as never }); useStore.getState().setPrefs({ viewMode: e.target.value }); }}>
