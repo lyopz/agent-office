@@ -29,7 +29,7 @@ const CHARACTER_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)),
 const EXPORTS = path.join(ROOT, 'exports');
 const MAX_BODY = 1024 * 1024;         // a characters roster; other kinds stay under 16 KB
 const MAX_ROSTER = 60;
-const FILE_TYPES = { '.png': 'image/png', '.glb': 'model/gltf-binary', '.json': 'application/json', '.blend': 'application/octet-stream' };
+const FILE_TYPES = { '.png': 'image/png', '.glb': 'model/gltf-binary', '.json': 'application/json', '.blend': 'application/octet-stream', '.webp': 'image/webp' };
 
 const jobs = new Map(); // id -> { id, kind, file, output, status, startedAt, endedAt, log, proc }
 let blenderVersion = null;
@@ -87,8 +87,9 @@ function checkRoster(roster) {
   };
 }
 
-/** Build a roster of characters in Blender: writes exports/characters/<jobId>/{<id>.png,<id>.glb,lineup.png}. */
-function startCharacters(roster, name) {
+/** Build a roster of characters in Blender: writes exports/characters/<jobId>/{<id>.png,<id>.glb,lineup.png},
+ *  plus <id>_sprites.webp walk/sit/talk strips with `sprites` (only those with `spritesOnly`). */
+function startCharacters(roster, name, { sprites = false, spritesOnly = false } = {}) {
   const clean = checkRoster(roster);
   if (runningCount() >= MAX_JOBS) throw new Error(`already running ${MAX_JOBS} job(s)`);
   const id = newJobId();
@@ -97,7 +98,8 @@ function startCharacters(roster, name) {
   fs.writeFileSync(rosterFile, JSON.stringify(clean));
   const rel = (f) => path.posix.join('characters', id, f);
   const args = ['-b', '--factory-startup', '--python-exit-code', '1', '--python', CHARACTER_SCRIPT, '--', rosterFile, outDir];
-  const job = { id, kind: 'characters', file: null, name: typeof name === 'string' ? name.slice(0, 80) : null, count: clean.characters.length, output: rel('lineup.png'), outputs: [], status: 'running', startedAt: new Date().toISOString(), endedAt: null, log: '', pausable: false, stdout: '' };
+  if (spritesOnly === true) args.push('--sprites-only'); else if (sprites === true) args.push('--sprites');
+  const job = { id, kind: 'characters', file: null, name: typeof name === 'string' ? name.slice(0, 80) : null, count: clean.characters.length, output: spritesOnly === true ? null : rel('lineup.png'), outputs: [], sprites: sprites === true || spritesOnly === true ? { only: spritesOnly === true } : null, status: 'running', startedAt: new Date().toISOString(), endedAt: null, log: '', pausable: false, stdout: '' };
   const proc = spawn(BIN, args, { cwd: ROOT });
   proc.stdout.on('data', (d) => { job.log = (job.log + d).slice(-8000); job.stdout = (job.stdout + d).slice(-16000); });
   proc.stderr.on('data', (d) => { job.log = (job.log + d).slice(-8000); });
@@ -110,11 +112,12 @@ function startCharacters(roster, name) {
       if (!line.trim().startsWith('{')) continue;
       try { const r = JSON.parse(line); if (r && typeof r.ok === 'boolean') { result = r; break; } } catch { /* not the result line */ }
     }
-    const files = Array.isArray(result?.outputs) ? result.outputs.filter((f) => typeof f === 'string' && /^[\w.-]+\.(png|glb|blend)$/.test(f) && fs.existsSync(path.join(outDir, f))) : [];
+    const files = Array.isArray(result?.outputs) ? result.outputs.filter((f) => typeof f === 'string' && /^[\w.-]+\.(png|glb|blend|webp)$/.test(f) && fs.existsSync(path.join(outDir, f))) : [];
     job.outputs = files.map(rel);
     job.output = files.includes('lineup.png') ? rel('lineup.png') : (job.outputs[0] ?? null);
     if (result?.errors) job.errors = result.errors;
     if (result?.engine) job.engine = result.engine;
+    if (result?.sprites && job.sprites) Object.assign(job.sprites, { frames: result.sprites.frames, w: result.sprites.w, h: result.sprites.h });
     if (job.status === 'cancelling') job.status = 'cancelled';
     else job.status = code === 0 && result?.ok && files.length ? 'completed' : 'failed';
   });
@@ -122,13 +125,13 @@ function startCharacters(roster, name) {
   return job;
 }
 
-/** Serve a result file from exports/ only: no traversal, no symlink escapes, only .png/.glb/.json. */
+/** Serve a result file from exports/ only: no traversal, no symlink escapes, only .png/.glb/.blend/.json/.webp. */
 function serveFile(res, relEncoded) {
   let rel;
   try { rel = decodeURIComponent(relEncoded); } catch { return send(res, 400, { error: 'bad path' }); }
   if (!rel || rel.includes('\0')) return send(res, 400, { error: 'bad path' });
   const type = FILE_TYPES[path.extname(rel).toLowerCase()];
-  if (!type) return send(res, 403, { error: 'only .png, .glb, .blend and .json files are served' });
+  if (!type) return send(res, 403, { error: 'only .png, .glb, .blend, .json and .webp files are served' });
   const p = path.resolve(EXPORTS, rel);
   if (!p.startsWith(EXPORTS + path.sep)) return send(res, 403, { error: 'outside exports' });
   let real;
@@ -181,11 +184,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/jobs') return send(res, 200, [...jobs.values()].slice(-50).map(publicJob));
     if (req.method === 'POST' && url.pathname === '/jobs') {
       let raw = ''; for await (const c of req) { raw += c; if (raw.length > MAX_BODY) return send(res, 413, { error: 'body too large' }); }
-      const { kind, file, name, roster } = JSON.parse(raw || '{}');
+      const { kind, file, name, roster, sprites, spritesOnly } = JSON.parse(raw || '{}');
       if (kind !== 'render' && kind !== 'export' && kind !== 'characters') return send(res, 400, { error: 'kind must be render, export or characters' });
       if (kind !== 'characters' && raw.length > 16384) return send(res, 413, { error: 'body too large' });
       if (!blenderVersion) return send(res, 503, { error: `Blender not found (${BIN}). Install it or set BLENDER_BIN.` });
-      if (kind === 'characters') return send(res, 201, publicJob(startCharacters(roster, name)));
+      if (kind === 'characters') return send(res, 201, publicJob(startCharacters(roster, name, { sprites, spritesOnly })));
       return send(res, 201, publicJob(start(kind, file, name)));
     }
     if (req.method === 'GET' && url.pathname.startsWith('/files/')) return serveFile(res, url.pathname.slice('/files/'.length));

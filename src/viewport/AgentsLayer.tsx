@@ -56,7 +56,8 @@ const AgentSprite = memo(function AgentSprite({ id, simple }: { id: string; simp
   const view = agent ? resolveView(global, agent.appearance.preferredView) : 'top';
   const asset = useAsset(simple ? null : agent?.assets[view]?.assetId);
   const rendered = useStore((s) => (s.prefs.characterStyle ?? 'rendered') === 'rendered');
-  const sheet = useSpriteSheet(agent?.appearance, rendered && !simple && view !== 'top');
+  // rendered sprites are 3/4 views; they replace the per-agent default, but an explicit top-down view stays drawn
+  const sheet = useSpriteSheet(agent?.appearance, rendered && !simple && global !== 'top');
   const [facing, setFacing] = useState<'left' | 'right'>(agent?.appearance.facing ?? 'right');
   const [turning, setTurning] = useState(false);
   useEffect(() => {
@@ -81,7 +82,7 @@ const AgentSprite = memo(function AgentSprite({ id, simple }: { id: string; simp
   }
   const pose = rt.status === 'walking' ? 'walk' : rt.status === 'working' ? (rt.atDesk && view !== 'top' ? 'sit' : 'work') : rt.status === 'communicating' ? 'talk' : 'idle';
   const frame = !animating ? 0 : Math.floor((tick * a.animationSpeed) / (motion === 'subtle' ? 4 : 2)) % 4;
-  const top = view === 'top';
+  const top = view === 'top' && !sheet;
   const shownView = turning && (view === 'side' || view === 'three-quarter') ? 'front' : view;
   const size = top ? G * 1.7 : G * 2.7 * a.height;
   const width = top ? size : size * 0.625;

@@ -146,10 +146,12 @@ Characters are still drawn as SVG at the same size. They now sit at a desk (with
 
 **Locked role uniforms.** Every role has a fixed uniform, and agents created from a role start in it. While it is on, cosmetics can't be added to it or removed from it, and its clothing can't be edited piece by piece, in the app, through the AI console or by import. Face, hair and body stay editable. "Take off uniform" unlocks the agent without changing the look; wearing a different outfit also takes it off. The uniforms themselves can't be edited or deleted, but "Duplicate" makes an editable copy.
 
-**Blender renders.** With the bridge running, Control → Production → *Character renders* sends the characters' appearance (nothing else) to Blender, which builds each one in 3D from `tools/blender/build_characters.py`. You get a 3/4 portrait PNG and a GLB per character, a labelled lineup and `characters.blend` with the whole cast. "Open in Blender" opens that scene on your computer. Files land in `exports/characters/<job>/` in your Blender projects folder. The script also runs on its own:
+**Rendered characters in the office.** The office draws each agent from a Blender-rendered sprite sheet (idle, a four-frame walk, sitting at a desk, talking and working) whenever one matches the agent's exact look. The sample cast's sheets ship with the app in `src/characters/renders/`, named by a hash of the look. Change an agent's look and it goes back to the drawn character until it is rendered again, so the office never shows an out-of-date picture. **Characters** in the office toolbar switches between *Rendered (Blender)* and *Drawn*; the explicit *Top-down* view always uses the drawn characters.
+
+**Blender renders.** With the bridge running, Control → Production → *Character renders* sends the characters' appearance (nothing else) to Blender, which builds each one in 3D from `tools/blender/build_characters.py`. You get a 3/4 portrait PNG, a GLB and an office sprite sheet per character, a labelled lineup and `characters.blend` with the whole cast. The new sprite sheets are brought into the office automatically when the job finishes. "Open in Blender" opens that scene on your computer. Files land in `exports/characters/<job>/` in your Blender projects folder. The script also runs on its own:
 
 ```bash
-blender --background --factory-startup --python tools/blender/build_characters.py -- roster.json out/
+blender --background --factory-startup --python tools/blender/build_characters.py -- roster.json out/            # add --sprites or --sprites-only for office sprite sheets
 ```
 
 ### Graph POW

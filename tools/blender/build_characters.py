@@ -7,6 +7,9 @@
 #   python3 tools/blender/build_characters.py -- roster.json out_dir
 #
 # Options after the two paths: --engine auto|cycles|eevee  --samples N  --no-glb  --no-lineup  --no-blend
+#   --sprites       also render <id>_sprites.webp: an 8-frame strip (idle, walk0-3, sit, talk, work),
+#                   each frame 128x192, same orthographic 3/4 camera and scale for every character
+#   --sprites-only  only the sprite strips (no portraits, .glb, lineup or .blend)
 #
 # roster.json: { "characters": [ { "id": "agent_orion", "name": "ORION", "title": "President",
 #                                  "appearance": { ...Appearance from src/model/types.ts } } ] }
@@ -48,6 +51,8 @@ def parse_args(argv):
         if a == '--no-glb': opts['glb'] = False
         elif a == '--no-lineup': opts['lineup'] = False
         elif a == '--no-blend': opts['blend'] = False
+        elif a == '--sprites': opts['sprites'] = True
+        elif a == '--sprites-only': opts['sprites'] = opts['sprites_only'] = True
         else: pos.append(a)
         i += 1
     if len(pos) < 2:
@@ -155,7 +160,8 @@ def mat(hexc, kind='cloth', emit=0.0):
     key = (norm_hex(hexc) or '#808080', kind, round(emit, 2))
     if key in _mats: return _mats[key]
     m = bpy.data.materials.new('%s_%s' % (kind, key[0][1:]))
-    m.use_nodes = True
+    if bpy.app.version < (5, 0, 0):   # node materials are always on from 5.0 (use_nodes is deprecated)
+        m.use_nodes = True
     b = next((n for n in m.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
     if b is None:
         b = m.node_tree.nodes.new('ShaderNodeBsdfPrincipled')
@@ -185,6 +191,8 @@ def mat(hexc, kind='cloth', emit=0.0):
 class Builder:
     def __init__(self, coll, root):
         self.coll, self.root, self.count = coll, root, 0
+        self.group = 'body'   # which rig part new objects belong to (see Figure.rig)
+        self.parts = {}
 
     def add(self, name, bm, material, smooth=True):
         me = bpy.data.meshes.new(name)
@@ -198,6 +206,7 @@ class Builder:
         ob = bpy.data.objects.new('%s.%s' % (self.root.name, name), me)
         self.coll.objects.link(ob)
         ob.parent = self.root
+        self.parts.setdefault(self.group, []).append(ob)
         self.count += 1
         return ob
 
@@ -343,8 +352,10 @@ def hairline(front_z, back_z, side_z=None):
 
 # ------------------------------------------------------------------ character
 
+HELD = ('tablet', 'clipboard', 'laptop', 'drafting-tablet', 'holo-catalog', 'wrench')   # carried in front, right hand
 BUILD = {'slim': (0.30, 0.19, 0.047, 0.066), 'average': (0.35, 0.21, 0.053, 0.074), 'broad': (0.43, 0.26, 0.066, 0.088)}
 HEAD_Z, HEAD_R = 1.19, 0.215
+HIP_Z, KNEE_Z, SKIRT_Z = 0.5, 0.29, 0.62   # rig pivots (character space, before the height scale)
 
 
 class Figure:
@@ -373,6 +384,37 @@ class Figure:
         self.legs(); self.torso(); self.arms(); self.head()
         self.top_details(); self.belt(); self.shoulders(); self.headwear(); self.glasses()
         self.equipment(); self.accessories(); self.robotics(); self.effects()
+        self.rig()
+
+    def rig(self):
+        """Parent limbs to joint empties (body > shoulder > elbow, body > hip > knee, body > skirt) so the
+        figure can be posed by rotating them. At rest nothing moves: the geometry is baked in root space."""
+        B, root, pv = self.B, self.B.root, self.pivots
+        pv['body'] = Vector((0, 0, 0))
+        pv['skirt'] = Vector((0, 0, SKIRT_Z))
+        parent_of = {'body': None, 'skirt': 'body'}
+        for s in ('r', 'l'):
+            parent_of.update({'shoulder_' + s: 'body', 'elbow_' + s: 'shoulder_' + s, 'hip_' + s: 'body', 'knee_' + s: 'hip_' + s})
+        joints = {}
+        for name in ('body', 'skirt', 'shoulder_r', 'shoulder_l', 'elbow_r', 'elbow_l', 'hip_r', 'hip_l', 'knee_r', 'knee_l'):
+            e = bpy.data.objects.new('%s.pv.%s' % (root.name, name), None)
+            e.empty_display_type = 'SPHERE'; e.empty_display_size = 0.03
+            B.coll.objects.link(e)
+            par = parent_of[name]
+            e.parent = joints[par] if par else root
+            e.location = pv[name] - (pv[par] if par else Vector((0, 0, 0)))
+            e.rotation_mode = 'XYZ'
+            joints[name] = e
+        part_joint = {'body': 'body', 'skirt': 'skirt'}
+        for s in ('r', 'l'):
+            part_joint.update({'upper_' + s: 'shoulder_' + s, 'fore_' + s: 'elbow_' + s, 'thigh_' + s: 'hip_' + s, 'shin_' + s: 'knee_' + s})
+        for part, obs in B.parts.items():
+            j = part_joint.get(part, 'body')
+            for ob in obs:
+                ob.parent = joints[j]
+                ob.matrix_parent_inverse = Matrix.Translation(-pv[j])
+        self.joints = joints
+        root['agent_office_rig'] = 1
 
     # ---- lower body
     def legs(self):
@@ -383,14 +425,23 @@ class Figure:
         bare = a.bottom in ('shorts', 'skirt') and not coverall
         lx = self.W * 0.25
         boots = a.shoes == 'boots'
+        self.pivots = getattr(self, 'pivots', {})
         for side in (-1, 1):
             x = side * lx
+            s = 'r' if side < 0 else 'l'
+            self.pivots['hip_' + s] = Vector((x, 0, HIP_Z))
+            self.pivots['knee_' + s] = Vector((x, 0, KNEE_Z))
+            B.group = 'thigh_' + s
             if bare:
-                B.add('leg', capsule((x, 0, 0.1), (x, 0, 0.46), self.leg_r * 0.86), mat(self.skin, self.skin_kind))
+                B.add('thigh', capsule((x, 0, KNEE_Z), (x, 0, 0.46), self.leg_r * 0.86), mat(self.skin, self.skin_kind))
                 if a.bottom == 'shorts':
                     B.add('shorts', capsule((x, 0, 0.32), (x, 0, 0.5), self.leg_r * 1.08), mat(leg_col))
+                B.group = 'shin_' + s
+                B.add('shin', capsule((x, 0, 0.1), (x, 0, KNEE_Z), self.leg_r * 0.84), mat(self.skin, self.skin_kind))
             else:
-                B.add('leg', capsule((x, 0, 0.1), (x, 0, 0.5), self.leg_r), mat(leg_col))
+                B.add('thigh', capsule((x, 0, KNEE_Z), (x, 0, 0.5), self.leg_r), mat(leg_col))
+                B.group = 'shin_' + s
+                B.add('shin', capsule((x, 0, 0.1), (x, 0, KNEE_Z), self.leg_r * 0.97), mat(leg_col))
             # shoes
             col = a.shoeColor
             if a.shoes == 'dress':
@@ -403,8 +454,11 @@ class Figure:
                 B.add('shoe', place(rbox(self.leg_r * 2.15, 0.19, 0.075, 0.034), (x, -0.03, 0.05)), mat(col, 'plastic'))
                 B.add('sole', place(rbox(self.leg_r * 2.25, 0.2, 0.028, 0.012), (x, -0.03, 0.014)), mat(shade(col, 0.55) if col != '#ffffff' else '#c9d0d6', 'plastic'))
                 B.add('stripe', place(rbox(self.leg_r * 2.22, 0.05, 0.012, 0.005), (x, -0.015, 0.058)), mat(a.accent, 'glow', self.glow * 0.5))
+            B.group = 'body'
         if a.bottom == 'skirt' and not coverall and not robe:
+            B.group = 'skirt'
             B.add('skirt', place(cyl(self.W * 0.5, self.W * 0.66, 0.2, 28), (0, 0, 0.42), scale=(1, self.D / self.W * 1.25, 1)), mat(a.bottomColor))
+        B.group = 'body'
         # hips
         hip_col = a.topColor if coverall else a.bottomColor
         B.add('hips', place(rbox(self.W * 0.98, self.D * 0.95, 0.14, 0.05), (0, 0, 0.53)), mat(hip_col))
@@ -419,6 +473,7 @@ class Figure:
         self.chest_y = -D * bulk / 2
         # neck
         B.add('neck', place(cyl(0.05, 0.055, 0.12, 16), (0, 0, 0.98)), mat(self.skin, self.skin_kind))
+        B.group = 'skirt'   # long garments fold up when sitting
         if a.top == 'robe':
             B.add('robe', place(cyl(W * 0.5, W * 0.8, 0.66, 32), (0, 0, 0.42), scale=(1, D / W * 1.3, 1)), mat(a.topColor))
             B.add('hem', place(torus(W * 0.82, 0.014, 40, 8), (0, 0, 0.095), scale=(1, D / W * 1.3, 1)), mat(a.trimColor, 'glow', self.glow * 0.7))
@@ -432,13 +487,15 @@ class Figure:
             if a.top == 'longcoat':
                 for side in (-1, 1):
                     B.add('coattrim', place(rbox(0.012, 0.012, h + 0.36, 0.005), (side * 0.035, -D * 0.56, bottom + (h + 0.36) / 2)), mat(a.trimColor, 'glow', self.glow * 0.7))
+        B.group = 'body'
 
     # ---- arms; one arm bends forward to hold equipment
     def arms(self):
         a, B = self.a, self.B
         sx = self.tW / 2 + self.arm_r * 0.75
         top_z = 0.9
-        holds = a.equipment in ('tablet', 'clipboard', 'laptop', 'drafting-tablet', 'holo-catalog', 'wrench')
+        holds = a.equipment in HELD
+        self.pivots = getattr(self, 'pivots', {})
         sleeve = shade(a.topColor, 0.35) if a.top == 'vest' else a.topColor
         hand = a.gloveColor if a.gloves != 'none' else self.skin
         hand_kind = {'formal': 'gloss', 'tech': 'plastic', 'work': 'cloth'}.get(a.gloves, self.skin_kind)
@@ -456,10 +513,15 @@ class Figure:
             fore_col = self.skin if a.top == 'tshirt' else sleeve
             upper_col = sleeve
             r = self.arm_r * (1.25 if a.top == 'robe' else 1.0)
+            s = 'r' if side < 0 else 'l'
+            self.pivots['shoulder_' + s], self.pivots['elbow_' + s] = sh.copy(), elbow.copy()
+            B.group = 'upper_' + s
             B.add('upperarm', capsule(sh, elbow, r), mat(upper_col))
             if a.top == 'tshirt':
-                B.add('forearm', capsule(elbow, hand_p, self.arm_r * 0.85), mat(self.skin, self.skin_kind))
                 B.add('sleeve', capsule(sh, sh.lerp(elbow, 0.55), self.arm_r * 1.12), mat(a.topColor))
+            B.group = 'fore_' + s
+            if a.top == 'tshirt':
+                B.add('forearm', capsule(elbow, hand_p, self.arm_r * 0.85), mat(self.skin, self.skin_kind))
             else:
                 B.add('forearm', capsule(elbow, hand_p, r * 0.95), mat(fore_col))
                 cuff = elbow.lerp(hand_p, 0.82)
@@ -474,6 +536,7 @@ class Figure:
                 B.add('glovedot', place(sphere(0.012, 10, 7), hp + Vector((0, -0.045, 0.01))), mat(a.accent, 'glow', self.glow))
             if side == -1: self.hand_r, self.elbow_r = hp, elbow
             else: self.hand_l, self.elbow_l = hp, elbow
+        B.group = 'body'
 
     # ---- head, face and hair
     def head(self):
@@ -775,7 +838,14 @@ class Figure:
         g = self.glow
         h = self.hand_r
         if h is None or eq in ('none', 'toolbelt'): return
-        fwd = Vector((0.03, -0.03, 0.0))
+        B.group = 'fore_l' if eq == 'briefcase' else 'fore_r'   # equipment moves with the hand holding it
+        try:
+            self._equipment(eq, g, h)
+        finally:
+            B.group = 'body'
+
+    def _equipment(self, eq, g, h):
+        a, B = self.a, self.B
         if eq == 'tablet':
             c = h + Vector((0.07, -0.02, 0.06))
             B.add('tablet', place(rbox(0.17, 0.014, 0.23, 0.014), c, rot=(-0.35, 0, 0.25)), mat('#11161b', 'gloss'))
@@ -820,6 +890,7 @@ class Figure:
         g, cy, W = self.glow, self.chest_y, self.tW
         front = lambda x, z, out=0.0: Vector((x, cy - out, z))
         for acc in a.accessories:
+            B.group = {'wrist-display': 'fore_l', 'drafting-rig': 'fore_l', 'shoulder-patch': 'upper_l'}.get(acc, 'body')
             if acc == 'wrist-display' and self.hand_l is not None:
                 w = self.elbow_l.lerp(self.hand_l, 0.72)
                 d = (self.hand_l - self.elbow_l).normalized()
@@ -871,6 +942,7 @@ class Figure:
                 B.add('earpiece', place(sphere(0.025, 12, 9), p), mat('#20262c', 'plastic'))
                 B.add('earpiecelight', place(sphere(0.01, 8, 5), p + Vector((0.018, -0.008, 0))), mat(a.accent, 'glow', g * 1.4))
             # unknown ids are skipped on purpose
+        B.group = 'body'
         if a.jewelry == 'earrings':
             for side in (-1, 1):
                 B.add('earring', place(sphere(0.012, 10, 7), (side * HEAD_R * self.hs[0] * 0.98, -0.005, HEAD_Z - 0.06)), mat('#d4a84a', 'metal'))
@@ -1101,6 +1173,197 @@ def text_obj(coll, body, size, loc, color_hex, emit=1.0, bold=False):
     cu.materials.append(mat(color_hex, 'glow', emit))
     return ob
 
+
+# ------------------------------------------------------------------ sprites
+
+SPRITE_FRAMES = ['idle', 'walk0', 'walk1', 'walk2', 'walk3', 'sit', 'talk', 'work']
+SPRITE_W, SPRITE_H = 128, 192
+SPRITE_VIEW_H = 2.0            # metres visible top to bottom: one scale for everyone
+SPRITE_BASELINE_PX = 8         # feet sit this far above the frame bottom
+SPRITE_AZ, SPRITE_TILT = -0.75, math.radians(15)   # 3/4 view, facing screen-right, looking slightly down
+SPRITE_SAMPLES = 12
+
+
+class SpriteRig:
+    """A second scene that renders all 8 poses of one character in a single render: eight posed copies
+    stand side by side across one wide orthographic camera (one frame each), staggered in depth along the
+    view axis so they never shadow each other. Sun lights keep the lighting identical in every frame."""
+    def __init__(self, main_scene, engine):
+        sc = bpy.data.scenes.new('sprites')
+        sc.world = main_scene.world
+        try:
+            sc.view_settings.view_transform = 'Standard'; sc.view_settings.look = 'None'
+        except TypeError:
+            pass
+        r = sc.render
+        r.film_transparent = True
+        r.resolution_x, r.resolution_y, r.resolution_percentage = SPRITE_W * len(SPRITE_FRAMES), SPRITE_H, 100
+        r.image_settings.file_format = 'WEBP'
+        r.image_settings.color_mode = 'RGBA'
+        try: r.image_settings.quality = 85
+        except AttributeError: pass
+        self.engine = setup_engine(sc, 'eevee' if engine != 'CYCLES' else 'cycles', SPRITE_SAMPLES)
+        if self.engine == 'CYCLES':
+            try: sc.cycles.adaptive_threshold = 0.06
+            except AttributeError: pass
+        self.scene = sc
+        self.coll = bpy.data.collections.new('sprite_poses')
+        sc.collection.children.link(self.coll)
+        ct, st = math.cos(SPRITE_TILT), math.sin(SPRITE_TILT)
+        self.f = Vector((-math.sin(SPRITE_AZ) * ct, math.cos(SPRITE_AZ) * ct, -st))   # view direction
+        self.right = Vector((math.cos(SPRITE_AZ), math.sin(SPRITE_AZ), 0.0))
+        up = self.right.cross(self.f).normalized()
+        if up.z < 0: up = -up
+        # put the world origin (the feet) SPRITE_BASELINE_PX above the bottom of the frame
+        zt = (0.5 - SPRITE_BASELINE_PX / SPRITE_H) * SPRITE_VIEW_H / up.z
+        self.target = Vector((0, 0, zt))
+        cd = bpy.data.cameras.new('sprite_cam')
+        cd.type = 'ORTHO'
+        cd.sensor_fit = 'VERTICAL'
+        cd.ortho_scale = SPRITE_VIEW_H   # with a VERTICAL sensor fit this is the visible height
+        cd.clip_start, cd.clip_end = 0.1, 400
+        cam = bpy.data.objects.new('sprite_cam', cd)
+        sc.collection.objects.link(cam)
+        cam.location = self.target - self.f * 60
+        cam.rotation_euler = self.f.to_track_quat('-Z', 'Y').to_euler()
+        sc.camera = cam
+        self.frame_w = SPRITE_VIEW_H * SPRITE_W / SPRITE_H
+        # sun lights, placed like the portrait rig but with a stronger rim so silhouettes read on a dark floor
+        def sun(name, energy, color, az, elev, angle):
+            ld = bpy.data.lights.new(name, 'SUN')
+            ld.energy, ld.color = energy, color
+            try: ld.angle = math.radians(angle)
+            except AttributeError: pass
+            ob = bpy.data.objects.new(name, ld)
+            sc.collection.objects.link(ob)
+            d = Vector((math.sin(az) * math.cos(elev), -math.cos(az) * math.cos(elev), math.sin(elev)))
+            ob.rotation_euler = (-d).to_track_quat('-Z', 'Y').to_euler()
+        # azimuth 0 is the character's front; the character faces screen-right, so the key comes from there
+        sun('sp_key', 4.2, (1.0, 0.96, 0.9), 0.35, math.radians(45), 12)
+        sun('sp_fill', 1.3, (0.82, 0.9, 1.0), SPRITE_AZ - 0.7, math.radians(20), 25)
+        sun('sp_rim', 5.5, (0.75, 0.9, 1.0), 2.4, math.radians(38), 10)
+
+    def slot(self, k):
+        """World position for frame k: its column on screen, pushed back along the view axis."""
+        return self.right * ((k - (len(SPRITE_FRAMES) - 1) / 2) * self.frame_w) + self.f * (9.0 * k)
+
+    def copy_figure(self, root):
+        mapping = {}
+        for ob in [root] + list(root.children_recursive):
+            c = ob.copy()
+            self.coll.objects.link(c)
+            mapping[ob] = c
+        for ob, c in mapping.items():
+            if ob.parent in mapping:
+                c.parent = mapping[ob.parent]
+                c.matrix_parent_inverse = ob.matrix_parent_inverse.copy()
+        return mapping
+
+    def stool(self, root, fig):
+        seat_top = KNEE_Z - fig.leg_r * 0.95
+        dark, trim = mat('#1a1f26', 'plastic'), mat(fig.a.accent, 'glow', 1.6)
+        parts = [
+            (place(cyl(0.15, 0.15, 0.05, 28), (0, 0.03, seat_top - 0.025)), dark),
+            (place(torus(0.15, 0.007, 40, 6), (0, 0.03, seat_top - 0.012)), trim),
+            (place(cyl(0.026, 0.026, seat_top - 0.07, 14), (0, 0.03, (seat_top - 0.05) / 2 + 0.01)), mat('#5d6670', 'metal')),
+            (place(cyl(0.11, 0.12, 0.022, 24), (0, 0.03, 0.011)), dark),
+        ]
+        obs = []
+        for bm, m in parts:
+            me = bpy.data.meshes.new('stool'); bm.to_mesh(me); bm.free()
+            try: me.shade_smooth()
+            except AttributeError: pass
+            me.materials.append(m)
+            ob = bpy.data.objects.new('stool', me)
+            self.coll.objects.link(ob)
+            ob.parent = root
+            obs.append(ob)
+        return obs
+
+    def render(self, root, fig, path):
+        made = []
+        holding = 'l' if fig.a.equipment == 'briefcase' else ('r' if fig.a.equipment in HELD else None)
+        try:
+            for k, frame in enumerate(SPRITE_FRAMES):
+                mapping = self.copy_figure(root)
+                made += list(mapping.values())
+                croot = mapping[root]
+                croot.location = self.slot(k)
+                croot.rotation_euler = (0, 0, 0)
+                joints = {name: mapping[e] for name, e in fig.joints.items()}
+                pose(joints, frame, holding)
+                if frame == 'sit':
+                    made += self.stool(croot, fig)
+            self.scene.render.filepath = path
+            bpy.ops.render.render(write_still=True, scene=self.scene.name)
+        finally:
+            remove_ids(made)
+
+
+def remove_ids(ids):
+    """Delete many datablocks at once (much faster than one remove() per object on a big scene)."""
+    ids = [i for i in ids if i is not None]
+    if not ids: return
+    try:
+        bpy.data.batch_remove(ids)
+    except (AttributeError, RuntimeError, TypeError, ReferenceError):
+        for ob in ids:
+            try: bpy.data.objects.remove(ob, do_unlink=True)
+            except (ReferenceError, RuntimeError, TypeError): pass
+
+
+def pose(J, frame, holding):
+    """Set joint rotations for one sprite frame. Joint X rotation: negative swings a limb forward (-Y);
+    positive bends a knee back. The held item stays in the holding hand, so that arm moves least."""
+    for e in J.values():
+        e.rotation_euler = (0, 0, 0)
+    J['body'].location = (0, 0, 0)
+    J['skirt'].scale = (1, 1, 1)
+    free = [s for s in ('r', 'l') if s != holding]
+    other = {'r': 'l', 'l': 'r'}
+
+    def rot(name, x=0.0, y=0.0):
+        J[name].rotation_euler = (x, y, 0)
+
+    def arm(s, shoulder, elbow=0.0):
+        if s == holding:
+            rot('shoulder_' + s, shoulder * 0.25)
+        else:
+            rot('shoulder_' + s, shoulder); rot('elbow_' + s, elbow)
+
+    if frame.startswith('walk'):
+        k = int(frame[-1])
+        J['body'].rotation_euler = (-0.035, 0, 0)
+        if k in (0, 2):     # contact: front leg forward, back leg behind, opposite arm forward
+            front = 'l' if k == 0 else 'r'
+            back = other[front]
+            a = 0.36
+            rot('hip_' + front, -a); rot('knee_' + front, 0.05)
+            rot('hip_' + back, a * 0.9); rot('knee_' + back, 0.16)
+            arm(back, -0.42, -0.3); arm(front, 0.38, -0.12)
+            J['body'].location = (0, 0, -HIP_Z * (1 - math.cos(a)) * 0.92)
+        else:               # passing: stance leg under the body, swing leg lifted with the knee bent
+            swing = 'r' if k == 1 else 'l'
+            stance = other[swing]
+            rot('hip_' + stance, 0.06)
+            rot('hip_' + swing, -0.28); rot('knee_' + swing, 0.72)
+            arm(swing, 0.1, -0.15); arm(stance, -0.1, -0.2)
+            J['body'].location = (0, 0, 0.006)
+    elif frame == 'sit':
+        J['body'].location = (0, 0, -(HIP_Z - KNEE_Z))
+        for s in ('r', 'l'):
+            rot('hip_' + s, -math.pi / 2); rot('knee_' + s, math.pi / 2)
+        J['skirt'].scale = (1, 1, 0.45)
+        for s in ('r', 'l'):
+            arm(s, -0.4, -0.95)
+    elif frame == 'talk':
+        g = 'l' if holding != 'l' else 'r'
+        out = -0.3 if g == 'l' else 0.3
+        rot('shoulder_' + g, -0.5, out); rot('elbow_' + g, -1.55)
+    elif frame == 'work':
+        for s in ('r', 'l'):
+            arm(s, -0.32, -1.1)
+
 # ------------------------------------------------------------------ main
 
 def load_roster(path):
@@ -1139,6 +1402,8 @@ def main():
     cam.data.lens = 85
     portrait_lights = rig_lights(scene, cam_az, center)
     floor = shadow_catcher(scene, engine, 4.0)
+    sprites_only = opts.get('sprites_only', False)
+    sprite_rig = SpriteRig(scene, engine) if opts.get('sprites') else None
 
     for ch in roster:
         ts = time.time()
@@ -1148,7 +1413,10 @@ def main():
         root.empty_display_type = 'PLAIN_AXES'
         coll.objects.link(root)
         try:
-            Figure(Builder(coll, root), ch['look']).build()
+            if sprite_rig and ch['look'].idlePose == 'hands-hips':
+                ch['look'].idlePose = 'stand'   # sprite poses start from relaxed arms
+            fig = Figure(Builder(coll, root), ch['look'])
+            fig.build()
             root.scale = (ch['look'].height,) * 3
         except Exception as e:  # keep going: one bad character must not lose the rest
             errors.append({'id': ch['id'], 'error': str(e)})
@@ -1157,7 +1425,8 @@ def main():
             bpy.data.collections.remove(coll)
             continue
         built.append((ch, coll, root))
-        for _, other, _r in built[:-1]: other.hide_render = True
+        for _, other, _r in built[:-1]:
+            if other is not None: other.hide_render = True
         coll.hide_render = False
         bpy.context.view_layer.update()
         # frame: fixed scale so heights compare, widened if accessories stick out
@@ -1174,19 +1443,31 @@ def main():
         look_at(cam, tgt)
         scene.render.resolution_x, scene.render.resolution_y = PORTRAIT
         try:
-            png = os.path.join(out_dir, ch['id'] + '.png')
-            render_to(scene, png)
-            outputs.append(ch['id'] + '.png')
-            if opts['glb']:
+            if sprite_rig:
+                tsp = time.time()
+                sprite_rig.render(root, fig, os.path.join(out_dir, ch['id'] + '_sprites.webp'))
+                outputs.append(ch['id'] + '_sprites.webp')
+                timings[ch['id'] + '_sprites'] = round(time.time() - tsp, 2)
+            if not sprites_only:
+                png = os.path.join(out_dir, ch['id'] + '.png')
+                render_to(scene, png)
+                outputs.append(ch['id'] + '.png')
+            if opts['glb'] and not sprites_only:
                 export_glb(root, os.path.join(out_dir, ch['id'] + '.glb'))
                 outputs.append(ch['id'] + '.glb')
         except Exception as e:
             errors.append({'id': ch['id'], 'error': str(e)})
             log('render/export failed', ch['id'], e)
+        if sprites_only:   # nothing else needs this character: free it so later characters stay fast
+            meshes = [ob.data for ob in coll.objects if ob.type == 'MESH']
+            remove_ids(list(coll.objects))
+            remove_ids([m for m in meshes if m.users == 0])
+            bpy.data.collections.remove(coll)
+            built[-1] = (ch, None, None)
         timings[ch['id']] = round(time.time() - ts, 2)
         log('done', ch['id'], timings[ch['id']], 's')
 
-    if opts['lineup'] and built:
+    if opts['lineup'] and built and not sprites_only:
         ts = time.time()
         for ob in portrait_lights: bpy.data.objects.remove(ob, do_unlink=True)
         if floor: bpy.data.objects.remove(floor, do_unlink=True)
@@ -1243,7 +1524,7 @@ def main():
         timings['lineup'] = round(time.time() - ts, 2)
 
     # keep a .blend of the finished scene so the designs can be opened and edited in Blender
-    if built and opts.get('blend', True):
+    if built and opts.get('blend', True) and not sprites_only:
         try:
             bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out_dir, 'characters.blend'), compress=True)
             outputs.append('characters.blend')
@@ -1252,6 +1533,7 @@ def main():
 
     result = {'ok': bool(outputs) or not roster, 'outputs': outputs, 'engine': engine, 'blender': bpy.app.version_string,
               'count': len(built), 'seconds': round(time.time() - t0, 2), 'timings': timings}
+    if sprite_rig: result['sprites'] = {'frames': SPRITE_FRAMES, 'w': SPRITE_W, 'h': SPRITE_H}
     if errors: result['errors'] = errors[:20]
     print(json.dumps(result), flush=True)
     return 0 if result['ok'] else 1
