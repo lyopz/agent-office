@@ -270,7 +270,7 @@ describe('Acceptance', () => {
     const s = useStore.getState();
     s.setPrefs({ aiProvider: 'off' });
     s.loadDoc(sampleOffice(), 'Load sample');
-    const r = s.commit([{ op: 'room.create', id: 'manual_room', type: 'storage', x: 0, y: 60, w: 5, h: 5 }], 'Manual room');
+    const r = s.commit([{ op: 'room.create', id: 'manual_room', type: 'storage', x: 0, y: 70, w: 5, h: 5 }], 'Manual room');
     expect(r.ok).toBe(true);
     expect(useStore.getState().doc.rooms.manual_room).toBeDefined();
     s.setPrefs({ aiProvider: 'mock' });

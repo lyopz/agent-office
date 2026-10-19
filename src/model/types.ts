@@ -12,6 +12,7 @@ export const ROOM_TYPES = [
   'operations', 'office', 'research', 'server', 'meeting', 'workshop',
   'storage', 'break', 'security', 'reception', 'custom',
   'executive', 'library', 'finance', 'engineering', 'design', 'studio', 'market',
+  'ops-floor', 'arcade', 'blender-studio',
 ] as const;
 export type RoomType = (typeof ROOM_TYPES)[number];
 
@@ -88,6 +89,11 @@ export const FURNITURE_TYPES = [
   'holo-table', 'mockup-display', 'packaging-station', 'material-station', 'prototype-printer', 'photo-station',
   // business
   'budget-dashboard', 'approval-kiosk', 'project-board', 'finance-terminal', 'marketplace-display', 'inventory-monitor', 'analytics-wall',
+  // game development and 3D production
+  'arcade-cabinet', 'dev-desk', 'collab-table', 'test-station', 'project-display', 'equipment-shelf',
+  'workstation-3d', 'reference-display', 'preview-stage', 'review-table', 'material-library', 'anim-station', 'render-wall',
+  // high-capacity operations
+  'compact-desk', 'task-board', 'supply-station', 'lane-marker',
   // atmosphere
   'sculpture', 'floor-light', 'wall-panel', 'window', 'deco-robot', 'aquarium', 'wall-art', 'ambient-machine',
 ] as const;
@@ -97,7 +103,7 @@ export const OBJECT_CATEGORIES = ['furniture', 'computing', 'communication', 're
 export type ObjectCategory = (typeof OBJECT_CATEGORIES)[number];
 
 /** What an object does in the simulation. Decorative objects have no function. */
-export type ObjectFunction = 'workstation' | 'tube' | 'archive' | 'approval' | 'budget' | 'display' | 'charging' | 'storage' | 'seating' | 'none';
+export type ObjectFunction = 'workstation' | 'tube' | 'archive' | 'approval' | 'budget' | 'display' | 'charging' | 'storage' | 'seating' | 'arcade' | 'render' | 'none';
 
 export interface Workstation {
   name: string;
@@ -121,6 +127,7 @@ export interface Furniture {
   material?: FurnitureMaterial;
   groupId?: string;           // objects sharing a group move and select together
   tube?: { stationName: string; department: string }; // pneumatic tube endpoint
+  arcade?: { game: GameId; theme: string };           // human-only arcade cabinet
 }
 
 // ---------- Characters ----------
@@ -263,6 +270,8 @@ export interface Agent {
   /** Appearance the agent was created with; "Restore default appearance" returns here. */
   defaultAppearance?: Appearance;
   archetype?: string;
+  /** A locked uniform the agent is wearing; its cosmetics can't be changed piece by piece. */
+  uniformId?: ID | null;
   budget: AgentBudget;
   assets: VisualAssets;
 }
@@ -278,6 +287,7 @@ export interface OutfitTemplate {
   department?: string;        // uniforms: the department they're approved for
   approved?: boolean;         // uniforms must be approved before applying to a department
   occasion?: string;          // seasonal / event label
+  locked?: boolean;           // a fixed role uniform: worn whole, never edited or accessorised
 }
 
 export type CosmeticCategory = 'head' | 'clothing' | 'accessory' | 'effect';
@@ -382,6 +392,59 @@ export interface OfficeDoc {
   alertSettings: AlertSettings;
   projects: Record<ID, Project>;
   library: Record<ID, KnowledgeEntry>;
+  departments: Record<ID, Department>;
+  control: ControlSettings;
+  arcade: ArcadeSettings;
+}
+
+// ---------- Departments and executive control ----------
+
+/**
+ * A category of agents, matched by `identity.department`. Its mode is what the
+ * owner asked for; the state shown on the dashboard is derived from what the
+ * agents are actually doing (see engine/departments.ts).
+ */
+export interface Department {
+  id: ID; name: string; color: string; description: string;
+  mode: 'running' | 'paused';
+  essential: boolean;               // never paused automatically by a resource policy
+  maxConcurrent: number | null;     // simultaneous active tasks, null = no limit
+  excludedAgentIds: ID[];           // left alone by bulk pause and resume
+  renderPolicy: 'finish' | 'cancel' | 'defer'; // jobs that can't be paused safely
+}
+export type DepartmentState = 'running' | 'pausing' | 'paused' | 'blocked' | 'error';
+
+export interface ResourcePolicy {
+  prioritizeRendering: boolean;     // while a render runs, cap other work at backgroundLimit
+  backgroundLimit: number;
+  pauseNonessential: boolean;       // hold new work in non-essential departments while rendering
+  autoResume: boolean;              // release those holds when rendering ends
+}
+export interface ControlSettings {
+  emergencyStop: boolean;
+  policy: ResourcePolicy;
+  simplifyAbove: number;            // visible agents before characters switch to simple markers (0 = never)
+  blenderBridgeUrl: string;         // local Blender bridge (server/blender-bridge.mjs); empty = planning mode
+}
+
+export type GameId = 'flappy' | 'pacman' | 'pong';
+export interface ArcadeSettings {
+  policy: 'human-only' | 'agent-disabled' | 'token-free';
+  limits: Record<GameId, { maxScore: number; maxSessionSec: number }>;
+  maxAgentMatchesPerDay: number;
+  tokenFreeVerified: boolean;       // set only by a verified local, model-free play path; none exists yet
+}
+
+export type AssetKind = 'character' | 'prop' | 'cosmetic' | 'environment' | 'animation' | 'luau-script' | 'level' | 'ui';
+export const ASSET_STAGES = ['assigned', 'creating', 'preview', 'review', 'approved', 'exported', 'integrated', 'rejected'] as const;
+export type AssetStage = (typeof ASSET_STAGES)[number];
+/** A production item moving through task → creation → preview → review → approval → export → integration. */
+export interface AssetJob {
+  id: ID; name: string; kind: AssetKind; projectId: ID | null; ownerAgentId: ID | null;
+  stage: AssetStage;
+  history: { stage: AssetStage; at: string; by: ID | null; simulated: boolean }[];
+  real: { file: string; verifiedAt: string } | null; // set only when a real file was produced and checked
+  notes: string;
 }
 
 // ---------- Runtime (simulation) ----------
@@ -434,12 +497,16 @@ export interface Task {
   acknowledgedAt?: string;
   deliveredVia?: 'tube' | 'direct';
   libraryRefs?: ID[];         // knowledge consulted before starting
+  jobKind?: 'standard' | 'render' | 'save'; // render jobs can't pause mid-frame; saves always finish
+  heldBy?: 'department' | 'emergency' | null; // paused by a bulk control; resumes with its progress
+  assetId?: ID | null;        // production item this task advances
+  checkpoint?: number;        // last safe progress point for jobs restarted after a hold
 }
 
 export type EventKind =
   | 'task-start' | 'task-complete' | 'task-failed' | 'room-change' | 'comms'
   | 'tool' | 'config' | 'error' | 'pause' | 'resume' | 'layout' | 'ai' | 'system'
-  | 'tube' | 'finance' | 'approval' | 'library' | 'alert';
+  | 'tube' | 'finance' | 'approval' | 'library' | 'alert' | 'department' | 'policy' | 'production';
 
 export interface ActivityEvent {
   id: ID;
@@ -498,4 +565,12 @@ export interface RuntimeState {
   approvals: Record<ID, ApprovalRequest>;
   alerts: Record<ID, Alert>;
   capsules: Record<ID, Capsule>;
+  policyHeld: ID[];           // departments a resource policy is holding (no new work)
+  assets: Record<ID, AssetJob>; // production items; stages advance as work completes
+  arcadeSessions: ArcadeSession[];
+}
+
+export interface ArcadeSession {
+  id: ID; agentId: ID | null; game: GameId; startedAt: string; durationSec: number; score: number;
+  result: 'crash' | 'caught' | 'cleared' | 'win' | 'lose' | 'score-cap' | 'time-limit' | 'abandoned'; reward: number;
 }

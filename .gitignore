@@ -4,3 +4,4 @@ dist-single
 test-results
 .env
 tsconfig.tsbuildinfo
+graphify-out

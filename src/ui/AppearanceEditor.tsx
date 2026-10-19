@@ -7,6 +7,8 @@ import { Character, type Pose } from '../characters/Character';
 import { assetStore } from '../persistence/repository';
 import { useAsset } from '../viewport/AgentsLayer';
 import { ColorField, SelectField, Slider } from './primitives';
+import { UniformBanner } from './Wardrobe';
+import { lockedUniform } from '../engine/ops';
 
 const VIEWS: { v: ViewMode; label: string }[] = [
   { v: 'front', label: 'Front' }, { v: 'side', label: 'Side' }, { v: 'three-quarter', label: '3/4' }, { v: 'top', label: 'Top-down' }, { v: 'portrait', label: 'Portrait' },
@@ -44,6 +46,7 @@ function ViewFigure({ a, view, label, pose, frame, assetId }: { a: Appearance; v
 export function AppearanceEditor({ agent }: { agent: Agent }) {
   const { commit, notify, setUi } = useStore.getState();
   const a = agent.appearance;
+  const locked = !!useStore((s) => lockedUniform(s.doc, agent));
   const [pose, setPose] = useState<Pose>('walk');
   const set = (patch: Partial<Appearance>, label = `Restyle ${agent.identity.name}`) => commit([{ op: 'agent.update', id: agent.id, patch: { appearance: patch } }], label);
   const sel = <K extends keyof Appearance>(k: K, label: string, opts: readonly string[]) => <SelectField label={label} value={a[k] as string} options={opts} onChange={(v) => set({ [k]: v } as Partial<Appearance>)} />;
@@ -65,10 +68,11 @@ export function AppearanceEditor({ agent }: { agent: Agent }) {
         <span className="note">Every view is drawn from this one profile. Changing the look never touches name, role, personality, tasks or memory.</span>
       </div>
       <Stage a={a} assets={agent.assets} pose={pose} />
+      <UniformBanner agent={agent} />
       <div className="card">
         <h4>Presets</h4>
         <div className="row wrap">
-          {APPEARANCE_PRESETS.map((p) => <button key={p.name} className="btn sm" onClick={() => set(p.patch, `Apply ${p.name} preset`)}>{p.name}</button>)}
+          {APPEARANCE_PRESETS.map((p) => <button key={p.name} className="btn sm" disabled={locked} onClick={() => set(p.patch, `Apply ${p.name} preset`)}>{p.name}</button>)}
           <button className="btn sm" onClick={() => setUi({ profileTab: 'wardrobe' })}>Open wardrobe and outfits…</button>
           <button className="btn sm" onClick={() => commit([{ op: 'agent.restoreAppearance', id: agent.id }], `Restore ${agent.identity.name}'s default look`)}>Restore default appearance</button>
         </div>
@@ -88,12 +92,14 @@ export function AppearanceEditor({ agent }: { agent: Agent }) {
           {sel('hairStyle', 'Style', ['bald', 'buzz', 'short', 'long', 'bun', 'ponytail', 'mohawk', 'curly'])}
           <ColorField label="Hair colour" value={a.hairColor} swatches={HAIR} onChange={(hairColor) => set({ hairColor })} />
           {sel('facialHair', 'Facial hair', ['none', 'stubble', 'beard', 'mustache'])}
+          <fieldset className="plain" disabled={locked}>
           <h4 style={{ marginTop: 12 }}>Accessories</h4>
           <div className="field-row">{sel('headwear', 'Hat / helmet', ['none', 'cap', 'hardhat', 'helmet', 'beanie', 'headset', 'mask', 'full-helmet'])}{sel('glasses', 'Glasses', ['none', 'round', 'square', 'visor', 'ar-glasses'])}</div>
           <ColorField label="Headwear colour" value={a.headwearColor} swatches={['#f2c230', '#d9772b', '#e8eef0', '#26313a', '#39ff88']} onChange={(headwearColor) => set({ headwearColor })} />
           <div className="field-row">{sel('jewelry', 'Jewelry', ['none', 'earrings', 'necklace', 'badge'])}{sel('equipment', 'Carried item', ['none', 'tablet', 'wrench', 'clipboard', 'laptop', 'toolbelt', 'briefcase', 'drafting-tablet', 'holo-catalog'])}</div>
+          </fieldset>
         </div>
-        <div className="card">
+        <fieldset className="card plain" disabled={locked}>
           <h4>Clothing</h4>
           {sel('top', 'Top / uniform', ['tshirt', 'hoodie', 'suit', 'labcoat', 'coverall', 'uniform', 'vest', 'jacket', 'robe', 'armor', 'longcoat'])}
           <ColorField label="Top colour" value={a.topColor} swatches={CLOTH} onChange={(topColor) => set({ topColor })} />
@@ -102,21 +108,24 @@ export function AppearanceEditor({ agent }: { agent: Agent }) {
           {sel('shoes', 'Shoes', ['sneakers', 'boots', 'dress'])}
           <ColorField label="Shoe colour" value={a.shoeColor} swatches={['#d8dde0', '#4a3020', '#111111', '#39ff88']} onChange={(shoeColor) => set({ shoeColor })} />
           <ColorField label="Accent / glow" value={a.accent} swatches={['#39ff88', '#4cc9ff', '#ff9f43', '#b57bff', '#ff5d73']} onChange={(accent) => set({ accent })} />
-        </div>
+        </fieldset>
         <div className="card">
           <h4>Details</h4>
+          <fieldset className="plain" disabled={locked}>
           <ColorField label="Trim / insignia colour" value={a.trimColor || a.accent} swatches={['#d4a84a', '#c0c7cf', '#39ff88', '#4cc9ff', '#ff9f43']} onChange={(trimColor) => set({ trimColor })} />
           <div className="field-row">{sel('shoulders', 'Shoulders', ['none', 'pads', 'metallic', 'armored'])}{sel('belt', 'Belt', ['none', 'belt', 'harness', 'utility'])}</div>
-          <div className="field-row">{sel('gloves', 'Gloves', ['none', 'work', 'tech', 'formal'])}{sel('faceMarkings', 'Face markings', ['none', 'freckles', 'scar', 'tattoo', 'circuit'])}</div>
+          {sel('gloves', 'Gloves', ['none', 'work', 'tech', 'formal'])}
           {a.gloves !== 'none' && <ColorField label="Glove colour" value={a.gloveColor} swatches={['#1b1f24', '#6b4a2a', '#e8e8e8', '#4cc9ff']} onChange={(gloveColor) => set({ gloveColor })} />}
+          </fieldset>
+          {sel('faceMarkings', 'Face markings', ['none', 'freckles', 'scar', 'tattoo', 'circuit'])}
           {sel('robotic', 'Robotic features', ['none', 'eyepiece', 'jaw', 'half-face', 'full'])}
         </div>
-        <div className="card">
+        <fieldset className="card plain" disabled={locked}>
           <h4>Effects</h4>
           <p className="note">Off unless you turn them on. Intensity stays restrained so characters remain readable.</p>
           {(['aura', 'holoOutline', 'eyeGlow', 'particles', 'energyAccents', 'robotics'] as const).map((k) => <Toggle key={k} label={({ aura: 'Glowing aura', holoOutline: 'Holographic outline', eyeGlow: 'Eye glow', particles: 'Floating particles', energyAccents: 'Energy accents', robotics: 'Visible robotic joints' })[k]} checked={a.effects[k]} onChange={(v) => set({ effects: { ...a.effects, [k]: v } }, 'Toggle effect')} />)}
           <Slider label="Effect intensity" value={a.effects.intensity} min={0} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onCommit={(intensity) => set({ effects: { ...a.effects, intensity } })} />
-        </div>
+        </fieldset>
         <div className="card">
           <h4>Poses &amp; motion</h4>
           {sel('idlePose', 'Idle pose', ['stand', 'arms-crossed', 'hands-hips'])}

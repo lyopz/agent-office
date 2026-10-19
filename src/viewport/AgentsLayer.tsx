@@ -1,10 +1,20 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store/store';
 import { Character } from '../characters/Character';
-import type { AgentStatus, ViewMode } from '../model/types';
+import type { AgentStatus, Rect, ViewMode } from '../model/types';
+import { useShallow } from 'zustand/react/shallow';
 import { assetStore } from '../persistence/repository';
 import { G } from './OfficeLayers';
 import { capsulePos } from '../engine/tubes';
+import { SPRITE_FRAMES, SPRITE_H, SPRITE_W, bundledSprite, frameFor, lookKey, useSpriteLibrary } from '../characters/sprites';
+
+/** The Blender sprite sheet for this exact look, if one exists and rendered characters are on. */
+function useSpriteSheet(a: Parameters<typeof lookKey>[0] | undefined, enabled: boolean) {
+  const key = useMemo(() => (a && enabled ? lookKey(a) : null), [a, enabled]);
+  const imported = useSpriteLibrary((s) => (key ? s.imported.has(key) : false));
+  const stored = useAsset(key && imported && !bundledSprite(key) ? `sprite_${key}` : null);
+  return key ? bundledSprite(key) ?? stored : null;
+}
 
 export const STATUS_COLOR: Record<AgentStatus, string> = {
   idle: 'var(--muted)', working: 'var(--accent)', walking: 'var(--accent-blue)', thinking: 'var(--accent-purple)',
@@ -27,54 +37,99 @@ export function resolveView(global: string, preferred: ViewMode): Exclude<ViewMo
   return v === 'portrait' ? 'front' : v;
 }
 
-const AgentSprite = memo(function AgentSprite({ id }: { id: string }) {
+interface SpriteRt { x: number; y: number; status: AgentStatus; heading: 'left' | 'right' | 'up' | 'down'; atDesk: boolean }
+
+const AgentSprite = memo(function AgentSprite({ id, simple }: { id: string; simple: boolean }) {
   const agent = useStore((s) => s.doc.agents[id]);
-  const rt = useStore((s) => s.runtime.agents[id]);
-  const tick = useStore((s) => s.runtime.tick);
+  // subscribe to the few runtime fields we draw, so idle agents don't re-render every tick
+  const rt = useStore(useShallow((s): SpriteRt | null => {
+    const r = s.runtime.agents[id];
+    return r ? { x: r.pos.x, y: r.pos.y, status: r.status, heading: r.heading, atDesk: r.status === 'working' && !!r.currentTaskId && !!s.runtime.tasks[r.currentTaskId]?.destination.workstationId } : null;
+  }));
+  const motion = useStore((s) => s.doc.settings.animationIntensity);
+  const speed = useStore((s) => s.prefs.simSpeed);
+  const animating = !!rt && motion !== 'off' && !simple && (rt.status === 'walking' || rt.status === 'working' || rt.status === 'communicating');
+  const tick = useStore((s) => (animating ? s.runtime.tick : 0));
   const global = useStore((s) => s.view);
   const selected = useStore((s) => s.selection.kind === 'agent' && s.selection.id === id);
   const labels = useStore((s) => s.layers.labels);
-  const motion = useStore((s) => s.doc.settings.animationIntensity);
   const view = agent ? resolveView(global, agent.appearance.preferredView) : 'top';
-  const asset = useAsset(agent?.assets[view]?.assetId);
+  const asset = useAsset(simple ? null : agent?.assets[view]?.assetId);
+  const rendered = useStore((s) => (s.prefs.characterStyle ?? 'rendered') === 'rendered');
+  // rendered sprites are 3/4 views; they replace the per-agent default, but an explicit top-down view stays drawn
+  const sheet = useSpriteSheet(agent?.appearance, rendered && !simple && global !== 'top');
   const [facing, setFacing] = useState<'left' | 'right'>(agent?.appearance.facing ?? 'right');
-  useEffect(() => { if (rt?.heading === 'left' || rt?.heading === 'right') setFacing(rt.heading); }, [rt?.heading]);
+  const [turning, setTurning] = useState(false);
+  useEffect(() => {
+    if (rt?.heading !== 'left' && rt?.heading !== 'right') return;
+    setFacing((f) => { if (f !== rt.heading) { setTurning(true); setTimeout(() => setTurning(false), 160); } return rt.heading as 'left' | 'right'; });
+  }, [rt?.heading]);
   if (!agent || !rt) return null;
   const a = agent.appearance;
-  const cx = (rt.pos.x + 0.5) * G, cy = (rt.pos.y + 0.5) * G;
-  const pose = rt.status === 'walking' ? 'walk' : rt.status === 'working' ? 'work' : 'idle';
-  const frame = motion === 'off' ? 0 : Math.floor((tick * a.animationSpeed) / (motion === 'subtle' ? 4 : 2)) % 4;
-  const top = view === 'top';
+  const cx = (rt.x + 0.5) * G, cy = (rt.y + 0.5) * G;
+  const col = STATUS_COLOR[rt.status];
+  const paused = rt.status === 'paused';
+  // walking agents glide between simulation ticks instead of jumping cell to cell
+  const glide = rt.status === 'walking' ? { transition: `transform ${Math.round(100 / speed)}ms linear` } : undefined;
+  if (simple) {
+    return (
+      <g data-kind="agent" data-id={id} className={`agent simple${paused ? ' paused' : ''}`} style={{ cursor: 'pointer', transform: `translate(${cx}px, ${cy}px)`, ...glide }}>
+        <circle r={G * 0.38} fill={a.topColor} stroke={selected ? 'var(--accent)' : col} strokeWidth={selected ? 3 : 1.5} />
+        <circle r={G * 0.16} cy={-G * 0.05} fill={a.skinTone} />
+        {labels && <text y={G * 0.85} textAnchor="middle" className="agent-label" fill={col}>{agent.identity.name}</text>}
+      </g>
+    );
+  }
+  const pose = rt.status === 'walking' ? 'walk' : rt.status === 'working' ? (rt.atDesk && view !== 'top' ? 'sit' : 'work') : rt.status === 'communicating' ? 'talk' : 'idle';
+  const frame = !animating ? 0 : Math.floor((tick * a.animationSpeed) / (motion === 'subtle' ? 4 : 2)) % 4;
+  const top = view === 'top' && !sheet;
+  const shownView = turning && (view === 'side' || view === 'three-quarter') ? 'front' : view;
   const size = top ? G * 1.7 : G * 2.7 * a.height;
   const width = top ? size : size * 0.625;
-  const tx = cx - width / 2, ty = top ? cy - size / 2 : cy + G * 0.45 - size;
-  const col = STATUS_COLOR[rt.status];
-  // a working agent at a desk faces the desk; in front view show their back-free working pose
+  const tx = -width / 2, ty = top ? -size / 2 : G * 0.45 - size;
+  // a working agent at a desk faces the desk
   const heading = rt.status === 'working' ? 'up' : rt.heading;
   return (
-    <g data-kind="agent" data-id={id} className={`agent${agent.enabled ? '' : ' disabled'}`} style={{ cursor: 'pointer' }}>
-      <ellipse cx={cx} cy={cy + (top ? 0 : G * 0.4)} rx={G * 0.62} ry={G * (top ? 0.62 : 0.24)} fill="none" stroke={col} strokeWidth={selected ? 3 : 1.5} opacity={selected ? 1 : 0.8} filter={selected ? 'url(#glow)' : undefined} />
+    <g data-kind="agent" data-id={id} className={`agent${agent.enabled ? '' : ' disabled'}${paused ? ' paused' : ''}`} style={{ cursor: 'pointer', transform: `translate(${cx}px, ${cy}px)`, ...glide }}>
+      <ellipse cx={0} cy={top ? 0 : G * 0.4} rx={G * 0.62} ry={G * (top ? 0.62 : 0.24)} fill="none" stroke={col} strokeWidth={selected ? 3 : 1.5} opacity={selected ? 1 : 0.8} filter={selected ? 'url(#glow)' : undefined} />
       <g transform={`translate(${tx} ${ty})`}>
         {asset
           ? <image href={asset} width={width} height={size} preserveAspectRatio="xMidYMax meet" />
-          : <Character a={a} view={view} pose={pose} frame={frame} facing={facing} heading={heading} size={size} title={agent.identity.name} />}
+          : sheet
+          ? <SpriteFrameImage sheet={sheet} frame={frameFor(paused ? 'idle' : rt.status, rt.atDesk, frame)} flip={facing === 'left' && !(rt.status === 'working' && rt.atDesk)} size={size} label={agent.identity.name} />
+          : <Character a={a} view={shownView} pose={pose} frame={frame} facing={facing} heading={heading} size={size} title={agent.identity.name} />}
       </g>
-      {asset === null && agent.assets[view] && <text x={cx} y={ty - 2} textAnchor="middle" className="tag">fallback</text>}
-      {(rt.status === 'thinking' || rt.status === 'communicating' || rt.status === 'error') && (
-        <g transform={`translate(${cx + G * 0.4} ${ty - 6})`}>
+      {asset === null && agent.assets[view] && <text x={0} y={ty - 2} textAnchor="middle" className="tag">fallback</text>}
+      {(rt.status === 'thinking' || rt.status === 'communicating' || rt.status === 'error' || paused) && (
+        <g transform={`translate(${G * 0.4} ${ty - 6})`}>
           <rect x={-2} y={-12} width={rt.status === 'error' ? 14 : 20} height={14} rx={4} fill="var(--label-bg)" stroke={col} />
-          <text x={rt.status === 'error' ? 5 : 8} y={-1.5} textAnchor="middle" className="bubble" fill={col}>{rt.status === 'error' ? '!' : rt.status === 'thinking' ? '···' : '⇄'}</text>
+          <text x={rt.status === 'error' ? 5 : 8} y={-1.5} textAnchor="middle" className="bubble" fill={col}>{rt.status === 'error' ? '!' : paused ? 'II' : rt.status === 'thinking' ? '···' : '⇄'}</text>
         </g>
       )}
       {labels && (
         <g pointerEvents="none">
-          <rect x={cx - agent.identity.name.length * 3.4 - 5} y={cy + G * 0.62} width={agent.identity.name.length * 6.8 + 10} height={13} rx={2} fill="var(--label-bg)" stroke={col} strokeOpacity={0.7} />
-          <text x={cx} y={cy + G * 0.62 + 10} textAnchor="middle" className="agent-label" fill={col}>{agent.identity.name}</text>
+          <rect x={-agent.identity.name.length * 3.4 - 5} y={G * 0.62} width={agent.identity.name.length * 6.8 + 10} height={13} rx={2} fill="var(--label-bg)" stroke={col} strokeOpacity={0.7} />
+          <text x={0} y={G * 0.62 + 10} textAnchor="middle" className="agent-label" fill={col}>{agent.identity.name}</text>
         </g>
       )}
     </g>
   );
 });
+
+/** One frame of a Blender sprite strip, scaled to the character's height and mirrored when facing left. */
+function SpriteFrameImage({ sheet, frame, flip, size, label }: { sheet: string; frame: (typeof SPRITE_FRAMES)[number]; flip: boolean; size: number; label: string }) {
+  const i = SPRITE_FRAMES.indexOf(frame);
+  // the strip's frames leave headroom above the head; scale so the figure matches the drawn character's height
+  const h = size * 1.22, w = h * (SPRITE_W / SPRITE_H);
+  const x = (size * 0.625 - w) / 2, y = size - h;
+  return (
+    <svg x={x} y={y} width={w} height={h} viewBox={`${i * SPRITE_W} 0 ${SPRITE_W} ${SPRITE_H}`} overflow="hidden" role="img" aria-label={`${label}, rendered`}>
+      <g transform={flip ? `translate(${(2 * i + 1) * SPRITE_W} 0) scale(-1 1)` : undefined}>
+        <image href={sheet} width={SPRITE_W * SPRITE_FRAMES.length} height={SPRITE_H} />
+      </g>
+    </svg>
+  );
+}
 
 export function AgentPaths() {
   const agents = useStore((s) => s.runtime.agents);
@@ -89,12 +144,29 @@ export function AgentPaths() {
   );
 }
 
-export function AgentsLayer() {
-  const ids = useStore((s) => Object.keys(s.doc.agents).join('|'));
-  const order = useStore((s) => s.runtime.agents);
-  // draw back-to-front so standing characters overlap correctly
-  const sorted = ids ? ids.split('|').sort((a, b) => (order[a]?.pos.y ?? 0) - (order[b]?.pos.y ?? 0)) : [];
-  return <g>{sorted.map((id) => <AgentSprite key={id} id={id} />)}</g>;
+/**
+ * Agents inside the visible area, back-to-front. Off-screen agents aren't drawn,
+ * and when many are visible they switch to simple markers to stay responsive.
+ */
+export function AgentsLayer({ view }: { view: Rect }) {
+  const order = useStore(useShallow((s) => {
+    const out: string[] = [];
+    for (const [id, r] of Object.entries(s.runtime.agents)) {
+      if (!s.doc.agents[id]) continue;
+      if (r.pos.x < view.x - 2 || r.pos.y < view.y - 3 || r.pos.x > view.x + view.w + 2 || r.pos.y > view.y + view.h + 2) continue;
+      out.push(`${Math.round(r.pos.y * 4)}:${id}`);
+    }
+    return out.sort((a, b) => parseInt(a) - parseInt(b)).map((k) => k.slice(k.indexOf(':') + 1));
+  }));
+  const limit = useStore((s) => s.doc.control.simplifyAbove);
+  const simple = limit > 0 && order.length > limit;
+  return <g>{order.map((id) => <AgentSprite key={id} id={id} simple={simple} />)}</g>;
+}
+
+export function useSimplified(view: Rect) {
+  const limit = useStore((s) => s.doc.control.simplifyAbove);
+  const visible = useStore((s) => { let n = 0; for (const r of Object.values(s.runtime.agents)) if (r.pos.x >= view.x - 2 && r.pos.y >= view.y - 3 && r.pos.x <= view.x + view.w + 2 && r.pos.y <= view.y + view.h + 2) n++; return n; });
+  return { simple: limit > 0 && visible > limit, visible, limit };
 }
 
 /** Task capsules travelling through the pneumatic tube network. */

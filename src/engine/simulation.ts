@@ -9,12 +9,14 @@ import { pickHub } from './validate';
 import { escalateAlerts, raiseAlert } from './alerts';
 import { recordUsage, requestAction } from './governance';
 import { stepCapsules } from './tubes';
+import { applyPolicies, controlFrame, holdAgent, releaseHolds, startBlocked } from './departments';
+import { completeAssetTask, productionTask } from './production';
 import { searchLibrary } from './library';
 
 export const SPEED = 0.2; // cells per tick at animation speed 1
 const PRIORITY = { critical: 0, high: 1, normal: 2, low: 3 } as const;
 
-export function emptyRuntime(): RuntimeState { return { agents: {}, tasks: {}, events: [], tick: 0, usage: [], approvals: {}, alerts: {}, capsules: {} }; }
+export function emptyRuntime(): RuntimeState { return { agents: {}, tasks: {}, events: [], tick: 0, usage: [], approvals: {}, alerts: {}, capsules: {}, policyHeld: [], arcadeSessions: [], assets: {} }; }
 
 export function log(rt: RuntimeState, e: Omit<ActivityEvent, 'id' | 'at' | 'level' | 'simulated'> & Partial<Pick<ActivityEvent, 'level' | 'simulated'>>) {
   rt.events.push({ id: uid('evt'), at: new Date().toISOString(), level: 'info', simulated: true, ...e });
@@ -97,7 +99,7 @@ export function reconcileLayout(prev: OfficeDoc, doc: OfficeDoc, rt: RuntimeStat
   return nav;
 }
 
-export function resolveDestination(doc: OfficeDoc, nav: NavGraph, a: Agent, roomId: string | null, workstationId: string | null) {
+export function resolveDestination(doc: OfficeDoc, nav: NavGraph, a: Agent, roomId: string | null, workstationId: string | null, taken?: Set<string>) {
   if (workstationId && doc.furniture[workstationId]) {
     const s = workstationSpot(doc, nav, doc.furniture[workstationId]);
     if (s) return { roomId: doc.furniture[workstationId].roomId, workstationId, cell: s };
@@ -106,7 +108,7 @@ export function resolveDestination(doc: OfficeDoc, nav: NavGraph, a: Agent, room
     // prefer the agent's own workstation if it's in that room
     const own = a.schedule.preferredWorkstationId ? doc.furniture[a.schedule.preferredWorkstationId] : undefined;
     if (own && own.roomId === roomId) { const s = workstationSpot(doc, nav, own); if (s) return { roomId, workstationId: own.id, cell: s }; }
-    const s = roomSpot(nav, doc.rooms[roomId]);
+    const s = roomSpot(nav, doc.rooms[roomId], taken);
     if (s) return { roomId, workstationId: null, cell: s };
   }
   return null;
@@ -167,6 +169,10 @@ const DEMO_TASKS: Record<string, string[]> = {
   Product: ['Sketch dashboard layout', 'Accessibility audit', 'Update icon set'],
   Facilities: ['Service HVAC unit', 'Repair door actuator', 'Inventory spare parts'],
   'Front Office': ['Triage inbound requests', 'Schedule visitor', 'Relay messages'],
+  'Game Development': ['Fix spawn bug (Luau)', 'Balance coin rewards', 'Review crash reports', 'Update version notes'],
+  '3D Design': ['Clean up topology', 'Bake normal maps', 'Organise material library'],
+  'E-commerce': ['Update product listings', 'Reconcile inventory', 'Answer order queries', 'Draft weekend promotion'],
+  'Operations Floor': ['Tag support tickets', 'Clean data rows', 'Verify addresses', 'Sort inbound requests', 'Check form submissions'],
 };
 
 function demoTask(doc: OfficeDoc, rt: RuntimeState, a: Agent, rand: () => number) {
@@ -179,11 +185,15 @@ function demoTask(doc: OfficeDoc, rt: RuntimeState, a: Agent, rand: () => number
     const meet = Object.values(doc.rooms).find((x) => x.type === 'meeting');
     if (meet) return createTask(rt, { name: 'Sync meeting', agentId: a.id, destination: { roomId: meet.id, workstationId: null }, workUnits: 70 });
   }
+  if (a.identity.department === '3D Design' && rand() < 0.3) {
+    return createTask(rt, { name: 'Render turntable preview', agentId: a.id, jobKind: 'render', workUnits: 160, costPerUnit: 0.03, description: 'Simulated render job (no Blender process runs).', destination: { roomId: a.schedule.assignedRoomId, workstationId: a.schedule.preferredWorkstationId } });
+  }
   const pool = DEMO_TASKS[a.identity.department] ?? ['General upkeep', 'Write status report'];
+  const quick = a.identity.department === 'Operations Floor';
   const project = Object.values(doc.projects).find((p) => p.ownerAgentId === a.id && p.status === 'active');
   return createTask(rt, {
     projectId: project?.id ?? null, costPerUnit: 0.02,
-    name: pool[Math.floor(rand() * pool.length)], agentId: a.id, workUnits: 60 + Math.floor(rand() * 80),
+    name: pool[Math.floor(rand() * pool.length)], agentId: a.id, workUnits: quick ? 25 + Math.floor(rand() * 30) : 60 + Math.floor(rand() * 80),
     destination: { roomId: a.schedule.assignedRoomId, workstationId: a.schedule.preferredWorkstationId },
   });
 }
@@ -195,6 +205,9 @@ export function step(doc: OfficeDoc, rt: RuntimeState, nav: NavGraph, opts: Step
   rt.tick++;
   if (Object.keys(rt.capsules).length) stepCapsules(doc, rt);
   if (rt.tick % 20 === 0) escalateAlerts(doc, rt);
+  const frame = controlFrame(doc, rt);
+  releaseHolds(doc, rt, frame);
+  if (rt.tick % 10 === 0) applyPolicies(doc, rt, frame);
   const occupied = new Map<string, string>();
   for (const [id, r] of Object.entries(rt.agents)) occupied.set(key(Math.round(r.pos.x), Math.round(r.pos.y)), id);
 
@@ -202,7 +215,9 @@ export function step(doc: OfficeDoc, rt: RuntimeState, nav: NavGraph, opts: Step
     const r = rt.agents[a.id];
     if (!r) continue;
     if (!a.enabled || a.identity.status !== 'active') { r.status = 'paused'; continue; }
-    if (r.status === 'paused') r.status = 'idle';
+    const hold = frame.hold(a);
+    if (hold && holdAgent(rt, a, hold, frame.dept(a))) continue; // frozen: no movement, no work, no animation
+    if (r.status === 'paused') { r.status = 'idle'; r.statusMessage = undefined; }
     const task = r.currentTaskId ? rt.tasks[r.currentTaskId] : undefined;
     if (task && (task.status === 'cancelled' || task.status === 'paused' || task.agentId !== a.id)) {
       r.currentTaskId = null; r.destination = null; r.path = []; r.status = 'idle';
@@ -246,7 +261,10 @@ export function step(doc: OfficeDoc, rt: RuntimeState, nav: NavGraph, opts: Step
         if (--r.waitTicks <= 0) {
           const t = r.currentTaskId ? rt.tasks[r.currentTaskId] : undefined;
           if (!t) { r.status = 'idle'; break; }
-          const dest = resolveDestination(doc, nav, a, t.destination.roomId ?? a.schedule.assignedRoomId, t.destination.workstationId);
+          // spread agents sent to the same room instead of stacking them on its centre
+          const taken = new Set<string>();
+          for (const [oid, o] of Object.entries(rt.agents)) if (oid !== a.id && o.destination) taken.add(key(o.destination.cell.x, o.destination.cell.y));
+          const dest = resolveDestination(doc, nav, a, t.destination.roomId ?? a.schedule.assignedRoomId, t.destination.workstationId, taken);
           if (!dest) { r.status = 'working'; break; } // work in place
           r.destination = dest;
           replan(doc, rt, nav, a.id);
@@ -261,6 +279,7 @@ export function step(doc: OfficeDoc, rt: RuntimeState, nav: NavGraph, opts: Step
         t.progress = Math.min(100, t.progress + 100 / Math.max(1, t.workUnits));
         if (t.progress >= 100) {
           t.status = 'done'; t.completedAt = new Date().toISOString();
+          if (t.assetId) completeAssetTask(doc, rt, t);
           if (t.costPerUnit) recordUsage(doc, rt, { agentId: a.id, projectId: t.projectId ?? null, taskId: t.id, credits: +(t.costPerUnit * t.workUnits).toFixed(2), kind: 'model', simulated: t.simulated });
           log(rt, { kind: 'task-complete', agentId: a.id, simulated: t.simulated, message: `${a.identity.name} completed “${t.name}”${t.simulated ? ' (simulated)' : ''}` });
           r.currentTaskId = null; r.destination = null; r.status = 'idle'; r.waitTicks = 15;
@@ -273,8 +292,15 @@ export function step(doc: OfficeDoc, rt: RuntimeState, nav: NavGraph, opts: Step
       }
       case 'idle': {
         if (r.waitTicks > 0) { r.waitTicks--; break; }
-        const t = nextTask(rt, a.id) ?? (opts.demoTasks && rand() < 0.03 ? demoTask(doc, rt, a, rand) : undefined);
+        if (hold) break; // finishing protected work only; no new starts
+        const t = nextTask(rt, a.id) ?? (opts.demoTasks && rand() < 0.03 ? (productionTask(doc, rt, a) ?? demoTask(doc, rt, a, rand)) : undefined);
         if (t) {
+          const why = startBlocked(doc, rt, frame, a, t);
+          if (why) { r.statusMessage = why; r.waitTicks = 10; break; }
+          r.statusMessage = undefined;
+          const did = frame.dept(a).id;
+          frame.activeByDept.set(did, (frame.activeByDept.get(did) ?? 0) + 1);
+          if (t.jobKind === 'render') frame.renderActive = true; else frame.backgroundActive++;
           const estimate = (t.costPerUnit ?? 0) * t.workUnits;
           const cleared = Object.values(rt.approvals).some((x) => x.taskId === t.id && x.status === 'approved');
           if (!cleared && estimate > a.budget.approvalAbove) { // routine spend under the agent's limit never bothers the owner

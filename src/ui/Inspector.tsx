@@ -1,5 +1,8 @@
 import { AlertTriangle, Copy, Navigation, Trash2, Wrench, XCircle } from 'lucide-react';
 import { useState } from 'react';
+import { GAME_META } from '../arcade/types';
+import type { GameId } from '../model/types';
+import { useArcade } from './ArcadeHost';
 import { useStore } from '../store/store';
 import { FURNITURE_TYPES, ROOM_TYPES, type Corridor, type CorridorEndpoint, type Furniture, type OfficeDoc, type Room } from '../model/types';
 import { FURNITURE_META, ROOM_META, furniturePreset, uid } from '../model/defaults';
@@ -152,8 +155,16 @@ function FurnitureInspector({ f }: { f: Furniture }) {
           <ColorField label="Colour" value={f.color} onChange={(color) => up({ color })} />
         </div>
         <Toggle label="Blocks movement" checked={f.blocking} onChange={(blocking) => up({ blocking })} />
-        {!ws && <div style={{ marginTop: 8 }}><button className="btn sm" onClick={() => up({ workstation: { name: `${doc.rooms[f.roomId]?.name ?? ''} Station` } }, 'Make workstation')}>Make workstation</button></div>}
+        {!ws && !f.arcade && <div style={{ marginTop: 8 }}><button className="btn sm" onClick={() => up({ workstation: { name: `${doc.rooms[f.roomId]?.name ?? ''} Station` } }, 'Make workstation')}>Make workstation</button></div>}
       </Section>
+      {f.type === 'arcade-cabinet' && (
+        <Section title="Arcade machine">
+          <SelectField label="Game" value={f.arcade?.game ?? 'pong'} options={(Object.keys(GAME_META) as GameId[]).map((g) => ({ value: g, label: GAME_META[g].title }))} onChange={(game) => up({ arcade: { game, theme: f.arcade?.theme ?? 'neon' } }, 'Change arcade game')} />
+          <SelectField label="Screen theme" value={(f.arcade?.theme ?? 'neon') as 'neon'} options={['neon', 'classic', 'synthwave', 'mono'] as const} onChange={(theme) => up({ arcade: { game: f.arcade?.game ?? 'pong', theme } }, 'Arcade theme')} />
+          <button className="btn sm primary" onClick={() => useArcade.getState().open(f.arcade?.game ?? 'pong')}>Play {GAME_META[f.arcade?.game ?? 'pong'].title}</button>
+          <p className="note">For you only. Agents can’t be sent to or assigned this machine; attempts are blocked and logged.</p>
+        </Section>
+      )}
       {ws && (
         <Section title="Workstation">
           <TextField label="Name" value={ws.name} onCommit={(name) => up({ workstation: { name } })} />

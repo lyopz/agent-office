@@ -4,7 +4,10 @@ import { produce } from 'immer';
 import { applyOps, type DocOp } from '../engine/ops';
 import { emptyOffice, makeAgent } from './defaults';
 import { findObjectSpot } from '../engine/spatial';
-import type { Agent, FurnitureType, KnowledgeEntry, OfficeDoc, Project } from './types';
+import type { Agent, FurnitureType, GameId, KnowledgeEntry, OfficeDoc, Project, RuntimeState } from './types';
+import { createAsset } from '../engine/production';
+import { validate } from '../engine/validate';
+import { makeDepartment } from './control';
 
 export function sampleOffice(): OfficeDoc {
   let doc = emptyOffice('NEXUS-7 Headquarters');
@@ -84,7 +87,7 @@ export function sampleOffice(): OfficeDoc {
     ['agent_pixel', ws('room_ops')[0]], ['agent_rusty', ws('room_shop')[0]], ['agent_echo', ws('room_rec')[0]],
   ];
   doc = applyOps(doc, assign.filter(([, f]) => f).map(([agentId, furnitureId]) => ({ op: 'workstation.assign', furnitureId: furnitureId!, agentId }) as DocOp)).doc;
-  return addHeadquarters(doc);
+  return addProductionWing(addHeadquarters(doc));
 }
 
 const HQ_CREATED = '2026-10-01T09:00:00.000Z';
@@ -171,4 +174,91 @@ function addHeadquarters(doc0: OfficeDoc): OfficeDoc {
     lib('kb_payroll', 'Agent compensation ledger', 'finance', 'Monthly allowances and approval limits per agent.', ['budget', 'ledger'], 0.95, { authorAgentId: 'agent_ledger', sensitive: true, allowedAgentIds: ['agent_ledger', 'agent_orion'] }),
   ]) run([{ op: 'library.upsert', entry }]);
   return doc;
+}
+
+/**
+ * The production wing: a high-capacity operations floor, the game development
+ * arcade (Roblox work plus the owner's arcade machines) and the Blender studio.
+ */
+function addProductionWing(doc0: OfficeDoc): OfficeDoc {
+  let doc = doc0;
+  const run = (ops: DocOp[]) => { const r = applyOps(doc, ops); if (r.errors.length) throw new Error(`sample wing: ${r.errors.join('; ')}`); doc = r.doc; };
+  run([
+    { op: 'room.create', id: 'room_floor', type: 'ops-floor', name: 'Operations Floor', x: 0, y: 46, w: 30, h: 17 },
+    { op: 'room.create', id: 'room_arcade', type: 'arcade', name: 'Game Dev Arcade', x: 38, y: 46, w: 18, h: 12 },
+    { op: 'room.create', id: 'room_blender', type: 'blender-studio', name: 'Blender Design Studio', x: 62, y: 46, w: 16, h: 11 },
+  ]);
+  run([
+    { op: 'rooms.connect', id: 'hall_floor', a: 'room_shop', b: 'room_floor', width: 3 },
+    { op: 'rooms.connect', id: 'hall_arcade', a: 'room_shop', b: 'room_arcade' },
+    { op: 'rooms.connect', id: 'hall_blender', a: 'room_arcade', b: 'room_blender' },
+    { op: 'rooms.connect', id: 'hall_studio3d', a: 'room_design', b: 'room_blender' },
+  ]);
+  // keep doorways clear: move any preset object a new door landed on
+  for (const i of validate(doc)) if (i.code === 'door-blocked') {
+    const f = doc.furniture[i.objectIds[0]]; const room = doc.rooms[f.roomId];
+    const spot = findObjectSpot(doc, room, f.type, { near: { x: f.x, y: room.h - 1 }, ignore: new Set([f.id]), rotation: f.rotation });
+    if (spot) run([{ op: 'furniture.update', id: f.id, patch: { x: spot.x, y: spot.y } }]);
+  }
+  run(Object.entries({ hall_floor: 'Floor Concourse', hall_arcade: 'Arcade Hall', hall_blender: 'Studio Walk', hall_studio3d: 'Design Link' }).map(([id, name]) => ({ op: 'corridor.update', id, patch: { name } }) as DocOp));
+
+  const place = (roomId: string, type: FurnitureType, id: string, near: { x: number; y: number }, extra: Record<string, unknown> = {}) => {
+    const room = doc.rooms[roomId]; const spot = findObjectSpot(doc, room, type, { near });
+    if (!spot) throw new Error(`sample wing: no room for ${type} in ${roomId}`);
+    run([{ op: 'furniture.add', id, roomId, type, x: spot.x, y: spot.y }]);
+    if (Object.keys(extra).length) run([{ op: 'furniture.update', id, patch: extra }]);
+  };
+  // arcade: development first, the owner's machines in the lounge corner
+  run(Object.values(doc.furniture).filter((f) => f.roomId === 'room_arcade' && f.type === 'arcade-cabinet').map((f) => ({ op: 'furniture.delete', id: f.id }) as DocOp));
+  const cabinets: [GameId, string][] = [['flappy', 'Sky Hopper'], ['pacman', 'Maze Muncher'], ['pong', 'Classic Pong']];
+  cabinets.forEach(([game, label], i) => place('room_arcade', 'arcade-cabinet', `cab_${game}`, { x: 13 + i * 2, y: 1 }, { arcade: { game, theme: 'neon' }, label }));
+  place('room_arcade', 'collab-table', 'fur_collab', { x: 6, y: 5 });
+  place('room_arcade', 'equipment-shelf', 'fur_eqshelf', { x: 16, y: 10 });
+  place('room_arcade', 'sofa', 'fur_arcade_sofa', { x: 13, y: 9 });
+  place('room_arcade', 'lounge-seat', 'fur_arcade_seat', { x: 13, y: 6 });
+  // studio equipment around the render wall and preview stage
+  place('room_blender', 'reference-display', 'fur_refs', { x: 7, y: 0 });
+  place('room_blender', 'review-table', 'fur_review', { x: 7, y: 5 });
+  place('room_blender', 'material-library', 'fur_materials', { x: 0, y: 10 });
+  place('room_blender', 'anim-station', 'fur_anim', { x: 1, y: 6 });
+  // floor: supplies and charging along the side wall
+  place('room_floor', 'charging-station', 'fur_charge', { x: 29, y: 1 });
+  place('room_floor', 'supply-station', 'fur_supply', { x: 29, y: 4 });
+
+  run([
+    { op: 'agent.createFromArchetype', archetype: 'roblox-dev', name: 'LUAU', id: 'agent_luau', roomId: 'room_arcade', workstationId: 'ws_luau' },
+    { op: 'agent.createFromArchetype', archetype: 'roblox-dev', name: 'QUEST', id: 'agent_quest', roomId: 'room_arcade', workstationId: 'ws_quest' },
+    { op: 'agent.createFromArchetype', archetype: 'qa-integrator', name: 'PROBE', id: 'agent_probe', roomId: 'room_arcade', workstationId: 'ws_probe' },
+    { op: 'agent.createFromArchetype', archetype: 'blender-artist', name: 'MESH', id: 'agent_mesh', roomId: 'room_blender', workstationId: 'ws_mesh' },
+    { op: 'agent.createFromArchetype', archetype: 'blender-artist', name: 'RIG', id: 'agent_rig', roomId: 'room_blender', workstationId: 'ws_rig' },
+    { op: 'agent.createFromArchetype', archetype: 'ecommerce', name: 'MERCH', id: 'agent_merch', roomId: 'room_market', workstationId: 'ws_merch' },
+    { op: 'agent.createFromArchetype', archetype: 'ecommerce', name: 'CART', id: 'agent_cart', roomId: 'room_market', workstationId: 'ws_cart' },
+  ]);
+  run([{ op: 'agent.update', id: 'agent_rig', patch: { appearance: { hairStyle: 'short', hairColor: '#c0c0c0' } } },
+    { op: 'agent.update', id: 'agent_quest', patch: { appearance: { hairStyle: 'ponytail', hairColor: '#ffd166' } } },
+    { op: 'agent.update', id: 'agent_cart', patch: { appearance: { hairStyle: 'buzz', hairColor: '#1a1410', skinTone: '#7a4a2a' } } }]);
+  const floor: DocOp[] = [];
+  for (let i = 1; i <= 24; i++) floor.push({ op: 'agent.createFromArchetype', archetype: 'ops-worker', name: `OPS-${String(i).padStart(2, '0')}`, id: `agent_ops${i}`, roomId: 'room_floor' });
+  run(floor);
+  const tones = ['#f6d7c3', '#c68a64', '#a0663f', '#7a4a2a', '#e8b897'], hair = ['#1a1410', '#5a3a1a', '#d4b483', '#2a1d14', '#8a8a8a'];
+  run(Array.from({ length: 24 }, (_, k) => ({ op: 'agent.update', id: `agent_ops${k + 1}`, patch: { identity: { createdAt: HQ_CREATED }, appearance: { skinTone: tones[k % 5], hairColor: hair[(k * 3) % 5], hairStyle: (['buzz', 'short', 'bun', 'ponytail', 'curly'] as const)[k % 5] } } }) as DocOp));
+  for (const id of ['agent_luau', 'agent_quest', 'agent_probe', 'agent_mesh', 'agent_rig', 'agent_merch', 'agent_cart']) run([{ op: 'agent.update', id, patch: { identity: { createdAt: HQ_CREATED } } }]);
+
+  for (const project of [
+    { id: 'proj_roblox', name: 'Neon Runner (Roblox)', ownerAgentId: 'agent_luau', budget: 300, forecastSpend: 240, status: 'active', description: 'A Roblox rooftop runner: Luau gameplay, levels and Blender-made characters and props.' },
+    { id: 'proj_store', name: 'Online Store', ownerAgentId: 'agent_merch', budget: 150, forecastSpend: 110, status: 'active', description: 'Listings, inventory and promotions for the store.' },
+  ] as Project[]) run([{ op: 'project.upsert', project }]);
+  // ensure every department has an explicit row, with production departments marked non-essential
+  for (const name of ['Game Development', '3D Design', 'E-commerce', 'Operations Floor']) run([{ op: 'department.update', name, patch: { ...makeDepartment(name), maxConcurrent: name === 'Operations Floor' ? 20 : null } }]);
+  return doc;
+}
+
+/** Starting production items for the sample office's game project. */
+export function seedSampleRuntime(doc: OfficeDoc, rt: RuntimeState) {
+  if (!doc.agents.agent_mesh || Object.keys(rt.assets).length) return;
+  const items: [string, Parameters<typeof createAsset>[1]['kind'], string][] = [
+    ['Runner character', 'character', 'agent_mesh'], ['Neon jacket cosmetic', 'cosmetic', 'agent_mesh'], ['Hoverboard prop', 'prop', 'agent_rig'],
+    ['Run cycle animation', 'animation', 'agent_rig'], ['Checkpoint system', 'luau-script', 'agent_luau'], ['Rooftop level', 'level', 'agent_quest'], ['Shop UI', 'ui', 'agent_quest'],
+  ];
+  for (const [name, kind, owner] of items) createAsset(rt, { name, kind, ownerAgentId: owner, projectId: 'proj_roblox' }, new Date(HQ_CREATED));
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../store/store';
-import { Section, SelectField, Toggle } from './primitives';
+import { NumberField, Section, SelectField, Toggle } from './primitives';
 import { providerStatus } from '../ai/providers';
 import { ThemeEditor } from './ThemeEditor';
 import { AlertSettingsPanel } from './AlertSettingsPanel';
@@ -25,6 +25,7 @@ export function Settings() {
 
 function OfficeSettings() {
   const st = useStore((s) => s.doc.settings);
+  const simplifyAbove = useStore((s) => s.doc.control.simplifyAbove);
   const { commit } = useStore.getState();
   const up = (patch: Partial<typeof st>, label: string) => commit([{ op: 'settings.update', patch }], label);
   return (
@@ -38,6 +39,7 @@ function OfficeSettings() {
         <h4>Motion</h4>
         <SelectField label="Animation intensity" value={st.animationIntensity} options={[{ value: 'off', label: 'Off (static)' }, { value: 'subtle', label: 'Subtle' }, { value: 'full', label: 'Full' }]} onChange={(animationIntensity) => up({ animationIntensity }, 'Animation intensity')} />
         <Toggle label="Idle agents wander a little (cosmetic only)" checked={st.idleWandering} onChange={(idleWandering) => up({ idleWandering }, 'Idle wandering')} />
+        <NumberField label="Simplify characters when more than this many are visible (0 = never)" value={simplifyAbove} min={0} max={1000} onCommit={(v) => commit([{ op: 'control.update', patch: { simplifyAbove: Math.max(0, Math.floor(v)) } }], 'Simplified display limit')} />
       </div>
     </div>
   );
