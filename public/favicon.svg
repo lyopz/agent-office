@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Neural Command Campus</title>
+  <rect x="2.5" y="2.5" width="59" height="59" rx="16" fill="#050a08" stroke="#39ff88" stroke-width="4"/>
+  <circle cx="32" cy="14" r="5" fill="#4cc9ff"/>
+  <rect x="9" y="31" width="7" height="13" rx="3.5" fill="#39ff88"/>
+  <rect x="48" y="31" width="7" height="13" rx="3.5" fill="#39ff88"/>
+  <rect x="14" y="19" width="36" height="35" rx="11" fill="#39ff88"/>
+  <rect x="18" y="26" width="28" height="14" rx="7" fill="#050a08"/>
+  <circle cx="25" cy="33" r="3.6" fill="#4cc9ff"/>
+  <circle cx="39" cy="33" r="3.6" fill="#4cc9ff"/>
+</svg>

@@ -20,6 +20,9 @@ Other scripts:
 | `npm run build` | Writes a production build to `dist/`. |
 | `npm run build:single` | Writes one self-contained `dist-single/index.html` that opens straight from disk. |
 | `npm run proxy` | Starts the server-side AI proxy for the live model (see below). |
+| `npm run desktop` | Builds the app and opens it in the desktop app (Electron). |
+| `npm run desktop:dev` | Opens the desktop app on the running dev server. Run `npm run dev` first. |
+| `npm run desktop:dist` | Builds installers for this platform into `release/` with electron-builder. |
 
 The app needs no account, backend, or API key. It opens with a sample office, "NEXUS-7", containing 8 rooms, 7 hallways and 6 agents.
 
@@ -46,7 +49,7 @@ The app needs no account, backend, or API key. It opens with a sample office, "N
   - Nothing is ever deleted silently.
 - **History and saving.**
   - Undo and redo with Ctrl+Z and Ctrl+Shift+Z, up to 100 steps.
-  - Autosave writes to this browser.
+  - Autosave writes to this browser every minute, but only when something has changed. In the desktop app it writes to files on disk. See [Saving](#saving).
   - The **Versions** menu saves named versions and can restore one, reset to the last save, duplicate the layout, start a blank office, or reload the sample.
   - Export and import use validated `.json` files.
 - **Characters.** Each agent has one appearance profile. The top-down, front, side, three-quarter and portrait views are all drawn from it.
@@ -65,6 +68,94 @@ The app needs no account, backend, or API key. It opens with a sample office, "N
 - **Dashboard.** Shows agent activity, the task queues, communications, errors, room occupancy and system health. Everything on this page comes from the simulation and is labelled that way.
 
 The full shortcut list is under **Settings**.
+
+## Saving
+
+Saves stay on your machine. The browser version uses this browser's `localStorage`, and the desktop app writes files on disk. Nothing is sent over the network.
+
+- **Autosave** runs every 60 seconds, and once more when the tab is hidden or closed. If the office (layout, agents and simulation state) hashes the same as at the last successful save, it skips the write entirely. You can turn it off under Settings → *Autosave*.
+- **Save now** in the top bar (or Ctrl+S) saves straight away. Next to it, the status shows one of:
+  - the last save time, such as "Saved 14:02 · 3 min ago"
+  - an amber **Unsaved changes** dot after an edit
+  - **Save failed** or **Saving paused** in red
+
+  Hover over the status for details.
+
+**The save format.** Each save is an envelope around the office:
+
+```json
+{ "format": "agent-office-save", "version": 1, "savedAt": "2026-10-19T14:02:11.000Z",
+  "checksum": "fnv1a32-1c9e04d2-48211", "doc": { … }, "runtime": { … } }
+```
+
+The checksum is FNV-1a over `{"doc":…,"runtime":…}` exactly as it is serialized, followed by its length. It catches saves that are cut short or corrupted. It is not a security feature. Autosave uses the same hash to tell whether anything changed. Saves from before the envelope still load, and the next save rewrites them in the envelope.
+
+**Atomic writes.** A save never touches the good copy until the new one has been checked:
+
+1. The new save goes to a separate slot. In the browser that is the `agent-office:pending` key. On desktop it is `current.json.tmp`, flushed to disk with fsync.
+2. The save is read back and checked byte for byte and against its checksum. If the check fails, the save stops, and the previous save and the backup are untouched.
+3. Only then does the previous save become the backup (`agent-office:backup` or `backup.json`). A good backup is never replaced by a previous save that is itself damaged.
+4. The new save replaces the current one (`agent-office:current`, or an atomic rename over `current.json`), and the pending copy is removed.
+
+**When a save is damaged.** Sometimes the current save can't be read: the JSON is bad, the checksum doesn't match, or the office fails validation. The app never discards a damaged save, and it never quietly loads the sample over it. Instead it:
+
+1. Keeps a copy under `damaged-<time>`. In the browser this is an `agent-office:damaged-…` key, and the last three are kept. On desktop it is a `damaged-….json` file next to the saves.
+2. Pauses all saving.
+3. Asks you to choose:
+   - **Restore backup** is offered when the backup is valid, and shows when it was saved.
+   - **Download damaged save** exports the raw text as a file.
+   - **Start fresh** loads the sample office after you confirm.
+
+Named versions and preferences stay in the browser's storage. In the desktop app, that storage is part of the app's data folder.
+
+## Desktop app
+
+| Command | What it does |
+|---|---|
+| `npm run desktop` | Builds the app and opens it in Electron. |
+| `npm run desktop:dist` | Makes an installer named **Neural Command Campus** in `release/`: NSIS on Windows, DMG on macOS, AppImage on Linux. electron-builder is configured in the `build` field of `package.json` and uses the icons in `build/`. |
+| `npm run desktop:dev` | Opens the desktop shell on the Vite dev server at `http://localhost:5173`, or on the local URL in `OFFICE_DEV_SERVER_URL`. |
+
+- **Saves** live in `<userData>/saves/` as `current.json`, `backup.json` and any `damaged-*.json` files. `userData` is the app's data folder for your user account:
+
+  | System | Folder |
+  |---|---|
+  | Windows | `%APPDATA%\Neural Command Campus` |
+  | macOS | `~/Library/Application Support/Neural Command Campus` |
+  | Linux | `~/.config/Neural Command Campus` |
+
+- **Bridge.** `desktop/preload.cjs` exposes one object, `window.officeDesktop`, with five calls: `saves.read()`, `saves.readBackup()`, `saves.write(text)`, `saves.keepDamaged(text)` and `saves.info()`.
+  - The main process (`desktop/main.cjs` and `desktop/saveStore.cjs`) does all the file work, with fixed file names.
+  - The page can't pass a path, read any other file, or see environment variables.
+  - When the bridge is there, the app saves to files (`FileRepository`). Otherwise it uses `localStorage`.
+- **Security.**
+  - The window runs with `contextIsolation` and `sandbox` on, and `nodeIntegration` off.
+  - The built app is served from a private `app://campus/` scheme with a strict Content-Security-Policy. Only the app's own scripts run, and no remote content loads, so the web fonts fall back to fonts on your computer. Network access is limited to `localhost`, for the optional AI proxy and Blender bridge.
+  - Navigation away from the app is blocked, new windows are refused, and http(s) links open in your browser.
+  - Every permission request except notifications is denied.
+  - Launching the app a second time focuses the window that is already open.
+
+## Logo
+
+The Neural Command Campus logo shows an agent's head inside a rounded badge. The head has a visor, an antenna node, a neural link between the eyes and a circuit-trace mouth. It uses three colours from the app palette:
+
+- panel black, `#050a08`
+- signal green, `#39ff88` (`--green-5`)
+- data blue, `#4cc9ff` (`--blue-5`)
+
+| File | Use |
+|---|---|
+| `src/brand/Logo.tsx` | `LogoMark`, the logo on its own (pass `simple` below about 24 px), and `LogoLockup`, the logo with "Neural Command Campus" as used in the top bar. |
+| `public/logo.svg` | The full logo. |
+| `public/favicon.svg` | A simpler version for 16–32 px: no thin lines, and larger eyes and antenna node. |
+| `build/icon.png` | The 512 px app icon, rendered from `logo.svg`. |
+| `build/icon.ico` | The Windows icon, with PNG images at 16 and 32 px (from `favicon.svg`) and at 48 and 256 px (from `logo.svg`). |
+
+To change the logo:
+
+1. Edit both SVG files and `Logo.tsx`.
+2. Re-render the PNGs with any SVG rasterizer. The current ones were rendered with headless Chromium.
+3. Pack the 16, 32, 48 and 256 px images into the `.ico`.
 
 ## AI Headquarters
 
@@ -217,8 +308,9 @@ src/
                 navigation (walkable grid, A*) · validate · simulation (tick loop)
   store/        zustand store: undoable document, runtime state, UI state,
                 commit (dry-run → validate → conflict) / undo / redo / autosave
-  persistence/  repository interface (localStorage now; swap in a server DB),
-                IndexedDB for uploaded character art
+  persistence/  repository interface, save envelope (saveFormat.ts), atomic
+                save backends (localStorage or desktop files), IndexedDB for art
+  brand/        logo and top-bar lockup
   characters/   procedural SVG character: front / ¾ / side / top / portrait,
                 idle / walk / work poses, flat / neon / realistic / pixel styles
   viewport/     floor plan canvas, rooms, corridors, agents, minimap, context menu
@@ -232,6 +324,7 @@ src/
                 wardrobe, theme editor, alert centre, alert settings, business
                 panels, sound (WebAudio), perf panel
 server/ai-proxy.mjs   server-side model proxy (key lives here)
+desktop/              Electron main process, preload bridge and save-file store
 tests/                acceptance suite
 examples/             sample-office.json (valid) and malformed-office.json (rejected)
 ```
@@ -296,6 +389,21 @@ A performance test builds an office of 48 rooms, more than 570 objects and 60 ag
 ### Executive control tests
 
 `tests/departments.test.ts` covers safe pause and resume with progress kept, the three render policies and saves, exclusions and the emergency pause, pause all and resume selected, enabling agents and batch assignment, task limits and resource policies, save and migration, 40 agents on the operations floor (under 15 ms per tick, no errors, no two agents on one cell), the production pipeline and its simulated labels, the human-only arcade lock and logging, and the character poses. `tests/arcade.test.ts` covers the three games, their caps and the daily limits. `tests/wardrobe.test.ts` covers the four-per-slot wardrobe, the uniform lock in every path that could change it, and the v4 → v5 migration.
+
+### Save tests
+
+`tests/save.test.ts` covers saving:
+
+- Unchanged content skips the write.
+- A save rotates the backup only after the new save has been verified.
+- A failed verification, or a full storage while rotating, leaves the current save and the backup intact.
+- A damaged current save (bad JSON, checksum mismatch or a failed schema check) is reported along with the valid backup and a kept copy. Nothing is overwritten, and a damaged current never replaces a good backup.
+- The store opens recovery and restores the backup.
+- A missing current save still offers the backup.
+- Legacy saves load and are migrated into the envelope.
+- Saves contain no secrets.
+- The desktop main process computes the same checksum.
+- The desktop file store writes atomically, rotates the backup, refuses invalid saves, and cleans up a write that was interrupted.
 
 ## Extending
 

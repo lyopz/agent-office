@@ -412,3 +412,24 @@ fieldset.plain:disabled { opacity: 0.55; }
 .char-grid figure { margin: 0; border: 1px solid var(--border); background: var(--bg); text-align: center; }
 .char-grid img { width: 100%; aspect-ratio: 2 / 3; object-fit: contain; display: block; }
 .char-grid figcaption { font-size: var(--fs-xs); padding: 4px; }
+
+/* ---------- brand + save status ---------- */
+.brand { display: inline-flex; align-items: center; gap: 8px; }
+.logo-lockup { display: inline-flex; align-items: center; gap: 8px; }
+.logo-words { display: inline-flex; flex-direction: column; line-height: 1.05; }
+.logo-line1 { font-size: 11px; font-weight: 700; letter-spacing: .14em; color: var(--accent); }
+.logo-line2 { font-size: 9px; font-weight: 600; letter-spacing: .42em; color: var(--accent-blue); text-shadow: none; }
+.save-status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); white-space: nowrap; }
+.save-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent); flex: none; }
+.save-status[data-state="dirty"] .save-dot { background: var(--warn); box-shadow: 0 0 6px color-mix(in srgb, var(--warn) 60%, transparent); animation: save-pulse 1.6s ease-in-out infinite; }
+.save-status[data-state="dirty"] .save-text { color: var(--warn); }
+.save-status[data-state="error"] .save-dot, .save-status[data-state="paused"] .save-dot { background: var(--danger); box-shadow: none; }
+.save-status[data-state="error"] .save-text, .save-status[data-state="paused"] .save-text { color: var(--danger); }
+.save-status[data-state="never"] .save-dot { background: var(--muted-2); box-shadow: none; }
+@keyframes save-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .save-status[data-state="dirty"] .save-dot { animation: none; } }
+.recovery-overlay { z-index: 45; }
+.recovery-overlay .modal-f { flex-wrap: wrap; }
+.recovery-body p { margin: 0 0 10px; color: var(--text); }
+.recovery-body code { color: var(--accent); }
+.recovery-confirm { border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent); padding: 10px; border-radius: var(--radius); margin-top: 6px; }

@@ -1,17 +1,17 @@
 import { saveFile } from '../persistence/saveFile';
 import { useEffect, useRef, useState } from 'react';
-import { Download, FolderOpen, History, Network, OctagonX, Pause, Play, Redo2, Save, Undo2, Upload } from 'lucide-react';
+import { Download, FolderOpen, History, Network, OctagonX, Pause, Play, Redo2, Undo2, Upload } from 'lucide-react';
 import { useStore } from '../store/store';
 import { repo } from '../store/store';
 import { confirmAction } from './primitives';
 import { providerStatus } from '../ai/providers';
 import { AlertBell } from './AlertCenter';
+import { SaveStatus } from './SaveStatus';
+import { LogoLockup } from '../brand/Logo';
 
 export function TopBar() {
   const name = useStore((s) => s.doc.name);
   const page = useStore((s) => s.page);
-  const dirty = useStore((s) => s.dirty);
-  const lastSaved = useStore((s) => s.lastSaved);
   const prefs = useStore((s) => s.prefs);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
@@ -33,7 +33,7 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <span className="brand">AGENT//HQ<small className="hide-sm">sim v0.2</small></span>
+      <span className="brand"><LogoLockup /><small className="hide-sm">sim v0.2</small></span>
       <input className="office-name" aria-label="Office name" defaultValue={name} key={name} onBlur={(e) => e.target.value.trim() && e.target.value !== name && s.commit([{ op: 'office.rename', name: e.target.value.trim() }], 'Rename office')} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
       <nav className="seg" aria-label="Pages">
         {(['office', 'dashboard', 'control', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'control' ? 'Control' : p[0].toUpperCase() + p.slice(1)}</button>)}
@@ -47,10 +47,9 @@ export function TopBar() {
         {[0.5, 1, 2, 4].map((v) => <option key={v} value={v}>{v}×</option>)}
       </select>
       <span className={`badge ${prov.kind} hide-sm`} title={prov.detail}>{prov.label}</span>
-      <span className="small muted hide-sm" aria-live="polite">{dirty ? (prefs.autosave ? 'Saving…' : 'Unsaved changes') : lastSaved ? `Saved ${new Date(lastSaved.at).toLocaleTimeString()}` : 'Not saved'}</span>
       <button className="btn icon sm" disabled={!canUndo} aria-label="Undo" title="Undo (Ctrl+Z)" onClick={s.undo}><Undo2 size={14} /></button>
       <button className="btn icon sm" disabled={!canRedo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)" onClick={s.redo}><Redo2 size={14} /></button>
-      <button className="btn sm" onClick={() => { s.save(); s.notify('Office saved'); }} title="Save (Ctrl+S)"><Save size={14} /><span className="hide-sm">Save</span></button>
+      <SaveStatus />
       <div style={{ position: 'relative' }}>
         <button className="btn sm" aria-expanded={versionsOpen} onClick={() => setVersionsOpen(!versionsOpen)}><History size={14} /><span className="hide-sm">Versions</span></button>
         {versionsOpen && <VersionsMenu onClose={() => setVersionsOpen(false)} />}

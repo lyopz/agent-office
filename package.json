@@ -3,6 +3,8 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "description": "AI Workforce Office: The Neural Command Campus",
+  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -12,7 +14,10 @@
     "typecheck": "tsc -b --noEmit",
     "proxy": "node server/ai-proxy.mjs",
     "blender-bridge": "node server/blender-bridge.mjs",
-    "graph:pow": "node tools/graph-pow/build.mjs"
+    "graph:pow": "node tools/graph-pow/build.mjs",
+    "desktop": "npm run build && electron .",
+    "desktop:dev": "node desktop/dev.cjs",
+    "desktop:dist": "npm run build && electron-builder"
   },
   "dependencies": {
     "immer": "^10.1.1",
@@ -35,5 +40,44 @@
     "vite": "^5.4.10",
     "vite-plugin-singlefile": "^2.0.3",
     "vitest": "^2.1.4"
+  },
+  "build": {
+    "appId": "app.neuralcommandcampus.desktop",
+    "productName": "Neural Command Campus",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "build/icon.png",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ]
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Office",
+      "target": [
+        "AppImage"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }
