@@ -6,6 +6,7 @@ import { repo } from '../store/store';
 import { confirmAction } from './primitives';
 import { providerStatus } from '../ai/providers';
 import { AlertBell } from './AlertCenter';
+import { HqSwitch } from './HqSwitch';
 import { SaveStatus } from './SaveStatus';
 import { LogoLockup } from '../brand/Logo';
 
@@ -35,8 +36,9 @@ export function TopBar() {
     <header className="topbar">
       <span className="brand"><LogoLockup /><small className="hide-sm">sim v0.2</small></span>
       <input className="office-name" aria-label="Office name" defaultValue={name} key={name} onBlur={(e) => e.target.value.trim() && e.target.value !== name && s.commit([{ op: 'office.rename', name: e.target.value.trim() }], 'Rename office')} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
+      <HqSwitch />
       <nav className="seg" aria-label="Pages">
-        {(['office', 'dashboard', 'control', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'control' ? 'Control' : p[0].toUpperCase() + p.slice(1)}</button>)}
+        {(['dashboard', 'control', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'control' ? 'Control' : p[0].toUpperCase() + p.slice(1)}</button>)}
       </nav>
       <GraphPowButton />
       <span className="spacer" />
