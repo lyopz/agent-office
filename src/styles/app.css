@@ -324,7 +324,7 @@ table.data tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transp
 /* ---------- executive control ---------- */
 .agent.paused { opacity: .5; }
 .agent.simple text { font-size: 9px; }
-.lod-badge { position: absolute; left: 10px; bottom: 10px; font-size: var(--fs-xs); letter-spacing: .08em; color: var(--text-dim); background: color-mix(in srgb, var(--panel) 85%, transparent); border: 1px solid var(--border); padding: 3px 8px; }
+.lod-badge { position: absolute; left: 10px; bottom: 44px; font-size: var(--fs-xs); letter-spacing: .08em; color: var(--text-dim); background: color-mix(in srgb, var(--panel) 85%, transparent); border: 1px solid var(--border); padding: 3px 8px; }
 .arcade-glow { animation: arcade-flicker 2.4s ease-in-out infinite; }
 @keyframes arcade-flicker { 50% { opacity: .2; } }
 .turntable { animation: turntable 6s linear infinite; }
@@ -513,3 +513,20 @@ fieldset.plain:disabled { opacity: 0.55; }
 .topbar > .office-name, .topbar > .spacer { flex-shrink: 1; }
 @media (max-width: 1750px) { .topbar .save-rel, .topbar .brand small { display: none; } }
 @media (max-width: 1500px) { .topbar > .badge, .topbar .sound-lbl { display: none; } }
+
+/* ---------- Roblox dev HQ: view switch, 3D stage, overview ---------- */
+.hq-switch .btn { gap: 5px; }
+.hq-stage { position: relative; min-height: 0; overflow: hidden; display: grid; }
+.hq-loading { display: grid; place-items: center; color: var(--muted); }
+.view-fade { animation: view-fade 0.28s ease-out; }
+@keyframes view-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .view-fade { animation: none; } }
+.overview-panel { position: absolute; left: 10px; top: 10px; width: min(340px, calc(100% - 20px)); max-height: 40%; display: flex; flex-direction: column; background: color-mix(in srgb, var(--panel) 94%, transparent); border: 1px solid var(--border); border-radius: 10px; z-index: 5; box-shadow: 0 8px 26px rgba(0,0,0,.3); }
+.overview-panel header { gap: 6px; padding: 7px 10px; flex-wrap: wrap; }
+.overview-teams { overflow: auto; padding: 0 10px 8px; }
+.overview-teams h4 { margin: 8px 0 3px; font-size: var(--fs-xs); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+.overview-teams ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.overview-teams li { display: grid; grid-template-columns: 8px 1fr auto auto; gap: 6px; align-items: center; padding: 2px 4px; border-radius: 6px; }
+.overview-teams li.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.overview-teams li i { width: 8px; height: 8px; border-radius: 50%; }
+.ov-name { font-size: var(--fs-sm); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

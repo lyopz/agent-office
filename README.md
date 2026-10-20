@@ -309,9 +309,113 @@ The sort moves rooms, re-aims single-hallway doors at their new neighbours and r
 
 *Undo sort* (or Ctrl+Z) reverts the whole sort. When nothing would bring collaborating rooms meaningfully closer, it says the campus is already well arranged. The engine is `src/engine/autosort.ts` (`roomAffinity`, `planAutoSort`) and is pure until you apply.
 
+### Roblox development headquarters
+
+On first run the app opens the **Roblox Development HQ** (`robloxHQ()` in `src/model/sample.ts`). It uses the bubble preset. The **Throne Room** sits at the centre and is the command centre. Seven team rooms surround it. Each room has a sign naming the team and its work, its own accent colour, floor tint and lighting, and furniture and wall displays that show what the team does:
+
+| Room (id) | Type | What you see |
+|---|---|---|
+| Roblox Development (`room_dev`) | `roblox-dev` | studio workstations (explorer tree, 3D viewport with a play button, properties panel), a live build preview, a code wall and a play-test rig |
+| Research (`room_research`) | `research` | a findings board with strings joining connected findings, searchable reference stacks, a note wall, an archive terminal and a player data station |
+| Game Design (`room_gamedesign`) | `game-design` | a level layout table (route, checkpoints, hazards), a mechanics loop board, a prototype pod and design desks |
+| 3D Design (`room_3d`) | `3d-design` | a dimensional blueprint wall, a wireframe stand, material swatches, a 3D preview turntable and modelling stations |
+| Typography & Fonts (`room_type`) | `typography` | a font specimen wall, a size and weight scale panel, lettering desks and a game interface preview |
+| Roblox Building (`room_build`) | `roblox-build` | a build plan board with phase progress, modular parts racks, a terrain table and scale reference figures |
+| Advertising & Creative (`room_ads`) | `ad-studio` | a campaign timeline, a concept review wall (approved, revise, rejected), image draft galleries and framed final assets |
+| Throne Room (`room_throne`) | `throne-room` | the throne inside a glowing crimson and violet bubble with horn-like spires, a war table mapping every team room, command displays, the briefing board and dark candelabras |
+
+Wide tubes run straight from the throne room's sides to the rooms beside it. An outer ring joins neighbouring rooms, so every room has two ways in, and closing any one tube never cuts a room off. Each team has agents built from role archetypes. The new archetypes are `game-designer`, `type-designer`, `roblox-builder` and `ad-creative`; the others reuse `roblox-dev`, `qa-integrator`, `librarian`, `market-analyst`, `blender-artist` and `coo`. Every agent sits at a workstation in its own room, and every room has a capsule station. Two projects are included: *Sky Islands Obby* and *Launch Campaign*.
+
+To switch between samples, open **Versions** and choose **Roblox HQ** or **NEXUS-7** (the classic sample). The new room types are also built-in room templates, and the AI console understands their names, for example "throne room", "type studio" or "campaign studio".
+
+**Avatar Studio** (`src/ui/AvatarStudio.tsx`) is where you customise your own character (`doc.player`):
+- **Style**: body proportions (blocky, heroic, chibi, sleek), height, build, skin tone and glow accent.
+- **Face**: expression (neutral, smile, grin, focused, surprised, smirk, determined), face shape, eyes, eye colour, brows, nose, mouth, cheeks, facial hair and markings.
+- **Hair**: every style. Swept, spiky, undercut, afro, braids and twin buns are sculpted in 3D and tagged "3D".
+- **Outfit**: tops, bottoms, shoes, headwear, glasses, gloves and belt, with their colours.
+
+Six original one-click looks are included: Neon Runner, Pixel Knight, Star Courier, Cozy Builder, Arcane Scholar and Circuit Ace. You can also **Randomize** or **Reset** the look. Each change is one `player.update` operation, so Undo steps back through them, and an empty name is refused. The studio shows a large 3D preview and the 2D views used on the floor plan. Every control is a labelled radio group, slider or swatch you can operate from the keyboard. The turntable and animations stop when the system asks for reduced motion.
+
+In 2D, the new hair styles and expressions are drawn in every view. A look without the new optional fields (`expression`, `mouth`, `nose`, `cheeks`, `bodyStyle`) draws exactly as before, so existing characters and their sprite keys don't change.
+### 3D headquarters
+
+The 3D headquarters (`src/hq3d/`) is built live from the same office the floor plan shows: one grid cell is one world unit, and every edit, theme change or agent move appears in 3D without a reload. It loads on demand (`React.lazy(() => import('./hq3d/HQ3DView'))`), so three.js isn't downloaded for the 2D views.
+
+**Rooms.** Each room gets a floor in its own colour and pattern, a hovering sign with its name and team, and lighting tinted by its accent. In the bubble office a room is a floating platform under an iridescent glass dome; in the grid preset it has low walls with lit doorways. Every room also gets wall displays that show what its team does, picked from the room's type, name and purpose:
+- Roblox development: a script editor and a live build preview.
+- Research: a findings board with connected notes and a reference search.
+- Game design: a level layout and the gameplay loop.
+- 3D design: blueprints and material samples.
+- Typography: font comparisons and an in-game UI preview.
+- Building: the build plan, modular parts and a scale figure.
+- Advertising: the campaign board and image drafts through to final assets.
+- Throne room: the command overview and team status.
+
+Furniture is modelled from the object catalogue. Desks carry live screens, server racks blink, tube stations send capsules, holo tables project models, and arcade cabinets show their game. The throne sits inside a pulsing crimson-and-violet force-field bubble with horn spires and rising embers (or inside the room's `devil-bubble`, when it has one). You can walk into the bubble.
+
+**Bubble tubes.** Hallways are walkable glass tubes, wider than the corridor so avatars and agents fit with headroom. Each has a lit deck, light pulses running along it and a glowing ring at each doorway. Every tube mouth has two signs: one names the room you're entering, and the other, seen from the room, names where the tube leads. Agents ride the tubes on hover discs.
+
+**Exploring.**
+
+| Control | Action |
+|---|---|
+| W A S D / arrow keys | move (Left and Right arrows turn) |
+| Shift | run (tubes add a speed boost) |
+| Space | jump |
+| Drag | look; in first person, click to lock the mouse and Esc to release it |
+| Mouse wheel | zoom the third-person camera |
+| V, or the view button | switch between first and third person |
+| E, or click | interact with what you face |
+| T, or *Tube map* | fast travel |
+| M | minimap |
+| H | show or hide the controls |
+
+Collision uses the agents' navigation grid, so you can never pass through a wall. You can only cross between a room and a tube through a doorway, and you slide along walls rather than sticking.
+
+What E or a click does depends on what you face:
+- the briefing board opens the hourly briefing;
+- an arcade cabinet starts its game;
+- an agent opens their profile;
+- any other working object shows its details.
+
+The tube map shows every room and tube. Pick a room and the avatar glides there through the tubes; with reduced motion, or *Animation* set to off, it cuts straight there.
+
+The camera mode is saved with the office (`player.camera`), and so is the last room visited (`player.lastRoomId`, saved after you've been in the room for 2.5 seconds). You start in that last room, otherwise in front of the throne.
+
+**Accessibility and performance.**
+- The canvas is focusable, with instructions for screen readers and announcements when you enter a room.
+- Reduced motion turns off camera bob, idle animation, light pulses and LED blinking.
+- Rendering pauses when the tab is hidden.
+- Without WebGL the view shows "3D needs WebGL; use the 2D overview" instead of failing.
+- Glow (bloom) can be turned off from the toolbar.
+- Static furniture is merged per room and material, and materials and unit geometries are shared and released when the view closes.
+
+**Characters.** `buildCharacter(appearance)` in `src/hq3d/character3d.ts` makes original, game-inspired characters in four body styles: `blocky`, `heroic` (the default), `chibi` and `sleek`.
+- Faces are modelled: eyes with irises and highlights, brows, nose, mouth and cheeks follow `expression`, `mouth`, `nose` and `cheeks`. Faces also blink.
+- Hair is 3D, including spiky, afro, braids, undercut, swept and twin buns.
+- Outfits, headwear, glasses, gloves, belts, shoulder pieces, jewellery and hand-held equipment all use their own colours.
+
+`animateCharacter(group, pose, t)` poses a character as idle, walking, running, working, thinking, talking, riding, waving, alerted or paused. `AvatarPreview3D` shows one appearance on a turntable that you can drag or rotate with the arrow keys; it doesn't auto-rotate under reduced motion. It loads three.js on demand too.
+
+**Code map.**
+
+| File | What it holds |
+|---|---|
+| `layout.ts` | pure scene description: room themes, walls with door gaps, domes, display slots, tube paths, spawn |
+| `collision.ts` | `moveWithCollision` |
+| `travel.ts` | fast-travel routes |
+| `proportions.ts` | body-style tables |
+| `controls.ts` | movement and camera |
+| `scene.ts` | three.js scene, rebuilt per room, tube and agent by object identity |
+| `furniture3d.ts` | furniture models |
+| `textures.ts` | screen and sign content |
+| `materials.ts` | shared materials |
+
+`tests/hq3d.test.ts` covers the pure parts without WebGL.
+
 ### Schema version 6
 
-Version 6 adds `settings.layoutPreset`. Older files migrate to the grid preset, so their look doesn't change, and gain the Royal Lounge room template.
+Version 6 adds `settings.layoutPreset`. Older files migrate to the grid preset, so their look doesn't change, and gain the Royal Lounge room template. Moving to version 7 adds your avatar (`player`), the headquarters team room templates and the uniforms for the new roles.
 
 ### Schema version 5
 

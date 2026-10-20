@@ -5,6 +5,7 @@ export const DEPARTMENT_COLORS: Record<string, string> = {
   Executive: '#d4a84a', Operations: '#39ff88', Finance: '#f2b544', Research: '#5ad1ff', Product: '#b57bff',
   Creative: '#ff6fb5', Engineering: '#ff9f43', 'Game Development': '#ff6fb5', '3D Design': '#ff9f43',
   'E-commerce': '#39d0c8', 'Operations Floor': '#39ff88', Marketing: '#ff8a5c',
+  'Game Design': '#39d0c8', Typography: '#f4e7c8', 'Roblox Building': '#f2c230', Advertising: '#ff6fb5', Command: '#ff3b5c',
 };
 /** Departments that keep the company running; resource policies never pause them automatically. */
 export const ESSENTIAL = new Set(['Executive', 'Operations', 'Finance']);

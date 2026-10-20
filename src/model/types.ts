@@ -14,6 +14,8 @@ export const ROOM_TYPES = [
   'executive', 'library', 'finance', 'engineering', 'design', 'studio', 'market',
   'ops-floor', 'arcade', 'blender-studio',
   'royal-lounge',
+  // Roblox development headquarters: one room per team around the throne room
+  'roblox-dev', 'game-design', '3d-design', 'typography', 'roblox-build', 'ad-studio', 'throne-room',
 ] as const;
 export type RoomType = (typeof ROOM_TYPES)[number];
 
@@ -99,6 +101,16 @@ export const FURNITURE_TYPES = [
   'sculpture', 'floor-light', 'wall-panel', 'window', 'deco-robot', 'aquarium', 'wall-art', 'ambient-machine',
   // royal lounge
   'briefing-board', 'throne', 'lounge-sofa', 'crown-chandelier', 'holo-fountain',
+  // Roblox development headquarters (one set per team room)
+  'team-sign',
+  'studio-workstation', 'build-preview', 'code-wall',
+  'evidence-board', 'reference-stack', 'note-wall',
+  'level-layout-table', 'mechanics-board', 'prototype-pod', 'planning-desk',
+  'blueprint-wall', 'wireframe-stand', 'material-swatches', 'preview-turntable',
+  'font-specimen-wall', 'type-scale-panel', 'lettering-desk', 'game-ui-preview',
+  'modular-parts-rack', 'terrain-table', 'scale-figure', 'build-plan-board',
+  'campaign-board', 'concept-review-wall', 'image-draft-gallery', 'final-asset-display',
+  'devil-bubble', 'war-table', 'command-display', 'dark-candelabra',
 ] as const;
 export type FurnitureType = (typeof FURNITURE_TYPES)[number];
 
@@ -145,7 +157,7 @@ export interface Appearance {
   eyeStyle: 'dot' | 'almond' | 'wide' | 'visor';
   eyeColor: string;
   brows: 'none' | 'thin' | 'thick' | 'angled';
-  hairStyle: 'bald' | 'buzz' | 'short' | 'long' | 'bun' | 'ponytail' | 'mohawk' | 'curly';
+  hairStyle: 'bald' | 'buzz' | 'short' | 'long' | 'bun' | 'ponytail' | 'mohawk' | 'curly' | HairStyle3D;
   hairColor: string;
   facialHair: 'none' | 'stubble' | 'beard' | 'mustache';
   top: 'tshirt' | 'hoodie' | 'suit' | 'labcoat' | 'coverall' | 'uniform' | 'vest' | 'jacket' | 'robe' | 'armor' | 'longcoat';
@@ -179,6 +191,29 @@ export interface Appearance {
   shading: 'none' | 'soft' | 'hard';
   animationSpeed: number;   // 0.5..2
   preferredView: ViewMode;  // view used on the floor plan when global view = 'auto'
+  // 3D headquarters (optional so older looks keep their render keys)
+  expression?: Expression;  // resting facial expression
+  bodyStyle?: BodyStyle;    // overall 3D proportions
+  mouth?: 'small' | 'wide' | 'full';
+  nose?: 'button' | 'straight' | 'broad' | 'none';
+  cheeks?: 'none' | 'blush' | 'dimples';
+}
+
+/** Hair styles modelled for the 3D headquarters (also drawn, simplified, in 2D). */
+export const HAIR_STYLES_3D = ['spiky', 'afro', 'braids', 'undercut', 'swept', 'twin-buns'] as const;
+export type HairStyle3D = (typeof HAIR_STYLES_3D)[number];
+export const EXPRESSIONS = ['neutral', 'smile', 'grin', 'focused', 'surprised', 'smirk', 'determined'] as const;
+export type Expression = (typeof EXPRESSIONS)[number];
+/** Original game-inspired 3D proportions: chunky blocks, heroic, chibi (big head), sleek. */
+export const BODY_STYLES = ['blocky', 'heroic', 'chibi', 'sleek'] as const;
+export type BodyStyle = (typeof BODY_STYLES)[number];
+
+/** The person using the app: their avatar in the 3D headquarters. */
+export interface PlayerProfile {
+  name: string;
+  appearance: Appearance;
+  camera: 'first' | 'third';
+  lastRoomId: ID | null;
 }
 
 export interface CharacterEffects {
@@ -402,6 +437,7 @@ export interface OfficeDoc {
   departments: Record<ID, Department>;
   control: ControlSettings;
   arcade: ArcadeSettings;
+  player: PlayerProfile;
 }
 
 // ---------- Departments and executive control ----------

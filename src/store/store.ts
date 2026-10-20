@@ -14,7 +14,7 @@ import { applyOps, type DocOp } from '../engine/ops';
 import { newErrors, validate, type Issue } from '../engine/validate';
 import { buildNav, type NavGraph } from '../engine/navigation';
 import { createTask, emptyRuntime, goTo, log, reconcileLayout, step, syncRuntime } from '../engine/simulation';
-import { sampleOffice, seedSampleRuntime } from '../model/sample';
+import { robloxHQ, sampleOffice, seedSampleRuntime } from '../model/sample';
 import { emptyOffice } from '../model/defaults';
 import { createRepository, type LoadResult, type OfficeRepository, type Preferences, type SaveResult } from '../persistence/repository';
 import { exportOffice, parseOffice } from '../model/schema';
@@ -85,12 +85,14 @@ interface State {
   page: 'office' | 'dashboard' | 'control' | 'settings';
   toast: { id: number; text: string; level: 'info' | 'warn' | 'error' } | null;
   hallwayDraft: { roomId: string; doorId: string } | null;
+  /** Room the 3D view should travel to next (set by “Enter in 3D”). */
+  focusRoomId: string | null;
 
   commit(ops: DocOp[], label: string, opts?: { force?: boolean; silent?: boolean }): CommitResult;
   dryRun(ops: DocOp[]): CommitResult;
   runRuntimeOps(ops: RuntimeOp[]): string[];
   undo(): void; redo(): void;
-  setUi(p: Partial<Pick<State, 'mode' | 'tool' | 'selection' | 'camera' | 'view' | 'preview' | 'conflict' | 'profileAgentId' | 'profileTab' | 'page' | 'furnitureType' | 'placeRotation' | 'hallwayDraft'>>): void;
+  setUi(p: Partial<Pick<State, 'mode' | 'tool' | 'selection' | 'camera' | 'view' | 'preview' | 'conflict' | 'profileAgentId' | 'profileTab' | 'page' | 'furnitureType' | 'placeRotation' | 'hallwayDraft' | 'focusRoomId'>>): void;
   setLayer(k: keyof State['layers'], v: boolean): void;
   setPrefs(p: Partial<Preferences>): void;
   notify(text: string, level?: 'info' | 'warn' | 'error'): void;
@@ -109,19 +111,20 @@ interface State {
   loadDoc(doc: OfficeDoc, label: string, runtime?: Partial<RuntimeState> | null): void;
   importText(text: string): { ok: boolean; errors: string[]; warnings: string[] };
   exportText(): string;
-  newOffice(sample: boolean): void;
+  /** true = the classic NEXUS-7 sample, 'roblox' = the Roblox development headquarters, false = blank. */
+  newOffice(sample: boolean | 'roblox'): void;
 }
 
 export const repo: OfficeRepository = createRepository();
 
-const DEFAULT_PREFS: Preferences = { autosave: true, viewMode: 'auto', showDashboard: true, aiProvider: 'mock', autoApplySafe: true, simSpeed: 1, simRunning: true, demoTasks: true, characterStyle: 'rendered' };
+const DEFAULT_PREFS: Preferences = { autosave: true, viewMode: 'auto', showDashboard: true, aiProvider: 'mock', autoApplySafe: true, simSpeed: 1, simRunning: true, demoTasks: true, characterStyle: 'rendered', hqView: '3d' };
 
 function initial() {
   const loaded = repo.load();
   // a damaged save is reported (recovery dialog), never replaced: the sample below is only a placeholder
   const recovery = loaded.status === 'corrupt' ? loaded : null;
   const saved = loaded.status === 'ok' ? loaded : null;
-  const doc = saved?.doc ?? sampleOffice();
+  const doc = saved?.doc ?? robloxHQ(); // first run opens the Roblox development headquarters
   const runtime: RuntimeState = { ...emptyRuntime(), ...(saved?.runtime ?? {}) } as RuntimeState;
   runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {}; runtime.usage ??= []; runtime.approvals ??= {}; runtime.alerts ??= {}; runtime.capsules ??= {}; runtime.policyHeld ??= []; runtime.arcadeSessions ??= []; runtime.assets ??= {};
   const nav = buildNav(doc);
@@ -166,7 +169,7 @@ export const useStore = create<State>((set, get) => {
     camera: { x: -40, y: -40, zoom: 0.8 },
     view: (prefs.viewMode as GlobalView) ?? 'auto',
     layers: { grid: true, snap: true, boundaries: true, paths: false, occupancy: true, labels: true, perf: false },
-    preview: null, conflict: null, profileAgentId: null, profileTab: 'identity', page: 'office', toast: null, hallwayDraft: null,
+    preview: null, conflict: null, profileAgentId: null, profileTab: 'identity', page: 'office', toast: null, hallwayDraft: null, focusRoomId: null,
 
     dryRun(ops) {
       const { doc, issues } = get();
@@ -370,7 +373,7 @@ export const useStore = create<State>((set, get) => {
       return exportOffice(doc, { runtime: { tasks: runtime.tasks } });
     },
     newOffice(sample) {
-      const doc = sample ? sampleOffice() : emptyOffice('Blank Office');
+      const doc = sample === 'roblox' ? robloxHQ() : sample ? sampleOffice() : emptyOffice('Blank Office');
       const prev = get().doc;
       const rt = emptyRuntime(); const nav = buildNav(doc); syncRuntime(doc, rt, nav);
       if (sample) seedSampleRuntime(doc, rt);

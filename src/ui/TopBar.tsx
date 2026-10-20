@@ -6,6 +6,7 @@ import { repo } from '../store/store';
 import { confirmAction } from './primitives';
 import { providerStatus } from '../ai/providers';
 import { AlertBell } from './AlertCenter';
+import { HqSwitch } from './HqSwitch';
 import { SaveStatus } from './SaveStatus';
 import { LogoLockup } from '../brand/Logo';
 
@@ -35,8 +36,9 @@ export function TopBar() {
     <header className="topbar">
       <span className="brand"><LogoLockup /><small className="hide-sm">sim v0.2</small></span>
       <input className="office-name" aria-label="Office name" defaultValue={name} key={name} onBlur={(e) => e.target.value.trim() && e.target.value !== name && s.commit([{ op: 'office.rename', name: e.target.value.trim() }], 'Rename office')} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
+      <HqSwitch />
       <nav className="seg" aria-label="Pages">
-        {(['office', 'dashboard', 'control', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'control' ? 'Control' : p[0].toUpperCase() + p.slice(1)}</button>)}
+        {(['dashboard', 'control', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'control' ? 'Control' : p[0].toUpperCase() + p.slice(1)}</button>)}
       </nav>
       <GraphPowButton />
       <span className="spacer" />
@@ -76,7 +78,8 @@ function VersionsMenu({ onClose }: { onClose: () => void }) {
         <button className="btn sm" title="Store a copy of this layout as a version you can restore or keep editing separately" onClick={() => { s.saveVersion(`${doc.name} (duplicate)`); force((x) => x + 1); }}>Duplicate layout</button>
       </div>
       <div className="row" style={{ marginTop: 4, gap: 4 }}>
-        <button className="btn sm" onClick={() => confirmAction({ title: 'Load sample office?', confirmLabel: 'Load sample', body: 'Replaces the current layout with the bundled sample. Undo brings your layout back, and saved versions are kept.', onConfirm: () => { s.newOffice(true); onClose(); } })}><FolderOpen size={13} />Sample</button>
+        <button className="btn sm" title="Load the Roblox development headquarters sample" onClick={() => confirmAction({ title: 'Load the Roblox HQ sample?', confirmLabel: 'Load Roblox HQ', body: 'Replaces the current layout with the Roblox development headquarters: a throne room surrounded by seven team rooms. Undo brings your layout back, and saved versions are kept.', onConfirm: () => { s.newOffice('roblox'); onClose(); } })}><FolderOpen size={13} />Roblox HQ</button>
+        <button className="btn sm" title="Load the classic NEXUS-7 sample office" onClick={() => confirmAction({ title: 'Load the NEXUS-7 sample?', confirmLabel: 'Load NEXUS-7', body: 'Replaces the current layout with the classic NEXUS-7 sample office. Undo brings your layout back, and saved versions are kept.', onConfirm: () => { s.newOffice(true); onClose(); } })}>NEXUS-7</button>
         <button className="btn sm" onClick={() => confirmAction({ title: 'Start a blank office?', confirmLabel: 'New blank office', body: 'Replaces the current layout with an empty one. Undo brings your layout back, and saved versions are kept.', onConfirm: () => { s.newOffice(false); onClose(); } })}>Blank</button>
       </div>
       <div className="label" style={{ margin: '10px 0 4px' }}>Saved versions ({versions.length})</div>

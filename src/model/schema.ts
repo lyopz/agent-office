@@ -1,13 +1,13 @@
 // Schema validation + migrations for saved/imported offices.
 import { z } from 'zod';
-import { DEFAULT_APPEARANCE, DEFAULT_OUTFITS, ROLE_UNIFORMS, builtinRoomTemplates, makeAgent, roleUniformId, withAppearance } from './defaults';
+import { DEFAULT_APPEARANCE, DEFAULT_OUTFITS, HQ_ROOM_TEMPLATE_SIZES, defaultPlayer, ROLE_UNIFORMS, builtinRoomTemplates, makeAgent, roleUniformId, withAppearance } from './defaults';
 import { FURNITURE_MATERIALS, FURNITURE_TYPES, LAYOUT_PRESETS, ROOM_TYPES, type OfficeDoc } from './types';
 import { BUILTIN_COSMETICS, OUTFIT_FIELDS } from './cosmetics';
 import { defaultAppearanceSettings } from './themes';
 import { defaultAlertSettings } from './alertDefaults';
 import { TOKEN_FREE_VERIFIED, defaultArcade, defaultControl } from './control';
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 const id = z.string().min(1).max(120);
 const num = z.number().finite();
@@ -139,6 +139,10 @@ export const officeSchema = z.object({
   departments: z.record(department),
   control,
   arcade,
+  player: z.object({
+    name: z.string().min(1).max(60), appearance: z.record(z.unknown()),
+    camera: z.enum(['first', 'third']).default('third'), lastRoomId: z.string().nullable().default(null),
+  }).default(() => defaultPlayer() as unknown as { name: string; appearance: Record<string, unknown>; camera: "first" | "third"; lastRoomId: string | null }),
 });
 
 const SECRET_KEYS = /^(api[-_]?key|secret|token|password|authorization|credential)s?$/i;
@@ -220,6 +224,16 @@ const migrations: Record<number, (d: Raw) => Raw> = {
     d.schemaVersion = 6;
     return d;
   },
+  // v6 → v7: Roblox dev headquarters — the owner's own avatar for the 3D view.
+  6: (d) => {
+    d.player ??= defaultPlayer();
+    // the headquarters team rooms join the built-in templates, and their roles' uniforms the outfit list
+    d.roomTemplates = Array.isArray(d.roomTemplates) ? d.roomTemplates : [];
+    for (const t of builtinRoomTemplates()) if (HQ_ROOM_TEMPLATE_SIZES.some(([type]) => type === t.type) && !d.roomTemplates.some((x: Raw) => x?.id === t.id)) d.roomTemplates.push(t);
+    if (Array.isArray(d.outfitTemplates)) for (const u of ROLE_UNIFORMS) if (!d.outfitTemplates.some((t: Raw) => t?.id === u.id)) d.outfitTemplates.push(JSON.parse(JSON.stringify(u)));
+    d.schemaVersion = 7;
+    return d;
+  },
 };
 
 function fillAgent(a: Raw): Raw {
@@ -254,6 +268,8 @@ export function parseOffice(input: unknown): ParseResult {
       return { ok: false, errors: r.error.issues.slice(0, 12).map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`) };
     }
     const doc = r.data as unknown as OfficeDoc;
+    doc.player.appearance = withAppearance(DEFAULT_APPEARANCE, doc.player.appearance as Partial<OfficeDoc['player']['appearance']>);
+    if (doc.player.lastRoomId && !doc.rooms[doc.player.lastRoomId]) doc.player.lastRoomId = null;
     for (const [k, a] of Object.entries(doc.agents)) doc.agents[k] = fillAgent(a as unknown as Raw) as unknown as OfficeDoc['agents'][string];
     if (!doc.roomTemplates.length) doc.roomTemplates = builtinRoomTemplates();
     // referential integrity

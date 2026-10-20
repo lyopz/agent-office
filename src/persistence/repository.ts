@@ -15,7 +15,9 @@ import type { OfficeDesktopBridge } from './desktopBridge';
 export { SaveError } from './backends';
 
 export interface SavedVersion { id: string; officeId: string; name: string; savedAt: string; doc: OfficeDoc }
-export interface Preferences { autosave: boolean; viewMode: string; showDashboard: boolean; aiProvider: string; autoApplySafe: boolean; simSpeed: number; simRunning: boolean; demoTasks: boolean; characterStyle?: 'rendered' | 'drawn' }
+export interface Preferences { autosave: boolean; viewMode: string; showDashboard: boolean; aiProvider: string; autoApplySafe: boolean; simSpeed: number; simRunning: boolean; demoTasks: boolean; characterStyle?: 'rendered' | 'drawn'; hqView?: HqView }
+/** Which way the headquarters is shown on the Office page. */
+export type HqView = 'overview' | '3d' | 'avatar';
 
 export interface LoadedSave { doc: OfficeDoc; runtime: Partial<RuntimeState> | null; savedAt: string }
 
