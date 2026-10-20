@@ -42,7 +42,6 @@ export function Toolbar() {
   const mode = useStore((s) => s.mode);
   const tool = useStore((s) => s.tool);
   const layers = useStore((s) => s.layers);
-  const view = useStore((s) => s.view);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
   const multiRooms = useStore((s) => s.selection.kind === 'room' && s.selection.ids.length > 1);
@@ -108,24 +107,7 @@ export function Toolbar() {
       <span className="spacer" />
       <button className="btn sm" title="Hourly briefing: done, active, blocked and queued work" onClick={() => useBriefing.getState().show()}><Crown size={14} aria-hidden="true" />Briefing</button>
       <button className="btn icon sm" aria-pressed={layers.perf} title="Performance diagnostics" aria-label="Performance diagnostics" onClick={() => setLayer('perf', !layers.perf)}><Gauge size={15} /></button>
-      <label className="row small muted" style={{ gap: 4 }}>View
-        <select aria-label="Character view" value={view} onChange={(e) => { setUi({ view: e.target.value as never }); useStore.getState().setPrefs({ viewMode: e.target.value }); }}>
-          <option value="auto">Per agent</option><option value="top">Top-down</option><option value="front">Front</option><option value="side">Side</option><option value="three-quarter">Three-quarter</option>
-        </select>
-      </label>
-      <CharacterStyle />
     </div>
   );
 }
 
-/** Blender-rendered characters or the drawn ones. Rendered sprites are 3/4 views, so top-down stays drawn. */
-function CharacterStyle() {
-  const style = useStore((s) => s.prefs.characterStyle ?? 'rendered');
-  return (
-    <label className="row small muted" style={{ gap: 4 }} title="Rendered uses the Blender characters where a render matches the agent's current look">Characters
-      <select aria-label="Character style" value={style} onChange={(e) => useStore.getState().setPrefs({ characterStyle: e.target.value as 'rendered' | 'drawn' })}>
-        <option value="rendered">Rendered (Blender)</option><option value="drawn">Drawn</option>
-      </select>
-    </label>
-  );
-}

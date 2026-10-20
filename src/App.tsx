@@ -1,12 +1,14 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from './store/store';
 import { TopBar } from './ui/TopBar';
 import { Toolbar } from './ui/Toolbar';
 import { AutoSortPanel } from './ui/AutoSort';
-import { setHqView, useHqView } from './ui/HqSwitch';
+import { ClassicToggle, setHqView, useHqView } from './ui/HqSwitch';
 import { OverviewPanel } from './ui/OverviewPanel';
-import { AvatarStudio } from './ui/AvatarStudio';
-const HQ3DView = lazy(() => import('./hq3d/HQ3DView'));
+import BrainView from './brain/BrainView';
+import { Taskbar } from './brain/Taskbar';
+import { BallStudio } from './brain/BallStudio';
+import { AgentGraphPow } from './brain/AgentGraphPow';
 import { AgentPanel } from './ui/AgentPanel';
 import { Inspector } from './ui/Inspector';
 import { Console } from './ui/Console';
@@ -83,19 +85,20 @@ export function App() {
   const tool = useStore((s) => s.tool);
   const perf = useStore((s) => s.layers.perf);
   const hqView = useHqView();
-  const focusRoomId = useStore((s) => s.focusRoomId);
   const [mobile, setMobile] = useState<'office' | 'agents' | 'inspect'>('office');
   return (
     <div className="app">
       <TopBar />
-      {page === 'office' && hqView === '3d' && (
-        <main className="hq-stage view-fade" key="3d">
-          <Suspense fallback={<div className="hq-loading" role="status">Loading the 3D headquarters…</div>}>
-            <HQ3DView focusRoomId={focusRoomId} onFocusDone={() => useStore.getState().setUi({ focusRoomId: null })} />
-          </Suspense>
+      {page === 'office' && hqView === 'brain' && (
+        <main className="brain-stage view-fade" key="brain">
+          <div style={{ position: 'relative', minHeight: 0, display: 'grid' }}>
+            <BrainView />
+            <div className="brain-top"><ClassicToggle /></div>
+          </div>
+          <Taskbar />
         </main>
       )}
-      {page === 'office' && hqView === 'avatar' && <main className="view-fade" key="avatar" style={{ overflow: 'hidden', minHeight: 0, display: 'grid' }}><AvatarStudio onDone={() => setHqView('3d')} /></main>}
+      {page === 'office' && hqView === 'studio' && <main className="view-fade" key="studio" style={{ overflow: 'hidden', minHeight: 0, display: 'grid' }}><BallStudio onDone={() => setHqView('brain')} /></main>}
       {page === 'office' && hqView === 'overview' && (
         <main className="main view-fade" data-mobile={mobile} key="overview">
           <AgentPanel />
@@ -131,6 +134,7 @@ export function App() {
       <Toast />
       <ArcadeHost />
       <BriefingHost />
+      <AgentGraphPow />
     </div>
   );
 }

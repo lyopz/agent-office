@@ -15,7 +15,7 @@ import { sampleOffice } from '../src/model/sample';
 import { emptyOffice } from '../src/model/defaults';
 import { exportOffice, parseOffice } from '../src/model/schema';
 import { activeTheme, themeVars } from '../src/model/themes';
-import { Character } from '../src/characters/Character';
+import { BallIcon } from '../src/brain/Ball';
 import { interpret } from '../src/ai/parser';
 import type { OfficeDoc, RuntimeState } from '../src/model/types';
 
@@ -54,7 +54,7 @@ describe('AI Headquarters acceptance', () => {
     const ws = (id: string) => Object.values(doc.furniture).find((f) => f.workstation?.assignedAgentId === id)!;
     expect(ws('agent_orion').type).not.toBe(ws('agent_codex').type);
     expect(doc.rooms[ws('agent_orion').roomId].type).not.toBe(doc.rooms[ws('agent_codex').roomId].type);
-    const svg = (id: string) => renderToStaticMarkup(createElement(Character, { a: doc.agents[id].appearance, view: 'front', pose: 'idle', frame: 0, facing: 'right', heading: 'down', size: 80 }));
+    const svg = (id: string) => renderToStaticMarkup(createElement(BallIcon, { a: doc.agents[id].appearance, size: 80 }));
     expect(svg('agent_orion')).not.toBe(svg('agent_codex'));
   });
 
@@ -121,7 +121,7 @@ describe('AI Headquarters acceptance', () => {
   test('6. switching dark to light mode leaves characters unchanged', () => {
     let doc = sampleOffice();
     const agents = structuredClone(doc.agents);
-    const draw = (d: OfficeDoc) => Object.values(d.agents).map((a) => renderToStaticMarkup(createElement(Character, { a: a.appearance, view: 'front', pose: 'idle', frame: 0, facing: 'right', heading: 'down', size: 80 }))).join('');
+    const draw = (d: OfficeDoc) => Object.values(d.agents).map((a) => renderToStaticMarkup(createElement(BallIcon, { a: a.appearance, size: 80 }))).join('');
     const dark = draw(doc);
     const theme0 = activeTheme(doc.appearance);
     const darkVars = themeVars(theme0.dark, theme0.office.dark, 'dark');

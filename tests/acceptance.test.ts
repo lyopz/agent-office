@@ -122,14 +122,12 @@ describe('Acceptance', () => {
       s.setUi({ view: v });
       expect(useStore.getState().view).toBe(v);
     }
-    // views are rendered from the single canonical appearance object
+    // agents are drawn as balls from the single canonical appearance object
     const { renderToStaticMarkup } = await import('react-dom/server');
     const { createElement } = await import('react');
-    const { Character } = await import('../src/characters/Character');
+    const { BallIcon, ballColor } = await import('../src/brain/Ball');
     const a = sampleOffice().agents.agent_rusty;
-    const out = (['front', 'side', 'top', 'three-quarter', 'portrait'] as const).map((view) => renderToStaticMarkup(createElement(Character, { a: a.appearance, view, size: 64 })));
-    expect(new Set(out).size).toBe(5);
-    for (const svg of out) expect(svg).toContain(a.appearance.topColor);
+    expect(renderToStaticMarkup(createElement(BallIcon, { a: a.appearance, size: 64 }))).toContain(ballColor(a.appearance));
   });
 
   test('6. change outfit without changing identity', () => {

@@ -1,6 +1,7 @@
 import { saveFile } from '../persistence/saveFile';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Download, FolderOpen, History, Network, OctagonX, Pause, Play, Redo2, Undo2, Upload } from 'lucide-react';
+import { openAgentGraphPow } from '../brain/agentGraph';
 import { useStore } from '../store/store';
 import { repo } from '../store/store';
 import { confirmAction } from './primitives';
@@ -97,16 +98,9 @@ function VersionsMenu({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Opens Graph POW, the file map of this codebase, when the local app serves one (npm run graph:pow). */
+/** Opens Graph POW: the map of every agent, the work they finished and the knowledge they wrote. */
 function GraphPowButton() {
-  const [ok, setOk] = useState(false);
-  useEffect(() => {
-    if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
-    // a dev server answers unknown paths with the app itself, so check it's really the graph page
-    fetch('graph-pow.html').then((r) => (r.ok ? r.text() : '')).then((t) => setOk(/<title>[^<]*Graph POW/i.test(t))).catch(() => setOk(false));
-  }, []);
-  if (!ok) return null;
-  return <button className="btn sm" title="Open Graph POW, the map of how this app's files connect" onClick={() => window.open('graph-pow.html', '_blank', 'noopener')}><Network size={14} /><span className="hide-sm">Graph POW</span></button>;
+  return <button className="btn sm" title="Open Graph POW, the map of what the agents made and know" onClick={() => openAgentGraphPow()}><Network size={14} /><span className="hide-sm">Graph POW</span></button>;
 }
 
 function EmergencyButton() {

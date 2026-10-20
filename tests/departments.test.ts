@@ -1,8 +1,6 @@
 // Phase 3: department controls, resource policies, the operations floor,
 // production pipeline, human-only arcade and persistence.
 import { beforeAll, describe, expect, test } from 'vitest';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { createElement } from 'react';
 import { applyOps, type DocOp } from '../src/engine/ops';
 import { validate } from '../src/engine/validate';
 import { buildNav } from '../src/engine/navigation';
@@ -13,7 +11,6 @@ import { agentArcadeAttempt } from '../src/engine/arcadePolicy';
 import { sampleOffice, seedSampleRuntime } from '../src/model/sample';
 import { departmentId } from '../src/model/control';
 import { exportOffice, parseOffice } from '../src/model/schema';
-import { Character } from '../src/characters/Character';
 import type { OfficeDoc, RuntimeState, Task } from '../src/model/types';
 
 class MemoryStorage {
@@ -286,18 +283,3 @@ describe('human-only arcade', () => {
   });
 });
 
-describe('characters', () => {
-  test('new poses keep the character the same size and keep cosmetics attached', () => {
-    const a = sampleOffice().agents.agent_mesh.appearance;
-    const draw = (pose: 'idle' | 'sit' | 'talk' | 'walk') => renderToStaticMarkup(createElement(Character, { a, view: 'front', pose, frame: 1, facing: 'right', heading: 'down', size: 64 }));
-    const size = (svg: string) => svg.match(/<svg[^>]*width="([\d.]+)" height="([\d.]+)"/)!.slice(1);
-    for (const pose of ['sit', 'talk', 'walk'] as const) {
-      const svg = draw(pose);
-      expect(size(svg)).toEqual(size(draw('idle')));
-      expect(svg).not.toBe(draw('idle'));
-    }
-    // glasses are drawn inside the same transformed body group as the head in the seated pose
-    const sit = draw('sit');
-    expect(sit).toMatch(/translate\(0 12\)/);
-  });
-});

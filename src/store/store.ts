@@ -117,7 +117,7 @@ interface State {
 
 export const repo: OfficeRepository = createRepository();
 
-const DEFAULT_PREFS: Preferences = { autosave: true, viewMode: 'auto', showDashboard: true, aiProvider: 'mock', autoApplySafe: true, simSpeed: 1, simRunning: true, demoTasks: true, characterStyle: 'rendered', hqView: '3d' };
+const DEFAULT_PREFS: Preferences = { autosave: true, viewMode: 'auto', showDashboard: true, aiProvider: 'mock', autoApplySafe: true, simSpeed: 1, simRunning: true, demoTasks: true, hqView: 'brain' };
 
 function initial() {
   const loaded = repo.load();
@@ -152,6 +152,10 @@ function pruneTasks(rt: RuntimeState) {
 export const useStore = create<State>((set, get) => {
   const init = initial();
   const prefs = { ...DEFAULT_PREFS, ...repo.loadPrefs() };
+  // the 3D headquarters and avatar studio became the agent brain and the ball studio
+  const hv = prefs.hqView as string | undefined;
+  prefs.hqView = hv === 'overview' || hv === 'studio' ? hv : hv === 'avatar' ? 'studio' : 'brain';
+  delete (prefs as { characterStyle?: unknown }).characterStyle;
   // autosave runs on a 60 s interval (useAutosave in ui/SaveStatus.tsx), not on every change
 
   const setDoc = (doc: OfficeDoc, prevDoc: OfficeDoc, patch: Partial<State> = {}) => {

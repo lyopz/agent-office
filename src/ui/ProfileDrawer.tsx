@@ -6,16 +6,15 @@ import type { Agent, MemoryItem, Task } from '../model/types';
 import type { DeepPartial } from '../engine/ops';
 import { uid } from '../model/defaults';
 import { stripSecrets } from '../model/schema';
-import { Character } from '../characters/Character';
+import { BallIcon, moodFor } from '../brain/Ball';
+import { BallControls } from '../brain/BallStudio';
 import { STATUS_COLOR } from '../viewport/AgentsLayer';
-import { Wardrobe } from './Wardrobe';
-import { AppearanceEditor } from './AppearanceEditor';
 import { ChipsInput, NumberField, SelectField, Slider, TextField, Toggle, confirmAction } from './primitives';
 import { deleteAgent } from './actions';
 
 const TABS = [
   ['identity', 'Identity'], ['personality', 'Personality'], ['skills', 'Skills & roles'], ['ai', 'AI model'], ['memory', 'Memory'],
-  ['schedule', 'Schedule & tasks'], ['appearance', 'Appearance'], ['wardrobe', 'Wardrobe'], ['activity', 'Activity & logs'], ['permissions', 'Permissions'],
+  ['schedule', 'Schedule & tasks'], ['appearance', 'Ball'], ['activity', 'Activity & logs'], ['permissions', 'Permissions'],
 ] as const;
 
 type Up = (patch: DeepPartial<Omit<Agent, 'id'>>, label?: string) => void;
@@ -39,12 +38,11 @@ function Identity({ a, up }: { a: Agent; up: Up }) {
         </div>
       </div>
       <div className="card" style={{ textAlign: 'center' }}>
-        <h4>Profile image &amp; character model</h4>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 16, alignItems: 'flex-end' }}>
-          <Character a={a.appearance} view="portrait" size={140} />
-          <Character a={a.appearance} view="front" size={180} />
+        <h4>Ball</h4>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <BallIcon a={a.appearance} size={150} mood={moodFor(rt?.status, a.appearance.expression ?? 'smile')} ring={STATUS_COLOR[rt?.status ?? 'idle']} title={`${a.identity.name}'s ball`} />
         </div>
-        <p className="note">Runtime status: <span style={{ color: STATUS_COLOR[rt?.status ?? 'idle'] }}>{rt?.status}</span>. Edit the look in the Appearance tab.</p>
+        <p className="note">Runtime status: <span style={{ color: STATUS_COLOR[rt?.status ?? 'idle'] }}>{rt?.status}</span>. Change the colour and face in the Ball tab.</p>
       </div>
     </div>
   );
@@ -324,7 +322,7 @@ export function ProfileDrawer() {
   return (
     <div className="drawer" role="dialog" aria-modal="false" aria-label={`${agent.identity.name} profile`}>
       <div className="drawer-h">
-        <div className="portrait" style={{ width: 44, height: 44, borderColor: agent.appearance.accent }}><Character a={agent.appearance} view="portrait" size={44} /></div>
+        <BallIcon a={agent.appearance} size={44} mood={agent.appearance.expression ?? 'smile'} />
         <div className="grow"><div className="agent-name" style={{ fontSize: 16 }}>{agent.identity.name}</div><div className="small muted">{agent.identity.title} · {agent.identity.department} · {agent.id}</div></div>
         <span className="small muted">Changes save automatically and can be undone</span>
         <button className="btn icon" aria-label="Close profile" onClick={() => setUi({ profileAgentId: null })}><X size={16} /></button>
@@ -339,8 +337,7 @@ export function ProfileDrawer() {
         {tab === 'ai' && <AIModel a={agent} up={up} />}
         {tab === 'memory' && <Memory a={agent} up={up} />}
         {tab === 'schedule' && <Schedule a={agent} up={up} />}
-        {tab === 'appearance' && <AppearanceEditor agent={agent} />}
-        {tab === 'wardrobe' && <Wardrobe agent={agent} />}
+        {tab === 'appearance' && <div className="profile-ball"><BallIcon a={agent.appearance} size={150} mood={agent.appearance.expression ?? 'smile'} title={`${agent.identity.name}'s ball`} /><BallControls agent={agent} /></div>}
         {tab === 'activity' && <Activity a={agent} />}
         {tab === 'permissions' && <Permissions a={agent} up={up} />}
       </div>
