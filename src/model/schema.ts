@@ -1,6 +1,6 @@
 // Schema validation + migrations for saved/imported offices.
 import { z } from 'zod';
-import { DEFAULT_APPEARANCE, DEFAULT_OUTFITS, defaultPlayer, ROLE_UNIFORMS, builtinRoomTemplates, makeAgent, roleUniformId, withAppearance } from './defaults';
+import { DEFAULT_APPEARANCE, DEFAULT_OUTFITS, HQ_ROOM_TEMPLATE_SIZES, defaultPlayer, ROLE_UNIFORMS, builtinRoomTemplates, makeAgent, roleUniformId, withAppearance } from './defaults';
 import { FURNITURE_MATERIALS, FURNITURE_TYPES, LAYOUT_PRESETS, ROOM_TYPES, type OfficeDoc } from './types';
 import { BUILTIN_COSMETICS, OUTFIT_FIELDS } from './cosmetics';
 import { defaultAppearanceSettings } from './themes';
@@ -227,6 +227,10 @@ const migrations: Record<number, (d: Raw) => Raw> = {
   // v6 → v7: Roblox dev headquarters — the owner's own avatar for the 3D view.
   6: (d) => {
     d.player ??= defaultPlayer();
+    // the headquarters team rooms join the built-in templates, and their roles' uniforms the outfit list
+    d.roomTemplates = Array.isArray(d.roomTemplates) ? d.roomTemplates : [];
+    for (const t of builtinRoomTemplates()) if (HQ_ROOM_TEMPLATE_SIZES.some(([type]) => type === t.type) && !d.roomTemplates.some((x: Raw) => x?.id === t.id)) d.roomTemplates.push(t);
+    if (Array.isArray(d.outfitTemplates)) for (const u of ROLE_UNIFORMS) if (!d.outfitTemplates.some((t: Raw) => t?.id === u.id)) d.outfitTemplates.push(JSON.parse(JSON.stringify(u)));
     d.schemaVersion = 7;
     return d;
   },
