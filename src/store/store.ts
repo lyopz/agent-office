@@ -152,9 +152,8 @@ function pruneTasks(rt: RuntimeState) {
 export const useStore = create<State>((set, get) => {
   const init = initial();
   const prefs = { ...DEFAULT_PREFS, ...repo.loadPrefs() };
-  // the 3D headquarters and avatar studio became the agent brain and the ball studio
-  const hv = prefs.hqView as string | undefined;
-  prefs.hqView = hv === 'overview' || hv === 'studio' ? hv : hv === 'avatar' ? 'studio' : 'brain';
+  // the 3D headquarters and avatar studio became the agent brain
+  prefs.hqView = (prefs.hqView as string | undefined) === 'overview' ? 'overview' : 'brain';
   delete (prefs as { characterStyle?: unknown }).characterStyle;
   // autosave runs on a 60 s interval (useAutosave in ui/SaveStatus.tsx), not on every change
 

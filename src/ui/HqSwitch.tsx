@@ -1,12 +1,12 @@
-// Switch between the agent brain (the main screen), the ball studio and the
-// classic floor plan. The choice is remembered per device.
-import { Brain, Map as MapIcon, Palette } from 'lucide-react';
+// Switch between the agent brain (the main screen) and the classic floor
+// plan. The choice is remembered per device.
+import { Brain, Map as MapIcon } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { HqView } from '../persistence/repository';
 
 const VIEWS: { id: HqView; label: string; icon: typeof Brain; title: string }[] = [
-  { id: 'brain', label: 'Brain', icon: Brain, title: 'See every agent as a ball in the team brain' },
-  { id: 'studio', label: 'Ball Studio', icon: Palette, title: 'Choose each agent’s colour and face' },
+  { id: 'brain', label: 'Brain', icon: Brain, title: 'The team brain: nerves between teams and the information the agents produced' },
+  { id: 'overview', label: 'Floor plan', icon: MapIcon, title: 'The classic floor plan, for building rooms by hand' },
 ];
 
 export function useHqView(): HqView { return useStore((s) => s.prefs.hqView ?? 'brain'); }
@@ -23,7 +23,7 @@ export function HqSwitch() {
   return (
     <nav className="seg hq-switch" aria-label="Main view">
       {VIEWS.map((v) => (
-        <button key={v.id} className="btn sm" aria-pressed={page === 'office' && (view === v.id || (v.id === 'brain' && view === 'overview'))} title={v.title} onClick={() => setHqView(v.id)}>
+        <button key={v.id} className="btn sm" aria-pressed={page === 'office' && view === v.id} title={v.title} onClick={() => setHqView(v.id)}>
           <v.icon size={14} /><span className="hide-sm">{v.label}</span>
         </button>
       ))}

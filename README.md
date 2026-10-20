@@ -52,8 +52,8 @@ The app needs no account, backend, or API key. It opens with a sample office, "N
   - Autosave writes to this browser every minute, but only when something has changed. In the desktop app it writes to files on disk. See [Saving](#saving).
   - The **Versions** menu saves named versions and can restore one, reset to the last save, duplicate the layout, start a blank office, or reload the sample.
   - Export and import use validated `.json` files.
-- **Agents are balls.** Every agent is drawn as a glossy ball in its own colour with a small face. The face changes with what the agent is doing (focused while working, a thinking "…", talking, worried when stuck, asleep when paused). See [The agent brain](#the-agent-brain).
-  - Open an agent's **Profile**, then the **Ball** tab, or use **Ball Studio**, to choose the colour, glow, eyes, resting face, mouth, cheeks, tuft and glasses.
+- **The brain.** The main screen is a nerve network of the teams, with the agents in a menu beside it. See [The agent brain](#the-agent-brain).
+  - On the floor plan and in the profile, agents are glossy balls with a face that follows their status. Open an agent's **Profile**, then the **Ball** tab, to choose the colour, glow, eyes, resting face, mouth, cheeks, tuft and glasses.
   - The other profile tabs are Identity, Personality, Skills, AI model, Memory, Schedule and tasks, Activity, and Permissions.
 - **AI console.** Press **/** to focus it. Here are some commands it understands:
   - "Move the server room beside the research laboratory, extend the hallway between them, and move the research agent to the new workstation"
@@ -231,11 +231,11 @@ The per-game caps (Flappy 100 points or 3 minutes, Pac-Man 10,000 points or 5 mi
 
 ### Uniforms
 
-**Locked role uniforms.** Every role has a fixed uniform, and agents created from a role start in it. While it is on, the ball's colour, glow and glasses come from the uniform and can't be changed piece by piece, in the app, through the AI console or by import. The face stays editable. "Take it off" in Ball Studio unlocks the agent without changing the look. The uniforms themselves can't be edited or deleted. Functional equipment, such as a ledger slate, still mirrors a tool permission and can only be worn by an agent that has the matching tool.
+**Locked role uniforms.** Every role has a fixed uniform, and agents created from a role start in it. While it is on, the ball's colour, glow and glasses come from the uniform and can't be changed piece by piece, in the app, through the AI console or by import. The face stays editable. "Take it off" in the profile Ball tab unlocks the agent without changing the look. The uniforms themselves can't be edited or deleted. Functional equipment, such as a ledger slate, still mirrors a tool permission and can only be worn by an agent that has the matching tool.
 
 ### Graph POW
 
-**Graph POW** is the glowing knowledge map of the agents. Open it from the top bar or by clicking the core in the middle of the brain. It shows every agent, the work they finished (the latest 160 tasks) and the knowledge entries they wrote, grouped into a lobe per team:
+**Graph POW** is the glowing knowledge map of the agents. Open it from the top bar or from an information node on the brain. It shows every agent, the work they finished (the latest 160 tasks) and the knowledge entries they wrote, grouped into a lobe per team:
 
 | Link | Meaning |
 |---|---|
@@ -327,21 +327,19 @@ To switch between samples, open **Versions** and choose **Roblox HQ** or **NEXUS
 
 ### The agent brain
 
-The main screen (**Brain** in the top bar) draws the whole operation as a brain:
+The main screen (**Brain** in the top bar) draws the operation as a nerve network, in the style of a fruit-fly connectome map. There is no outline and no agents are drawn on it; the shape comes from the density of the nerves.
 
-- **Lobes are teams.** Each department is a glowing lobe with its name and how many of its agents are busy. The team at the top of the reporting chain sits at the crown.
-- **Balls are agents.** Leads sit in the middle of their lobe. Idle balls float, working ones wiggle, talking ones nod, stuck ones shake and paused ones dim and doze.
-- **Links.** Dashed lines show who reports to whom. Solid lines in the sender's colour show handoffs, and they animate while that work is still moving.
-- **Movement.** When an agent hands work over, a small copy of its ball rolls along the link to the receiver, which bounces when it lands. When an agent finishes a task it hops, and the work rolls into the **Graph POW core** in the middle.
-- Hover a ball to see its status and task. Click it (or press Enter) to open its profile. Scroll to zoom, drag to pan, and use the buttons at the bottom right to zoom or fit.
+- **Regions are teams.** Each department is a dense tangle of fibres in its team colour. The two biggest teams are the large side lobes, with a beaded pink and blue rim.
+- **Nerves between teams.** Bundles of fibres join teams that hand work to each other or report to each other; the more handoffs, the thicker the bundle. Faint bundles join near neighbours so the brain reads as one.
+- **Signals.** Sparks run through a region while its agents are busy. A handoff sends sparks along the nerve from the sender's team to the receiver's. A finished task sends a white spark to a new node, which flashes when it lands.
+- **Information nodes.** Small nodes are the information the brain can go back to: diamonds are knowledge entries, dots are finished work (the latest 160), and brighter dots are high-priority or handed-over work. Each node keeps its spot. Hover one for its title, click it for a card with the summary, the agent, **Open agent profile** and **Show in Graph POW**. Sensitive entries only show "Restricted entry".
+- Scroll to zoom, drag to pan, and use the buttons at the bottom right to zoom or fit.
 
-The layout comes from teams and reporting lines only (`src/brain/brainLayout.ts`), so balls don't jump around as work moves, and the brain grows when the team does. Animations stop when the system asks for reduced motion.
+The brain is grown from a fixed seed (`src/brain/connectome.ts`), so the same office always gives the same brain, and it grows when a team does. Sparks stop when the system asks for reduced motion.
 
-**Taskbar.** Along the bottom, one chip per agent shows its ball, its current task with a progress bar and how many tasks are queued. Click a chip to open the profile, or use its pause button to pause or resume that agent. On the left are how many agents are busy, a search box and **Give a task** (pick an agent, type the task, press Enter).
+**Agent menu.** On the left, every agent is listed by team with its status, current task, a progress bar and how many tasks are queued. Hovering a team or an agent lights up its part of the brain and its information nodes and dims the rest. Click an agent to open the profile, use its button to pause or resume it, search by name, title or team, and use **Give a task** at the bottom (pick an agent, type the task, press Enter).
 
-**Ball Studio** (`src/brain/BallStudio.tsx`) lists every agent next to a large preview. You can preview the face as idle, working, thinking, talking, stuck or paused, and change the ball colour (or use the team colour), glow, eyes, eye colour, resting face, mouth, cheeks, tuft and its colour, and glasses. **Surprise me** picks a random look. Every change is one `agent.update` operation, so Undo works. Dark outfit colours are lifted to a bright tone so the face always reads.
-
-**Classic floor plan.** The room-by-room plan with Construct mode, Auto Sort and the bubble office is one click away (**Classic floor plan**, top left of the brain). Agents are balls there too.
+**Classic floor plan.** The room-by-room plan with Construct mode, Auto Sort and the bubble office is one click away (**Floor plan** in the top bar). Agents are drawn as balls there.
 
 What was removed: the explorable 3D headquarters, the avatar studio, the Blender character renders and sprite sheets, and the drawn figures. three.js is no longer a dependency. Saved offices still load; the owner profile (`player`) stays in the file but is no longer shown.
 
@@ -483,7 +481,7 @@ A performance test builds an office of 48 rooms, more than 570 objects and 60 ag
 
 `tests/departments.test.ts` covers safe pause and resume with progress kept, the three render policies and saves, exclusions and the emergency pause, pause all and resume selected, enabling agents and batch assignment, task limits and resource policies, save and migration, 40 agents on the operations floor (under 15 ms per tick, no errors, no two agents on one cell), the production pipeline and its simulated labels, and the human-only arcade lock and logging. `tests/arcade.test.ts` covers the three games, their caps and the daily limits. `tests/wardrobe.test.ts` covers the four-per-slot wardrobe, the uniform lock in every path that could change it, and the v4 → v5 migration.
 
-`tests/brain.test.ts` covers the agent brain: every agent in its team lobe with no overlapping balls, lobes clear of each other and the core, a deterministic layout that grows with the team, reporting and live handoff links, faces that follow status, bright ball colours, the agents' Graph POW (nodes, links, degrees, the cap on finished work) and the standalone page (agent wording, and agent text can't break out of the data block).
+`tests/brain.test.ts` covers the agent brain: a region per team in its colour, fibres that stay inside their region, nerve bundles that thicken with handoffs and join every region, a deterministic brain, no agent looks in the brain data, information nodes in the right team at stable spots with the cap on finished work, faces that follow status, bright ball colours, the agents' Graph POW (nodes, links, degrees, the cap on finished work) and the standalone page (agent wording, and agent text can't break out of the data block).
 
 `tests/briefing.test.ts` covers the briefing: bucket assignment for every task status, the one-hour window, grouping and filters, blockers, attention and idle agents, ETAs, task history, the lounge in the sample (reachable on foot), the lounge template, save and reload, the furniture drawings, and rendering the board.
 ### Save tests

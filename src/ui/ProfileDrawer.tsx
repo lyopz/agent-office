@@ -7,7 +7,7 @@ import type { DeepPartial } from '../engine/ops';
 import { uid } from '../model/defaults';
 import { stripSecrets } from '../model/schema';
 import { BallIcon, moodFor } from '../brain/Ball';
-import { BallControls } from '../brain/BallStudio';
+import { BallControls } from '../brain/BallControls';
 import { STATUS_COLOR } from '../viewport/AgentsLayer';
 import { ChipsInput, NumberField, SelectField, Slider, TextField, Toggle, confirmAction } from './primitives';
 import { deleteAgent } from './actions';

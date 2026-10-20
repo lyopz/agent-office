@@ -1,12 +1,13 @@
-// The agent brain: teams as lobes, agents as balls, links for handoffs and
-// reporting lines, and the agents' Graph POW.
+// The agent brain: team regions of nerve fibres, tracts between teams, the
+// information nodes the agents produced, agent balls (profile and floor
+// plan), and the agents' Graph POW.
 import { describe, expect, test } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { robloxHQ, sampleOffice } from '../src/model/sample';
 import { buildNav } from '../src/engine/navigation';
 import { createTask, emptyRuntime, syncRuntime } from '../src/engine/simulation';
-import { BALL_R, brainEdges, layoutBrain } from '../src/brain/brainLayout';
+import { HEIGHT, MAX_WORK_NODES, WIDTH, buildConnectome, infoNodes, infoPosition, insideRegion, teamLinks, teamOfAgent, teamsOf, tint } from '../src/brain/connectome';
 import { BallIcon, ballColor, moodFor } from '../src/brain/Ball';
 import { TEMPLATE_SWAPS, agentGraphPowHtml, buildAgentGraph, MAX_WORK } from '../src/brain/agentGraph';
 import { layoutPow } from '../src/brain/powLayout';
@@ -15,55 +16,75 @@ import type { OfficeDoc, RuntimeState } from '../src/model/types';
 
 function runtimeFor(doc: OfficeDoc): RuntimeState { const rt = emptyRuntime(); syncRuntime(doc, rt, buildNav(doc)); return rt; }
 
-describe('agent brain layout', () => {
-  test('every agent gets a spot inside its team lobe, and no two balls overlap', () => {
+describe('agent brain (connectome)', () => {
+  test('every team becomes a region in its own colour, and no agent is drawn on the brain', () => {
     for (const doc of [sampleOffice(), robloxHQ()]) {
-      const L = layoutBrain(doc, null);
-      expect(Object.keys(L.nodes).sort()).toEqual(Object.keys(doc.agents).sort());
-      const depts = new Set(Object.values(doc.agents).map((a) => a.identity.department));
-      expect(L.lobes.map((l) => l.name).sort()).toEqual([...depts].sort());
-      const nodes = Object.values(L.nodes);
-      for (const n of nodes) {
-        const lobe = L.lobes.find((l) => l.id === n.lobeId)!;
-        expect(Math.hypot(n.x - lobe.x, n.y - lobe.y)).toBeLessThanOrEqual(lobe.r);
-        expect(n.x).toBeGreaterThan(0); expect(n.y).toBeGreaterThan(0);
-        expect(n.x).toBeLessThan(L.width); expect(n.y).toBeLessThan(L.height);
+      const teams = teamsOf(doc);
+      const brain = buildConnectome(teams, teamLinks(doc, null, teams));
+      expect(brain.regions.map((r) => r.name).sort()).toEqual([...new Set(Object.values(doc.agents).map((a) => a.identity.department))].sort());
+      for (const r of brain.regions) {
+        expect(r.color).toMatch(/^#[0-9a-f]{6}$/i);
+        expect(r.x - r.rx).toBeGreaterThan(-40); expect(r.x + r.rx).toBeLessThan(WIDTH + 40);
+        expect(r.y - r.ry).toBeGreaterThan(-60); expect(r.y + r.ry).toBeLessThan(HEIGHT + 60);
+        // a dense tangle of fibres, all inside their region
+        const mine = brain.fibers.filter((f) => f.regionId === r.id);
+        expect(mine.length).toBeGreaterThan(80);
+        for (const f of mine) for (let i = 0; i < f.pts.length; i += 2) expect(insideRegion(r, { x: f.pts[i], y: f.pts[i + 1] })).toBeLessThan(1.12);
       }
-      for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
-        expect(Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y)).toBeGreaterThan(BALL_R * 2);
-      }
+      // the brain has no agents in it: regions only carry ids for the menu's highlighting
+      expect(JSON.stringify(brain)).not.toContain('appearance');
     }
   });
 
-  test('lobes keep clear of each other and of the knowledge core', () => {
-    const L = layoutBrain(robloxHQ(), null);
-    for (const l of L.lobes) expect(Math.hypot(l.x - L.core.x, l.y - L.core.y)).toBeGreaterThan(l.r + L.core.r);
-    for (let i = 0; i < L.lobes.length; i++) for (let j = i + 1; j < L.lobes.length; j++) {
-      const a = L.lobes[i], b = L.lobes[j];
-      expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(a.r + b.r);
-    }
-  });
-
-  test('the layout is deterministic and grows with the team', () => {
-    const doc = sampleOffice();
-    expect(layoutBrain(doc, null)).toEqual(layoutBrain(doc, null));
-    const big = structuredClone(doc);
-    const proto = Object.values(doc.agents)[0];
-    for (let i = 0; i < 60; i++) big.agents[`clone_${i}`] = { ...structuredClone(proto), id: `clone_${i}`, identity: { ...proto.identity, name: `Clone ${i}` } };
-    expect(layoutBrain(big, null).width).toBeGreaterThan(layoutBrain(doc, null).width);
-  });
-
-  test('links show reporting lines and handoffs, live while the work is moving', () => {
+  test('nerve tracts join teams that report to or hand work to each other, thicker with more traffic', () => {
     const doc = sampleOffice();
     const rt = runtimeFor(doc);
-    const reports = brainEdges(doc, rt).filter((e) => e.kind === 'reports');
-    expect(reports.length).toBe(Object.values(doc.agents).filter((a) => a.skills.supervisorId && doc.agents[a.skills.supervisorId]).length);
-    const [a, b] = Object.keys(doc.agents);
-    const t = createTask(rt, { name: 'Draft the brief', agentId: b, priority: 'normal', handoff: { request: 'x', why: 'y', known: '', deliverable: 'brief', acceptance: 'ok', fromAgentId: a } });
-    const hand = brainEdges(doc, rt).find((e) => e.kind === 'handoff')!;
-    expect(hand).toMatchObject({ from: a, to: b, weight: 1, live: true });
-    rt.tasks[t.id].status = 'done';
-    expect(brainEdges(doc, rt).find((e) => e.kind === 'handoff')!.live).toBe(false);
+    const teams = teamsOf(doc);
+    const base = teamLinks(doc, rt, teams);
+    const sup = Object.values(doc.agents).find((a) => a.skills.supervisorId && teamOfAgent(teams, a.id) !== teamOfAgent(teams, a.skills.supervisorId))!;
+    const pair = [teamOfAgent(teams, sup.id)!, teamOfAgent(teams, sup.skills.supervisorId)!].sort();
+    const before = base.find((l) => [l.a, l.b].sort().join() === pair.join())!;
+    expect(before.weight).toBeGreaterThan(0);
+    createTask(rt, { name: 'Hand over the brief', agentId: sup.skills.supervisorId!, priority: 'normal', handoff: { request: 'x', why: 'y', known: '', deliverable: 'brief', acceptance: 'ok', fromAgentId: sup.id } });
+    const after = teamLinks(doc, rt, teams).find((l) => [l.a, l.b].sort().join() === pair.join())!;
+    expect(after.weight).toBe(before.weight + 1);
+    const brain = buildConnectome(teams, teamLinks(doc, rt, teams));
+    const tract = brain.tracts.find((t) => [t.a, t.b].sort().join() === pair.join())!;
+    expect(tract.curves.length).toBeGreaterThan(3);
+    // every region is wired into the rest of the brain
+    for (const r of brain.regions) expect(brain.tracts.some((t) => t.a === r.id || t.b === r.id)).toBe(true);
+  });
+
+  test('the same office always grows the same brain', () => {
+    const doc = robloxHQ();
+    const teams = teamsOf(doc);
+    expect(buildConnectome(teams, teamLinks(doc, null, teams))).toEqual(buildConnectome(teams, teamLinks(doc, null, teams)));
+  });
+
+  test('finished work and knowledge become information nodes in the team that made them, and stay put', () => {
+    const doc = sampleOffice();
+    const rt = runtimeFor(doc);
+    const teams = teamsOf(doc);
+    const agentId = Object.keys(doc.agents)[0];
+    const t = createTask(rt, { name: 'Ship the patch', agentId, priority: 'high' });
+    Object.assign(rt.tasks[t.id], { status: 'done', completedAt: new Date().toISOString() });
+    const nodes = infoNodes(doc, rt, teams);
+    const work = nodes.find((n) => n.id === `t:${t.id}`)!;
+    expect(work).toMatchObject({ kind: 'work', title: 'Ship the patch', regionId: teamOfAgent(teams, agentId), important: true });
+    expect(nodes.filter((n) => n.kind === 'knowledge').length).toBe(Object.keys(doc.library).length);
+    const brain = buildConnectome(teams, teamLinks(doc, rt, teams));
+    const region = brain.regions.find((r) => r.id === work.regionId)!;
+    const p = infoPosition(region, work.id);
+    expect(insideRegion(region, p)).toBeLessThan(1);
+    expect(infoPosition(region, work.id)).toEqual(p);
+    for (let i = 0; i < MAX_WORK_NODES + 30; i++) { const x = createTask(rt, { name: `Job ${i}`, agentId, priority: 'low' }); Object.assign(rt.tasks[x.id], { status: 'done', completedAt: new Date(2030, 0, 1, 0, i).toISOString() }); }
+    expect(infoNodes(doc, rt, teams).filter((n) => n.kind === 'work').length).toBe(MAX_WORK_NODES);
+  });
+
+  test('tint shifts hue and keeps a valid colour', () => {
+    expect(tint('#ff0000', 120)).toBe('#00ff00');
+    expect(tint('#336699', 0)).toBe('#336699');
+    expect(tint('not-a-colour', 30)).toBe('not-a-colour');
   });
 });
 

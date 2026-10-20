@@ -1,13 +1,9 @@
-// Ball Studio: pick an agent and choose its ball's colour, glow and face.
-// Every change is one `agent.update` DocOp, so Undo works as usual. A preview
-// shows how the face reacts to what the agent is doing.
-import { useMemo, useState } from 'react';
-import { Dices, Undo2 } from 'lucide-react';
+// An agent's ball (its colour, glow and face), edited from the profile's Ball
+// tab. Every change is one `agent.update` DocOp, so Undo works as usual.
 import { useStore } from '../store/store';
-import { EXPRESSIONS, type Agent, type AgentStatus, type Appearance, type OutfitTemplate } from '../model/types';
+import { EXPRESSIONS, type Agent, type Appearance } from '../model/types';
 import { OUTFIT_FIELDS } from '../model/cosmetics';
-import { BallIcon, ballColor, moodFor } from './Ball';
-import { STATUS_COLOR } from '../viewport/AgentsLayer';
+import { BallIcon, ballColor } from './Ball';
 
 const BODY = ['#39d0c8', '#4cc9ff', '#2b6cff', '#7b5cff', '#b57bff', '#ff6fb5', '#ff5d73', '#ff9f43', '#ffd166', '#9be15d', '#39ff88', '#e8eef0', '#8a94a6', '#2a2f3a'];
 const GLOW = ['#7cf7ff', '#39ff88', '#4cc9ff', '#ff9f43', '#b57bff', '#ff5d73', '#ffd166', '#ff6fb5'];
@@ -19,9 +15,7 @@ const CHEEKS: [NonNullable<Appearance['cheeks']>, string][] = [['none', 'None'],
 const TUFTS: [Appearance['hairStyle'], string][] = [['bald', 'None'], ['short', 'Swoosh'], ['spiky', 'Spikes'], ['curly', 'Curls'], ['bun', 'Bun'], ['twin-buns', 'Two buns']];
 const GLASSES: [Appearance['glasses'], string][] = [['none', 'None'], ['round', 'Round'], ['square', 'Square']];
 const EXPRESSION_LABEL: Record<(typeof EXPRESSIONS)[number], string> = { neutral: 'Calm', smile: 'Smile', grin: 'Big grin', focused: 'Focused', surprised: 'Surprised', smirk: 'Smirk', determined: 'Determined' };
-const PREVIEW: [AgentStatus, string][] = [['idle', 'Idle'], ['working', 'Working'], ['thinking', 'Thinking'], ['communicating', 'Talking'], ['error', 'Stuck'], ['paused', 'Paused']];
 
-const pick = <T,>(xs: readonly T[]) => xs[Math.floor(Math.random() * xs.length)];
 
 function Choice<T extends string>({ label, value, options, onPick, render }: { label: string; value: T; options: [T, string][]; onPick: (v: T) => void; render?: (v: T) => React.ReactNode }) {
   return (
@@ -50,16 +44,7 @@ function Swatches({ label, value, colors, onPick, disabled, show = (c) => c }: {
   );
 }
 
-function surprise(agent: Agent, outfits: OutfitTemplate[]) {
-  const locked = !!agent.uniformId && outfits.some((o) => o.id === agent.uniformId && o.kind === 'uniform');
-  const look: Partial<Appearance> = {
-    ...(locked ? {} : { topColor: pick(BODY), accent: pick(GLOW) }),
-    eyeStyle: pick(EYES)[0], eyeColor: pick(EYE_COLORS), expression: pick(EXPRESSIONS), mouth: pick(MOUTHS)[0], cheeks: pick(CHEEKS)[0], hairStyle: pick(TUFTS)[0], hairColor: pick(HAIR),
-  };
-  useStore.getState().commit([{ op: 'agent.update', id: agent.id, patch: { appearance: look } }], `${agent.identity.name}: surprise look`);
-}
-
-/** The ball's colour, glow and face controls for one agent (Ball Studio and the profile's Appearance tab). */
+/** The ball's colour, glow and face controls for one agent (the profile's Ball tab). */
 export function BallControls({ agent }: { agent: Agent }) {
   const departments = useStore((s) => s.doc.departments);
   const outfits = useStore((s) => s.doc.outfitTemplates);
@@ -89,47 +74,3 @@ export function BallControls({ agent }: { agent: Agent }) {
   );
 }
 
-export function BallStudio({ onDone }: { onDone: () => void }) {
-  const agents = useStore((s) => s.doc.agents);
-  const outfits = useStore((s) => s.doc.outfitTemplates);
-  const selected = useStore((s) => (s.selection.kind === 'agent' ? s.selection.id : null));
-  const canUndo = useStore((s) => s.past.length > 0);
-  const list = useMemo(() => Object.values(agents).sort((a, b) => a.identity.department.localeCompare(b.identity.department) || a.identity.name.localeCompare(b.identity.name)), [agents]);
-  const [chosen, setChosen] = useState<string | null>(null);
-  const id = chosen && agents[chosen] ? chosen : selected && agents[selected] ? selected : list[0]?.id ?? null;
-  const [preview, setPreview] = useState<AgentStatus>('idle');
-  const agent = id ? agents[id] : null;
-  if (!agent) return <div className="ball-studio empty"><p className="muted">No agents yet. Add one from the Classic floor plan or the Control page.</p></div>;
-  const a = agent.appearance;
-  return (
-    <div className="ball-studio">
-      <aside className="bs-list" aria-label="Agents">
-        <div className="label">Agents</div>
-        <ul>
-          {list.map((x) => (
-            <li key={x.id}><button className={`bs-agent${x.id === agent.id ? ' on' : ''}`} aria-pressed={x.id === agent.id} onClick={() => { setChosen(x.id); useStore.getState().setUi({ selection: { kind: 'agent', id: x.id } }); }}>
-              <BallIcon a={x.appearance} size={30} mood={x.appearance.expression ?? 'smile'} />
-              <span><b>{x.identity.name}</b><small className="muted">{x.identity.department}</small></span>
-            </button></li>
-          ))}
-        </ul>
-      </aside>
-      <section className="bs-stage" aria-label="Preview">
-        <div className="bs-preview">
-          <div className="bs-bounce" key={preview}><BallIcon a={a} size={220} mood={moodFor(preview, a.expression ?? 'smile')} ring={STATUS_COLOR[preview]} title={`${agent.identity.name} ball preview`} /></div>
-        </div>
-        <h2>{agent.identity.name}</h2>
-        <p className="muted small">{agent.identity.title} · {agent.identity.department}</p>
-        <div className="seg bs-moods" role="group" aria-label="Preview the face while the agent is…">
-          {PREVIEW.map(([s, l]) => <button key={s} className="btn sm" aria-pressed={preview === s} onClick={() => setPreview(s)}>{l}</button>)}
-        </div>
-        <div className="row wrap bs-actions">
-          <button className="btn sm" onClick={() => surprise(agent, outfits)}><Dices size={13} />Surprise me</button>
-          <button className="btn sm" disabled={!canUndo} onClick={() => useStore.getState().undo()}><Undo2 size={13} />Undo</button>
-          <button className="btn sm primary" onClick={onDone}>Done</button>
-        </div>
-      </section>
-      <BallControls agent={agent} />
-    </div>
-  );
-}

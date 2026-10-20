@@ -3,11 +3,10 @@ import { useStore } from './store/store';
 import { TopBar } from './ui/TopBar';
 import { Toolbar } from './ui/Toolbar';
 import { AutoSortPanel } from './ui/AutoSort';
-import { ClassicToggle, setHqView, useHqView } from './ui/HqSwitch';
+import { useHqView } from './ui/HqSwitch';
 import { OverviewPanel } from './ui/OverviewPanel';
-import BrainView from './brain/BrainView';
-import { Taskbar } from './brain/Taskbar';
-import { BallStudio } from './brain/BallStudio';
+import ConnectomeView from './brain/ConnectomeView';
+import { AgentMenu } from './brain/AgentMenu';
 import { AgentGraphPow } from './brain/AgentGraphPow';
 import { AgentPanel } from './ui/AgentPanel';
 import { Inspector } from './ui/Inspector';
@@ -89,16 +88,14 @@ export function App() {
   return (
     <div className="app">
       <TopBar />
-      {page === 'office' && hqView === 'brain' && (
+      {page === 'office' && hqView !== 'overview' && (
         <main className="brain-stage view-fade" key="brain">
-          <div style={{ position: 'relative', minHeight: 0, display: 'grid' }}>
-            <BrainView />
-            <div className="brain-top"><ClassicToggle /></div>
+          <AgentMenu />
+          <div style={{ position: 'relative', minHeight: 0, minWidth: 0, display: 'grid' }}>
+            <ConnectomeView />
           </div>
-          <Taskbar />
         </main>
       )}
-      {page === 'office' && hqView === 'studio' && <main className="view-fade" key="studio" style={{ overflow: 'hidden', minHeight: 0, display: 'grid' }}><BallStudio onDone={() => setHqView('brain')} /></main>}
       {page === 'office' && hqView === 'overview' && (
         <main className="main view-fade" data-mobile={mobile} key="overview">
           <AgentPanel />
