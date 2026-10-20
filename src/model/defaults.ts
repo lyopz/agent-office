@@ -3,7 +3,7 @@ import type { PlayerProfile,
   Agent, Appearance, Furniture, FurnitureType, OfficeDoc, OutfitTemplate, Room, RoomAppearance,
   RoomTemplate, RoomType,
 } from './types';
-import { FURNITURE_META, ROOM_META } from './catalog';
+import { FURNITURE_META, ROOM_LOOK, ROOM_META } from './catalog';
 import { ARCHETYPE, ARCHETYPES, BUILTIN_COSMETICS, OUTFIT_FIELDS } from './cosmetics';
 import { defaultAppearanceSettings } from './themes';
 import { defaultAlertSettings } from './alertDefaults';
@@ -128,15 +128,85 @@ export function furniturePreset(type: RoomType, w: number, h: number): Omit<Furn
       break;
     }
     default:
+      hqPreset(type, w, h, f, list);
       break;
   }
   // keep presets inside small rooms
   return list.filter((it) => it.x + it.w <= w && it.y + it.h <= h && it.x >= 0 && it.y >= 0);
 }
 
+type PresetAdd = (t: FurnitureType, x: number, y: number, extra?: Partial<Furniture>) => Omit<Furniture, 'id' | 'roomId'>;
+const HQ_SIGN: Partial<Record<RoomType, string>> = {
+  'roblox-dev': 'SCRIPT · BUILD · SHIP', 'game-design': 'LEVELS · MECHANICS · PLAY', '3d-design': 'MODEL · TEXTURE · PREVIEW',
+  typography: 'FONTS · LETTERING · UI TYPE', 'roblox-build': 'PARTS · TERRAIN · STRUCTURES', 'ad-studio': 'PLAN · CREATE · LAUNCH', 'throne-room': 'COMMAND CENTRE',
+};
+
+/**
+ * Team room presets for the Roblox headquarters. Wall displays sit on the
+ * north wall (clear of a bubble room's rounded corners), work desks in the
+ * middle rows, and a team sign on the south wall by the entrance.
+ */
+function hqPreset(type: RoomType, w: number, h: number, f: PresetAdd, list: Omit<Furniture, 'id' | 'roomId'>[]) {
+  const mid = Math.floor(w / 2);
+  const ws = (name: string, equipment: string[], services: string[]) => ({ workstation: workstation(name, equipment, services) });
+  const sign = () => { if (HQ_SIGN[type]) list.push(f('team-sign', mid - 3, h - 1, { label: HQ_SIGN[type], w: 6 })); };
+  switch (type) {
+    case 'roblox-dev':
+      list.push(f('code-wall', 3, 1), f('build-preview', w - 7, 1));
+      for (let i = 0; i < 3; i++) list.push(f('studio-workstation', 2 + i * 4, 4, ws(`Studio Station ${i + 1}`, ['explorer', '3D viewport', 'properties', 'script editor'], ['scripting'])));
+      list.push(f('test-station', 3, 7, ws('Play-test Rig', ['controllers', 'phone', 'tablet'], ['testing'])), f('studio-workstation', 7, 7, ws('Studio Station 4', ['explorer', '3D viewport', 'properties'], ['scripting'])));
+      sign();
+      break;
+    case 'game-design':
+      list.push(f('mechanics-board', 3, 1), f('whiteboard', w - 6, 1));
+      list.push(f('level-layout-table', mid - 2, 3), f('prototype-pod', w - 4, 3));
+      list.push(f('planning-desk', 2, 3, ws('Design Desk A', ['sketchbook', 'design tablet'], ['level design'])), f('planning-desk', 2, 6, ws('Design Desk B', ['sketchbook', 'dice'], ['systems design'])), f('planning-desk', mid - 2, 7, ws('Design Desk C', ['tablet'], ['balancing'])));
+      sign();
+      break;
+    case '3d-design':
+      list.push(f('blueprint-wall', 3, 1), f('material-swatches', w - 6, 1));
+      list.push(f('workstation-3d', 2, 4, ws('Modelling Station A', ['three monitors', 'pen display'], ['modelling'])), f('workstation-3d', 2, 7, ws('Modelling Station B', ['three monitors', 'pen display'], ['texturing'])));
+      list.push(f('wireframe-stand', mid, 3), f('preview-turntable', w - 4, 4), f('reference-display', mid, 7));
+      sign();
+      break;
+    case 'typography':
+      list.push(f('font-specimen-wall', 3, 1), f('type-scale-panel', 8, 1), f('game-ui-preview', w - 6, 1));
+      for (let i = 0; i < 3; i++) list.push(f('lettering-desk', 2 + i * 4, 4, ws(`Lettering Desk ${i + 1}`, ['pen display', 'font editor'], ['type design'])));
+      list.push(f('reference-display', w - 4, 4), f('curved-monitor', 3, 7, ws('Type Proofing Screen', ['colour-calibrated display'], ['proofing'])));
+      sign();
+      break;
+    case 'roblox-build':
+      list.push(f('build-plan-board', 3, 1), f('modular-parts-rack', w - 7, 1));
+      list.push(f('terrain-table', mid - 1, 3), f('scale-figure', mid + 3, 3));
+      list.push(f('workbench', 2, 3, ws('Build Bench A', ['part kit', 'snap tools'], ['building'])), f('workbench', 2, 6, ws('Build Bench B', ['part kit', 'terrain brush'], ['terrain'])));
+      list.push(f('modular-parts-rack', w - 5, 5), f('scale-figure', w - 4, 7));
+      sign();
+      break;
+    case 'ad-studio':
+      list.push(f('campaign-board', 3, 1), f('concept-review-wall', 6, 1), f('image-draft-gallery', w - 6, 1));
+      list.push(f('curved-monitor', 2, 4, ws('Creative Station A', ['colour-calibrated display', 'image generator'], ['imagery'])), f('curved-monitor', 2, 7, ws('Creative Station B', ['colour-calibrated display'], ['copywriting'])));
+      list.push(f('image-draft-gallery', mid - 1, 4), f('concept-review-wall', mid - 1, 7), f('final-asset-display', w - 4, 4), f('final-asset-display', w - 4, 7));
+      sign();
+      break;
+    case 'throne-room': {
+      // the throne sits inside the glowing bubble at the room's centre, facing the war table
+      const bx = mid - 3, by = Math.max(2, Math.floor(h / 2) - 4);
+      list.push(f('command-display', 3, 1), f('briefing-board', mid - 2, 1), f('command-display', w - 6, 1));
+      list.push(f('devil-bubble', bx, by), f('throne', mid - 1, by + 2));
+      list.push(f('war-table', mid - 2, by + 7));
+      for (const [x, y] of [[bx - 2, by], [bx + 7, by], [bx - 2, by + 5], [bx + 7, by + 5]]) list.push(f('dark-candelabra', x, y));
+      list.push(f('holo-desk', 2, h - 4, ws('Regent Console', ['holographic dashboard', 'approval console'], ['coordination'])), f('approval-kiosk', w - 3, h - 4));
+      sign();
+      break;
+    }
+    default:
+      break;
+  }
+}
+
 export function roomAppearance(type: RoomType): RoomAppearance {
   const m = ROOM_META[type];
-  return { floor: m.floor, wallColor: '', accent: m.accent, lighting: 0.6, lightTemp: 4500 };
+  return { floor: m.floor, wallColor: '', accent: m.accent, lighting: 0.6, lightTemp: 4500, ...(ROOM_LOOK[type] ?? {}) };
 }
 
 export function makeRoom(type: RoomType, x: number, y: number, w: number, h: number, name?: string): Room {
@@ -250,12 +320,19 @@ export function agentFromArchetype(archetypeId: string, name: string): Agent {
   return a;
 }
 
+/** Built-in templates for the Roblox headquarters team rooms. */
+export const HQ_ROOM_TEMPLATE_SIZES: [RoomType, number, number][] = [
+  ['roblox-dev', 16, 11], ['game-design', 16, 11], ['3d-design', 16, 11], ['typography', 16, 11],
+  ['roblox-build', 16, 11], ['ad-studio', 16, 11], ['throne-room', 20, 14],
+];
+
 export function builtinRoomTemplates(): RoomTemplate[] {
   const types: [RoomType, number, number][] = [
     ['office', 7, 6], ['research', 10, 7], ['server', 8, 6], ['meeting', 9, 7], ['workshop', 9, 7],
     ['storage', 6, 5], ['break', 8, 6], ['security', 7, 6], ['reception', 9, 6], ['operations', 16, 10],
     ['executive', 12, 8], ['library', 12, 8], ['finance', 9, 6], ['engineering', 11, 7], ['design', 11, 7], ['studio', 10, 7], ['market', 10, 6],
     ['ops-floor', 24, 16], ['arcade', 16, 10], ['blender-studio', 14, 9], ['royal-lounge', 14, 10],
+    ...HQ_ROOM_TEMPLATE_SIZES,
   ];
   return types.map(([t, w, h]) => ({
     id: `tpl_${t}`, name: ROOM_META[t].label, type: t, w, h, appearance: roomAppearance(t), furniture: furniturePreset(t, w, h),

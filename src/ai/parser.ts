@@ -23,7 +23,15 @@ export interface ParseContext {
 }
 
 const ROOM_SYNONYMS: [RegExp, RoomType][] = [
-  [/\b(royal lounge|king'?s lounge|throne room|briefing room)\b/, 'royal-lounge'],
+  // Roblox headquarters team rooms
+  [/\b(throne room|throne|command cent(er|re)|king'?s room|queen'?s room|ruler'?s room)\b/, 'throne-room'],
+  [/\b(roblox dev(elopment)?|game dev(elopment)? room|scripting room|dev room|luau)\b/, 'roblox-dev'],
+  [/\b(game design|level design|mechanics room|prototyping room)\b/, 'game-design'],
+  [/\b(3d design|3d studio|modell?ing studio|3d room)\b/, '3d-design'],
+  [/\b(typography|type studio|font room|fonts?|lettering)\b/, 'typography'],
+  [/\b(roblox build(ing)?|build(ing)? workshop|construction workshop|builders? room)\b/, 'roblox-build'],
+  [/\b(advertising|ad studio|ads? room|campaign studio|creative images?|marketing studio)\b/, 'ad-studio'],
+  [/\b(royal lounge|king'?s lounge|briefing room)\b/, 'royal-lounge'],
   [/\b(engineering|engineer)\b/, 'engineering'], [/\b(library|archive|librarian)\b/, 'library'], [/\b(executive|exec suite|president)\b/, 'executive'],
   [/\b(finance|treasury|accounting)\b/, 'finance'], [/\bdesign lab\b|\bdesign\b/, 'design'], [/\b(studio|creative)\b/, 'studio'], [/\b(market intel|market|analytics)\b/, 'market'],
   [/\b(research|lab|laboratory)\b/, 'research'], [/\bserver/, 'server'], [/\b(conference|meeting)\b/, 'meeting'],

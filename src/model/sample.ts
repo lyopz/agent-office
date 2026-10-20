@@ -259,10 +259,152 @@ function addProductionWing(doc0: OfficeDoc): OfficeDoc {
 
 /** Starting production items for the sample office's game project. */
 export function seedSampleRuntime(doc: OfficeDoc, rt: RuntimeState) {
+  if (doc.id === ROBLOX_HQ_ID) { seedRobloxRuntime(doc, rt); return; }
   if (!doc.agents.agent_mesh || Object.keys(rt.assets).length) return;
   const items: [string, Parameters<typeof createAsset>[1]['kind'], string][] = [
     ['Runner character', 'character', 'agent_mesh'], ['Neon jacket cosmetic', 'cosmetic', 'agent_mesh'], ['Hoverboard prop', 'prop', 'agent_rig'],
     ['Run cycle animation', 'animation', 'agent_rig'], ['Checkpoint system', 'luau-script', 'agent_luau'], ['Rooftop level', 'level', 'agent_quest'], ['Shop UI', 'ui', 'agent_quest'],
   ];
   for (const [name, kind, owner] of items) createAsset(rt, { name, kind, ownerAgentId: owner, projectId: 'proj_roblox' }, new Date(HQ_CREATED));
+}
+
+// ---------------------------------------------------------------------------
+// Roblox development headquarters
+// ---------------------------------------------------------------------------
+
+export const ROBLOX_HQ_ID = 'office_roblox_hq';
+
+/** Room ids of the Roblox headquarters, throne room first. */
+export const ROBLOX_HQ_ROOMS = {
+  throne: 'room_throne', dev: 'room_dev', research: 'room_research', design: 'room_gamedesign',
+  modeling: 'room_3d', type: 'room_type', build: 'room_build', ads: 'room_ads',
+} as const;
+
+/**
+ * The Roblox development headquarters: the throne room (the owner's command
+ * centre) in the middle, seven team rooms around it. Wide tubes run straight
+ * from the throne room's sides to the nearest rooms, and an outer ring links
+ * neighbours, so every room is reachable two ways. Built through DocOps like the classic sample.
+ */
+export function robloxHQ(): OfficeDoc {
+  let doc = emptyOffice('Roblox Development HQ');
+  doc.id = ROBLOX_HQ_ID;
+  doc.settings.layoutPreset = 'bubble';
+  const run = (ops: DocOp[]) => { const r = applyOps(doc, ops); if (r.errors.length) throw new Error(`roblox HQ: ${r.errors.join('; ')}`); doc = r.doc; };
+  const R = ROBLOX_HQ_ROOMS;
+  run([
+    { op: 'room.create', id: R.throne, type: 'throne-room', name: 'Throne Room', x: 32, y: 24, w: 20, h: 14 },
+    { op: 'room.create', id: R.research, type: 'research', name: 'Research', x: 6, y: 4, w: 16, h: 11, preset: false },
+    { op: 'room.create', id: R.dev, type: 'roblox-dev', name: 'Roblox Development', x: 34, y: 4, w: 16, h: 11 },
+    { op: 'room.create', id: R.design, type: 'game-design', name: 'Game Design', x: 62, y: 4, w: 16, h: 11 },
+    { op: 'room.create', id: R.modeling, type: '3d-design', name: '3D Design', x: 6, y: 25, w: 16, h: 12 },
+    { op: 'room.create', id: R.build, type: 'roblox-build', name: 'Roblox Building', x: 62, y: 25, w: 16, h: 12 },
+    { op: 'room.create', id: R.type, type: 'typography', name: 'Typography & Fonts', x: 20, y: 47, w: 16, h: 11 },
+    { op: 'room.create', id: R.ads, type: 'ad-studio', name: 'Advertising & Creative', x: 48, y: 47, w: 16, h: 11 },
+  ]);
+  // research: organised boards, searchable references, notes and the connections between findings
+  run([{ op: 'room.update', id: R.research, patch: { appearance: { floorColor: '#120c22', wallColor: '#3a2a5e', lightTemp: 5200, lighting: 0.6, displayColor: '#b57bff', doorColor: '#b57bff' }, purpose: 'Player research, references and findings, connected on the boards.' } }]);
+  const add = (roomId: string, type: FurnitureType, x: number, y: number, extra: Partial<Extract<DocOp, { op: 'furniture.add' }>> = {}): DocOp => ({ op: 'furniture.add', roomId, type, x, y, ...extra });
+  run([
+    add(R.research, 'evidence-board', 3, 1), add(R.research, 'note-wall', 8, 1), add(R.research, 'digital-shelf', 12, 1),
+    add(R.research, 'archive-terminal', 2, 4, { workstationName: 'Findings Terminal' }),
+    add(R.research, 'multi-monitor', 6, 4, { workstationName: 'Player Data Station' }),
+    add(R.research, 'reference-stack', 11, 4), add(R.research, 'reference-stack', 11, 6),
+    add(R.research, 'research-kiosk', 2, 7), add(R.research, 'collab-table', 6, 7),
+    add(R.research, 'team-sign', 5, 10, { label: 'FIND · CONNECT · BRIEF', w: 6 }),
+  ]);
+
+  const tube = (a: string, b: string, id: string, width = 3): DocOp => ({ op: 'rooms.connect', id, a, b, width });
+  run([
+    // straight spokes from the throne room's four sides (the south door serves both southern rooms)
+    tube(R.throne, R.dev, 'tube_dev'), tube(R.throne, R.modeling, 'tube_3d'), tube(R.throne, R.build, 'tube_build'),
+    tube(R.throne, R.type, 'tube_type'), tube(R.throne, R.ads, 'tube_ads'),
+    // the outer ring: neighbours link directly, so every room has two ways in
+    tube(R.research, R.dev, 'ring_research_dev', 2), tube(R.dev, R.design, 'ring_dev_design', 2),
+    tube(R.research, R.modeling, 'ring_research_3d', 2), tube(R.design, R.build, 'ring_design_build', 2), tube(R.type, R.ads, 'ring_type_ads', 2),
+  ]);
+  // the southern rooms also reach the side rooms through their outer walls, on doors of their own,
+  // so the shared south door of the throne room is never the only way in
+  const door = (roomId: string, doorId: string) => ({ kind: 'door' as const, roomId, doorId });
+  run([
+    { op: 'door.add', roomId: R.modeling, id: 'door_3d_s', side: 's', offset: 7, width: 2 }, { op: 'door.add', roomId: R.type, id: 'door_type_w', side: 'w', offset: 4, width: 2 },
+    { op: 'door.add', roomId: R.build, id: 'door_build_s', side: 's', offset: 7, width: 2 }, { op: 'door.add', roomId: R.ads, id: 'door_ads_e', side: 'e', offset: 4, width: 2 },
+    { op: 'corridor.create', id: 'ring_3d_type', width: 2, start: door(R.modeling, 'door_3d_s'), end: door(R.type, 'door_type_w') },
+    { op: 'corridor.create', id: 'ring_build_ads', width: 2, start: door(R.build, 'door_build_s'), end: door(R.ads, 'door_ads_e') },
+  ]);
+  const names: Record<string, string> = {
+    tube_dev: 'Dev Tube', tube_3d: '3D Tube', tube_build: 'Build Tube', tube_type: 'Type Tube', tube_ads: 'Campaign Tube',
+    ring_research_dev: 'North Ring West', ring_dev_design: 'North Ring East', ring_research_3d: 'West Ring', ring_design_build: 'East Ring', ring_type_ads: 'South Ring', ring_3d_type: 'South-West Ring', ring_build_ads: 'South-East Ring',
+  };
+  run(Object.entries(names).map(([id, name]) => ({ op: 'corridor.update', id, patch: { name, isMain: id.startsWith('tube_') } }) as DocOp));
+  // keep doorways clear: move any object a new door landed on
+  for (const i of validate(doc)) if (i.code === 'door-blocked') {
+    const f = doc.furniture[i.objectIds[0]]; const room = doc.rooms[f.roomId];
+    const spot = findObjectSpot(doc, room, f.type, { near: { x: f.x, y: f.y }, ignore: new Set([f.id]), rotation: f.rotation });
+    if (spot) run([{ op: 'furniture.update', id: f.id, patch: { x: spot.x, y: spot.y } }]);
+  }
+
+  // one capsule station per team so work can be handed between rooms
+  const stations: [string, string, FurnitureType][] = [
+    [R.throne, 'Command', 'dispatch-terminal'], [R.dev, 'Development', 'tube-station'], [R.research, 'Research', 'tube-station'], [R.design, 'Game Design', 'tube-station'],
+    [R.modeling, '3D Design', 'tube-station'], [R.type, 'Typography', 'tube-station'], [R.build, 'Building', 'tube-station'], [R.ads, 'Advertising', 'tube-station'],
+  ];
+  for (const [roomId, dept, type] of stations) {
+    const room = doc.rooms[roomId];
+    const spot = findObjectSpot(doc, room, type, { near: { x: room.w - 4, y: room.h - 2 } });
+    if (!spot) continue;
+    const id = `tube_${roomId.slice(5)}_station`;
+    run([{ op: 'furniture.add', id, roomId, type, x: spot.x, y: spot.y }, { op: 'furniture.update', id, patch: { tube: { stationName: `${dept} Station`, department: dept } } }]);
+  }
+
+  // the teams
+  const hire: [string, string, string, string | null][] = [
+    ['coo', 'REGENT', 'agent_regent', R.throne],
+    ['roblox-dev', 'LUAU', 'agent_luau', null], ['roblox-dev', 'BYTE', 'agent_byte', null], ['qa-integrator', 'PROBE', 'agent_probe', R.dev],
+    ['librarian', 'CODEX', 'agent_codex', R.research], ['market-analyst', 'SCOUT', 'agent_scout', R.research],
+    ['game-designer', 'QUEST', 'agent_quest', R.design], ['game-designer', 'LOOP', 'agent_loop', R.design],
+    ['blender-artist', 'MESH', 'agent_mesh', R.modeling], ['blender-artist', 'RIG', 'agent_rig', R.modeling],
+    ['type-designer', 'SERIF', 'agent_serif', R.type], ['type-designer', 'KERN', 'agent_kern', R.type],
+    ['roblox-builder', 'BRICK', 'agent_brick', R.build], ['roblox-builder', 'TERRA', 'agent_terra', R.build],
+    ['ad-creative', 'PROMO', 'agent_promo', R.ads], ['ad-creative', 'FLASH', 'agent_flash', R.ads],
+  ];
+  run(hire.map(([archetype, name, id, roomId]) => ({ op: 'agent.createFromArchetype', archetype, name, id, roomId }) as DocOp));
+  // developers sit at the studio workstations (their archetype's own desk isn't in this room)
+  const studio = Object.values(doc.furniture).filter((f) => f.roomId === R.dev && f.type === 'studio-workstation' && !f.workstation?.assignedAgentId).sort((a, b) => a.y - b.y || a.x - b.x);
+  run([{ op: 'workstation.assign', furnitureId: studio[0].id, agentId: 'agent_luau' }, { op: 'workstation.assign', furnitureId: studio[1].id, agentId: 'agent_byte' }]);
+  // the chief of staff and the developers wear their own looks rather than the role uniform
+  run(['agent_regent', 'agent_luau', 'agent_byte'].map((id) => ({ op: 'agent.removeUniform', id }) as DocOp));
+  run([
+    { op: 'agent.update', id: 'agent_regent', patch: { identity: { title: 'Chief of Staff', department: 'Command', roleDescription: 'Runs the command centre for the ruler: routes work between teams and keeps the war table current.' }, appearance: { top: 'robe', topColor: '#2a0a18', trimColor: '#ff3b5c', accent: '#ff3b5c', hairStyle: 'swept', hairColor: '#e8e2d0', expression: 'determined', bodyStyle: 'heroic' } } },
+    { op: 'agent.update', id: 'agent_luau', patch: { appearance: { hairStyle: 'spiky', hairColor: '#4cc9ff', expression: 'focused', bodyStyle: 'blocky', topColor: '#14284a', trimColor: '#4cc9ff', accent: '#4cc9ff' } } },
+    { op: 'agent.update', id: 'agent_byte', patch: { appearance: { hairStyle: 'afro', hairColor: '#1a1410', skinTone: '#7a4a2a', expression: 'smile', bodyStyle: 'heroic', topColor: '#1a2a4a', trimColor: '#4cc9ff', accent: '#4cc9ff' } } },
+    { op: 'agent.update', id: 'agent_loop', patch: { appearance: { hairStyle: 'spiky', hairColor: '#39d0c8', skinTone: '#e8b897', expression: 'surprised', bodyStyle: 'chibi', cheeks: 'none' } } },
+    { op: 'agent.update', id: 'agent_rig', patch: { appearance: { hairStyle: 'undercut', hairColor: '#c0c0c0', expression: 'smirk' } } },
+    { op: 'agent.update', id: 'agent_kern', patch: { appearance: { hairStyle: 'twin-buns', hairColor: '#8a3b1e', skinTone: '#a0663f', expression: 'smile' } } },
+    { op: 'agent.update', id: 'agent_terra', patch: { appearance: { hairStyle: 'afro', hairColor: '#5a3a1a', skinTone: '#4f3020', expression: 'grin' } } },
+    { op: 'agent.update', id: 'agent_flash', patch: { appearance: { hairStyle: 'braids', hairColor: '#b57bff', skinTone: '#f6d7c3', expression: 'grin', bodyStyle: 'sleek' } } },
+  ]);
+  for (const [, , id] of hire) run([{ op: 'agent.update', id, patch: { identity: { createdAt: HQ_CREATED }, skills: { supervisorId: id === 'agent_regent' ? null : 'agent_regent' } } }]);
+  for (const name of ['Command', 'Game Development', 'Research', 'Game Design', '3D Design', 'Typography', 'Roblox Building', 'Advertising']) run([{ op: 'department.update', name, patch: makeDepartment(name) }]);
+
+  for (const project of [
+    { id: 'proj_obby', name: 'Sky Islands Obby', ownerAgentId: 'agent_luau', budget: 400, forecastSpend: 300, status: 'active', description: 'A floating-island obstacle course: scripts, levels, models, builds and UI type.' },
+    { id: 'proj_campaign', name: 'Launch Campaign', ownerAgentId: 'agent_promo', budget: 200, forecastSpend: 150, status: 'active', description: 'Thumbnails, icons and ads for the Sky Islands launch.' },
+  ] as Project[]) run([{ op: 'project.upsert', project }]);
+  run([{ op: 'library.upsert', entry: {
+    id: 'kb_players', title: 'What keeps players coming back', topic: 'research', summary: 'Short checkpoints and visible progress raise return visits; long unskippable intros lower them.',
+    tags: ['players', 'retention', 'obby'], sources: [{ title: 'Play-test notes (simulated)', url: '' }], createdAt: HQ_CREATED, authorAgentId: 'agent_scout', projectId: 'proj_obby',
+    confidence: 0.75, verification: 'unverified', sensitive: false, allowedAgentIds: [],
+  } }]);
+  run([{ op: 'player.update', patch: { lastRoomId: R.throne } }]);
+  return doc;
+}
+
+function seedRobloxRuntime(doc: OfficeDoc, rt: RuntimeState) {
+  if (Object.keys(rt.assets).length) return;
+  const items: [string, Parameters<typeof createAsset>[1]['kind'], string, string][] = [
+    ['Checkpoint system', 'luau-script', 'agent_luau', 'proj_obby'], ['Island level 1', 'level', 'agent_quest', 'proj_obby'], ['Floating island kit', 'environment', 'agent_brick', 'proj_obby'],
+    ['Explorer avatar', 'character', 'agent_mesh', 'proj_obby'], ['Title and HUD type', 'ui', 'agent_serif', 'proj_obby'], ['Launch thumbnail', 'prop', 'agent_promo', 'proj_campaign'],
+  ];
+  for (const [name, kind, owner, projectId] of items) if (doc.agents[owner]) createAsset(rt, { name, kind, ownerAgentId: owner, projectId }, new Date(HQ_CREATED));
 }

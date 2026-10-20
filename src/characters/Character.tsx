@@ -64,6 +64,8 @@ function FrontHairBack({ c, hx }: { c: Ctx; hx: number }) {
   const { a, s } = c;
   if (a.hairStyle === 'long') return <rect x={hx - 19} y={26} width={38} height={42} rx={12} fill={shade(a.hairColor, -0.15)} {...s} />;
   if (a.hairStyle === 'ponytail') return <ellipse cx={hx + 18} cy={44} rx={5} ry={10} fill={shade(a.hairColor, -0.15)} {...s} />;
+  if (a.hairStyle === 'afro') return <circle cx={hx} cy={28} r={25} fill={shade(a.hairColor, -0.1)} {...s} />;
+  if (a.hairStyle === 'braids') return <rect x={hx - 18} y={26} width={36} height={26} rx={12} fill={shade(a.hairColor, -0.2)} {...s} />;
   return null;
 }
 
@@ -79,6 +81,13 @@ function FrontHair({ c, hx }: { c: Ctx; hx: number }) {
     case 'ponytail': return <path d={cap} fill={a.hairColor} {...s} />;
     case 'mohawk': return <rect x={hx - 4} y={8} width={8} height={22} rx={4} fill={a.hairColor} {...s} />;
     case 'curly': return <g fill={a.hairColor} {...s}>{[-14, -7, 0, 7, 14].map((dx, i) => <circle key={i} cx={hx + dx} cy={20 + Math.abs(dx) * 0.5} r={7} />)}</g>;
+    // hair styles modelled for the 3D headquarters, drawn simplified in 2D
+    case 'spiky': return <><path d={`M${hx - 18},32 L${hx - 16},11 L${hx - 9},20 L${hx - 5},5 L${hx + 1},18 L${hx + 7},4 L${hx + 10},19 L${hx + 17},9 L${hx + 18},32 Q${hx + 9},22 ${hx},23 Q${hx - 9},22 ${hx - 18},32 Z`} fill={a.hairColor} {...s} /><path d={`M${hx - 6},12 L${hx - 4},17 M${hx + 6},10 L${hx + 7},16`} stroke={shade(a.hairColor, 0.35)} strokeWidth={1.2} /></>;
+    case 'afro': return <g fill={a.hairColor} {...s}><path d={`M${hx - 21},34 Q${hx - 26},8 ${hx},6 Q${hx + 26},8 ${hx + 21},34 Q${hx + 14},20 ${hx},21 Q${hx - 14},20 ${hx - 21},34 Z`} />{[-14, -5, 5, 14].map((dx, i) => <circle key={i} cx={hx + dx} cy={12 + Math.abs(dx) * 0.25} r={1.4} fill={shade(a.hairColor, 0.3)} stroke="none" />)}</g>;
+    case 'braids': return <><path d={cap} fill={a.hairColor} {...s} />{[-1, 1].map((sd) => <g key={sd} fill={a.hairColor} {...s}>{[0, 1, 2, 3, 4].map((k) => <ellipse key={k} cx={hx + sd * 17} cy={34 + k * 7} rx={3.6} ry={4} />)}<rect x={hx + sd * 17 - 2} y={68} width={4} height={3} rx={1} fill={a.accent} /></g>)}<path d={`M${hx},15 L${hx},23`} stroke={shade(a.hairColor, -0.35)} strokeWidth={1} /></>;
+    case 'undercut': return <><path d={cap} fill={a.hairColor} opacity={0.45} /><path d={`M${hx - 14},27 Q${hx - 10},7 ${hx + 6},8 Q${hx + 19},10 ${hx + 15},24 Q${hx + 4},15 ${hx - 14},27 Z`} fill={a.hairColor} {...s} /></>;
+    case 'swept': return <><path d={`M${hx - 17},36 Q${hx - 19},13 ${hx + 1},13 Q${hx + 19},14 ${hx + 17},34 Q${hx + 12},22 ${hx + 2},22 Q${hx - 10},25 ${hx - 17},36 Z`} fill={a.hairColor} {...s} /><path d={`M${hx - 15},29 Q${hx - 6},14 ${hx + 15},21 Q${hx + 2},20 ${hx - 9},31 Z`} fill={shade(a.hairColor, 0.12)} {...s} /></>;
+    case 'twin-buns': return <><circle cx={hx - 14} cy={14} r={6.5} fill={a.hairColor} {...s} /><circle cx={hx + 14} cy={14} r={6.5} fill={a.hairColor} {...s} /><path d={cap} fill={a.hairColor} {...s} /></>;
   }
 }
 
@@ -108,16 +117,24 @@ function FrontFace({ c, hx, turn }: { c: Ctx; hx: number; turn: number }) {
       case 'visor': return null;
     }
   };
-  const browY = 32.5;
+  const browY = 32.5 + (a.expression ? EXPR_BROW[a.expression].dy : 0);
+  // an expression tilts the brows (inner end down for focus, up for surprise); none keeps them level
+  const tilt = a.expression ? EXPR_BROW[a.expression].tilt : 0;
   const brow = (x: number, sc: number, flip: number) => a.brows === 'none' ? null :
-    <path d={a.brows === 'angled' ? `M${x - 3 * sc},${browY + flip} L${x + 3 * sc},${browY - flip}` : `M${x - 3 * sc},${browY} Q${x},${browY - 1.4} ${x + 3 * sc},${browY}`} stroke={shade(a.hairColor, -0.1)} strokeWidth={a.brows === 'thick' ? 2.2 : 1.2} fill="none" strokeLinecap="round" />;
+    <path d={a.brows === 'angled' ? `M${x - 3 * sc},${browY + flip} L${x + 3 * sc},${browY - flip}` : tilt ? `M${x - 3 * sc},${browY - tilt * Math.sign(flip)} Q${x},${browY - 1.4} ${x + 3 * sc},${browY + tilt * Math.sign(flip)}` : `M${x - 3 * sc},${browY} Q${x},${browY - 1.4} ${x + 3 * sc},${browY}`} stroke={shade(a.hairColor, -0.1)} strokeWidth={a.brows === 'thick' ? 2.2 : 1.2} fill="none" strokeLinecap="round" />;
   return (
     <g>
       {eye(eyeL, turn > 0 ? 1 : 1)}{eye(eyeR, turn > 0 ? farScale : 1)}
       {a.eyeStyle === 'visor' && <rect x={hx - 12 + sh} y={35} width={24} height={6} rx={3} fill={a.accent} filter={`url(#${c.gid}-glow)`} />}
       {brow(eyeL, 1, 0.8)}{brow(eyeR, turn > 0 ? farScale : 1, -0.8)}
-      {turn > 0 ? <path d={`M${hx + sh + 4},39 L${hx + sh + 6.5},44 L${hx + sh + 3},44.5`} fill="none" stroke={shade(a.skinTone, -0.35)} strokeWidth={1.2} /> : <ellipse cx={hx} cy={43} rx={1.4} ry={1} fill={shade(a.skinTone, -0.3)} />}
-      <path d={`M${hx - 3.5 + sh},48 Q${hx + sh},50 ${hx + 3.5 + sh},48`} fill="none" stroke={shade(a.skinTone, -0.45)} strokeWidth={1.3} strokeLinecap="round" />
+      {a.nose === undefined
+        ? turn > 0 ? <path d={`M${hx + sh + 4},39 L${hx + sh + 6.5},44 L${hx + sh + 3},44.5`} fill="none" stroke={shade(a.skinTone, -0.35)} strokeWidth={1.2} /> : <ellipse cx={hx} cy={43} rx={1.4} ry={1} fill={shade(a.skinTone, -0.3)} />
+        : <FrontNose a={a} x={hx + sh} turn={turn} />}
+      {a.cheeks === 'blush' && <g fill="#ff7a8a" opacity={0.35}><ellipse cx={eyeL - 2} cy={44} rx={3.2} ry={1.8} /><ellipse cx={eyeR + 2} cy={44} rx={3.2 * (turn ? farScale : 1)} ry={1.8} /></g>}
+      {a.cheeks === 'dimples' && <g fill="none" stroke={shade(a.skinTone, -0.3)} strokeWidth={0.9} strokeLinecap="round"><path d={`M${hx + sh - 6.5},46.5 q-0.8,1.4 0,2.6`} /><path d={`M${hx + sh + 6.5},46.5 q0.8,1.4 0,2.6`} /></g>}
+      {a.expression === undefined && a.mouth === undefined
+        ? <path d={`M${hx - 3.5 + sh},48 Q${hx + sh},50 ${hx + 3.5 + sh},48`} fill="none" stroke={shade(a.skinTone, -0.45)} strokeWidth={1.3} strokeLinecap="round" />
+        : <FrontMouth a={a} x={hx + sh} />}
       {a.facialHair === 'stubble' && <path d={`M${hx - 13},42 Q${hx},62 ${hx + 13},42 Q${hx},52 ${hx - 13},42`} fill={a.hairColor} opacity={0.28} />}
       {a.facialHair === 'beard' && <path d={`M${hx - 15},38 Q${hx - 14},60 ${hx + sh},58 Q${hx + 14},60 ${hx + 15},38 Q${hx + 12},50 ${hx + sh},51 Q${hx - 12},50 ${hx - 15},38 Z`} fill={a.hairColor} {...s} />}
       {(a.facialHair === 'mustache' || a.facialHair === 'beard') && <path d={`M${hx - 5 + sh},46 Q${hx + sh},43.5 ${hx + 5 + sh},46`} stroke={a.hairColor} strokeWidth={2.4} fill="none" strokeLinecap="round" />}
@@ -126,6 +143,55 @@ function FrontFace({ c, hx, turn }: { c: Ctx; hx: number; turn: number }) {
       {a.glasses === 'visor' && <rect x={hx - 15 + sh} y={33.5} width={30} height={8} rx={4} fill={a.accent} opacity={0.85} filter={`url(#${c.gid}-glow)`} />}
     </g>
   );
+}
+
+/** Brow offset (dy, + is lower) and inner-end tilt per expression. */
+const EXPR_BROW: Record<NonNullable<Appearance['expression']>, { dy: number; tilt: number }> = {
+  neutral: { dy: 0, tilt: 0 }, smile: { dy: -0.4, tilt: 0 }, grin: { dy: -0.8, tilt: -0.6 }, focused: { dy: 1, tilt: 1.2 },
+  surprised: { dy: -2.2, tilt: -0.8 }, smirk: { dy: 0, tilt: 0.6 }, determined: { dy: 0.8, tilt: 1.6 },
+};
+const MOUTH_W = { small: 0.75, wide: 1.35, full: 1.1 } as const;
+
+/** Mouth for a set expression or mouth shape (only drawn when one is set, so older looks keep their exact drawing). */
+function FrontMouth({ a, x }: { a: Appearance; x: number }) {
+  const w = 3.5 * MOUTH_W[a.mouth ?? 'full'] * (a.mouth ? 1 : 1 / MOUTH_W.full);
+  const ink = shade(a.skinTone, -0.45), lip = shade(a.skinTone, -0.22);
+  const line = (d: string) => <path d={d} fill="none" stroke={ink} strokeWidth={1.3} strokeLinecap="round" />;
+  const full = a.mouth === 'full';
+  switch (a.expression ?? 'smile') {
+    case 'neutral': return <>{full && <ellipse cx={x} cy={48.9} rx={w * 0.8} ry={1.3} fill={lip} />}{line(`M${x - w},48.5 L${x + w},48.5`)}</>;
+    case 'smile': return <>{full && <path d={`M${x - w},48 Q${x},52.5 ${x + w},48 Q${x},50.5 ${x - w},48 Z`} fill={lip} />}{line(`M${x - w},47.6 Q${x},51.6 ${x + w},47.6`)}</>;
+    case 'grin': return <path d={`M${x - w * 1.15},47 Q${x},54 ${x + w * 1.15},47 Z`} fill="#fff" stroke={ink} strokeWidth={1.2} strokeLinejoin="round" />;
+    case 'focused': return line(`M${x - w * 0.7},48.6 Q${x},48.1 ${x + w * 0.7},48.6`);
+    case 'surprised': return <ellipse cx={x} cy={49} rx={Math.max(1.6, w * 0.55)} ry={2.6} fill={shade(a.skinTone, -0.6)} stroke={ink} strokeWidth={0.8} />;
+    case 'smirk': return line(`M${x - w * 0.9},48.6 Q${x + w * 0.3},49.6 ${x + w * 1.1},46.6`);
+    case 'determined': return <>{full && <ellipse cx={x} cy={49.2} rx={w * 0.8} ry={1.1} fill={lip} />}{line(`M${x - w},49.2 Q${x},48 ${x + w},49.2`)}</>;
+  }
+}
+
+function FrontNose({ a, x, turn }: { a: Appearance; x: number; turn: number }) {
+  const ink = shade(a.skinTone, -0.32);
+  if (a.nose === 'none') return null;
+  if (turn > 0) return <path d={`M${x + 4},39 L${x + (a.nose === 'broad' ? 7.5 : 6.5)},44 L${x + 3},44.5`} fill="none" stroke={ink} strokeWidth={1.2} />;
+  switch (a.nose) {
+    case 'button': return <circle cx={x} cy={43} r={1.5} fill={ink} opacity={0.75} />;
+    case 'straight': return <path d={`M${x - 0.3},38.5 L${x + 0.8},43.5 L${x - 1},44`} fill="none" stroke={ink} strokeWidth={1.1} strokeLinecap="round" strokeLinejoin="round" />;
+    case 'broad': return <><ellipse cx={x} cy={43.4} rx={2.6} ry={1.4} fill={ink} opacity={0.55} /><circle cx={x - 1.4} cy={43.8} r={0.6} fill={shade(a.skinTone, -0.55)} /><circle cx={x + 1.4} cy={43.8} r={0.6} fill={shade(a.skinTone, -0.55)} /></>;
+    default: return null;
+  }
+}
+
+function SideMouth({ a }: { a: Appearance }) {
+  const ink = shade(a.skinTone, -0.45);
+  switch (a.expression ?? 'smile') {
+    case 'smile': return <path d="M61.5,47.6 Q64,49.6 66.5,46.8" stroke={ink} strokeWidth={1.3} fill="none" strokeLinecap="round" />;
+    case 'smirk': return <path d="M62,48.4 Q64.6,48.6 66.6,46.2" stroke={ink} strokeWidth={1.3} fill="none" strokeLinecap="round" />;
+    case 'grin': return <path d="M60.5,46.5 Q64,51.5 67,46.3 Z" fill="#fff" stroke={ink} strokeWidth={1.1} strokeLinejoin="round" />;
+    case 'surprised': return <ellipse cx={65} cy={48} rx={1.4} ry={2.2} fill={shade(a.skinTone, -0.6)} />;
+    case 'focused': return <path d="M63,48 L66,47.8" stroke={ink} strokeWidth={1.3} strokeLinecap="round" />;
+    case 'determined': return <path d="M62,48.6 L66,47.6" stroke={ink} strokeWidth={1.5} strokeLinecap="round" />;
+    case 'neutral': return <path d="M62,48 L66,48" stroke={ink} strokeWidth={1.3} strokeLinecap="round" />;
+  }
 }
 
 function Equipment({ c, x, y, side }: { c: Ctx; x: number; y: number; side?: boolean }) {
@@ -284,6 +350,9 @@ function Side({ c }: { c: Ctx }) {
       {a.hairStyle === 'long' && <path d="M36,30 Q34,58 44,66 L52,64 L50,32 Z" fill={shade(a.hairColor, -0.1)} {...s} />}
       {a.hairStyle === 'ponytail' && <path d="M38,30 Q26,40 30,62 Q35,64 37,58 Q34,44 42,34 Z" fill={a.hairColor} {...s} />}
       {a.hairStyle === 'bun' && <circle cx={37} cy={24} r={7} fill={a.hairColor} {...s} />}
+      {a.hairStyle === 'afro' && <circle cx={47} cy={27} r={22} fill={shade(a.hairColor, -0.1)} {...s} />}
+      {a.hairStyle === 'braids' && <g fill={a.hairColor} {...s}>{[0, 1, 2, 3, 4].map((k) => <ellipse key={k} cx={39 - k * 0.6} cy={40 + k * 6.5} rx={3.4} ry={3.8} />)}</g>}
+      {a.hairStyle === 'twin-buns' && <circle cx={40} cy={15} r={6.5} fill={a.hairColor} {...s} />}
       <path d={a.faceShape === 'square' ? 'M38,22 Q38,18 44,18 L60,18 Q66,18 66,26 L66,34 L70,40 L66,42 L66,48 Q64,54 56,54 L44,54 Q38,54 38,46 Z' : 'M38,32 Q38,18 52,18 Q66,18 66,30 L67,35 L71,40 L67,42 Q67,54 54,55 Q40,55 38,42 Z'} fill={a.skinTone} {...s} />
       <Shade c={c}><ellipse cx={46} cy={38} rx={10} ry={16} /></Shade>
       <circle cx={46} cy={39} r={3.6} fill={shade(a.skinTone, -0.08)} {...s} />
@@ -292,7 +361,8 @@ function Side({ c }: { c: Ctx }) {
         ? <rect x={55} y={34} width={13} height={6} rx={3} fill={a.accent} filter={`url(#${c.gid}-glow)`} />
         : <ellipse cx={60} cy={37} rx={a.eyeStyle === 'wide' ? 2.2 : 1.8} ry={a.eyeStyle === 'almond' ? 1.4 : 2} fill={a.eyeColor} />}
       {a.brows !== 'none' && <path d={a.brows === 'angled' ? 'M56,32 L63,30.5' : 'M56,31.5 Q60,30 63,31.5'} stroke={a.hairColor} strokeWidth={a.brows === 'thick' ? 2.2 : 1.2} fill="none" strokeLinecap="round" />}
-      <path d="M62,48 L66,47.5" stroke={shade(a.skinTone, -0.45)} strokeWidth={1.3} strokeLinecap="round" />
+      {a.expression === undefined && a.mouth === undefined ? <path d="M62,48 L66,47.5" stroke={shade(a.skinTone, -0.45)} strokeWidth={1.3} strokeLinecap="round" /> : <SideMouth a={a} />}
+      {a.cheeks === 'blush' && <ellipse cx={59} cy={44} rx={3} ry={1.7} fill="#ff7a8a" opacity={0.35} />}
       {a.facialHair === 'beard' && <path d="M48,44 Q50,58 60,56 Q67,53 67,46 L63,48 Q56,50 52,44 Z" fill={a.hairColor} {...s} />}
       {a.facialHair === 'stubble' && <path d="M48,44 Q52,57 62,55 Q67,52 67,46 Q58,50 48,44" fill={a.hairColor} opacity={0.28} />}
       {(a.facialHair === 'mustache' || a.facialHair === 'beard') && <path d="M61,45.5 L67,45" stroke={a.hairColor} strokeWidth={2.4} strokeLinecap="round" />}
@@ -305,6 +375,11 @@ function Side({ c }: { c: Ctx }) {
       {a.hairStyle === 'buzz' && <path d="M38,36 Q37,17 54,17 Q66,18 66,27 Q56,22 48,25 Q42,29 42,36 Z" fill={a.hairColor} opacity={0.75} />}
       {a.hairStyle === 'mohawk' && <path d="M40,24 Q44,6 58,10 Q64,12 64,20 Q54,15 46,24 Z" fill={a.hairColor} {...s} />}
       {a.hairStyle === 'curly' && <g fill={a.hairColor} {...s}>{[[40, 26], [46, 19], [54, 17], [61, 20], [39, 35]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r={7} />)}</g>}
+      {(a.hairStyle === 'braids' || a.hairStyle === 'twin-buns') && <path d="M37,40 Q35,15 54,16 Q68,17 67,29 Q58,23 50,25 Q45,29 45,40 Z" fill={a.hairColor} {...s} />}
+      {a.hairStyle === 'spiky' && <path d="M37,40 Q34,22 40,17 L36,6 L46,13 L48,2 L55,12 L62,4 L63,15 L72,12 L67,29 Q58,23 50,25 Q45,29 45,40 Z" fill={a.hairColor} {...s} />}
+      {a.hairStyle === 'afro' && <path d="M35,42 Q26,8 52,6 Q74,6 70,28 Q60,21 50,24 Q44,30 45,42 Z" fill={a.hairColor} {...s} />}
+      {a.hairStyle === 'undercut' && <><path d="M38,36 Q37,17 54,17 Q66,18 66,27 Q56,22 48,25 Q42,29 42,36 Z" fill={a.hairColor} opacity={0.45} /><path d="M41,22 Q46,7 62,10 Q71,13 68,22 Q58,16 44,25 Z" fill={a.hairColor} {...s} /></>}
+      {a.hairStyle === 'swept' && <path d="M37,40 Q34,14 55,14 Q71,15 69,30 Q63,20 52,23 Q45,28 45,40 Z" fill={a.hairColor} {...s} />}
       {/* headwear profile */}
       {a.headwear === 'cap' && <g {...s}><path d="M37,29 Q38,9 54,10 Q67,11 67,27 Z" fill={a.headwearColor} /><path d="M64,25 L80,27 L80,29 L64,29 Z" fill={shade(a.headwearColor, -0.2)} /></g>}
       {a.headwear === 'hardhat' && <g {...s}><path d="M37,27 Q38,7 53,7 Q67,8 67,27 Z" fill={a.headwearColor} /><rect x={32} y={25} width={41} height={5} rx={2.5} fill={shade(a.headwearColor, -0.15)} /><rect x={44} y={9} width={14} height={4} rx={2} fill={shade(a.headwearColor, 0.25)} stroke="none" /></g>}
@@ -353,6 +428,12 @@ function Top({ c }: { c: Ctx }) {
       {a.hairStyle === 'curly' && <g fill={hair} {...s}>{[0, 72, 144, 216, 288].map((d) => <circle key={d} cx={50 + Math.cos((d * Math.PI) / 180) * 10} cy={50 + Math.sin((d * Math.PI) / 180) * 10} r={4.5} />)}</g>}
       {a.hairStyle === 'mohawk' && <rect x={47} y={36} width={6} height={25} rx={3} fill={hair} {...s} />}
       {a.hairStyle === 'bald' && <ellipse cx={46} cy={44} rx={4} ry={2.5} fill="#fff" opacity={0.25} />}
+      {a.hairStyle === 'afro' && <circle cx={50} cy={50} r={17} fill={hair} {...s} />}
+      {a.hairStyle === 'spiky' && <path d={Array.from({ length: 16 }, (_, i) => { const t = (i / 16) * Math.PI * 2, r = i % 2 ? 9 : 15.5; return `${i ? 'L' : 'M'}${50 + Math.cos(t) * r},${50 + Math.sin(t) * r}`; }).join(' ') + 'Z'} fill={hair} {...s} />}
+      {(a.hairStyle === 'braids' || a.hairStyle === 'swept' || a.hairStyle === 'twin-buns') && <ellipse cx={a.hairStyle === 'swept' ? 51.5 : 50} cy={50} rx={12.5} ry={11.5} fill={hair} {...s} />}
+      {a.hairStyle === 'braids' && <g stroke={hair} strokeWidth={4.5} fill="none" strokeLinecap="round" strokeDasharray="3.5 1.2">{[44, 56].map((x) => <path key={x} d={`M${x},58 L${x + (x < 50 ? -2 : 2)},76`} />)}</g>}
+      {a.hairStyle === 'twin-buns' && <g fill={shade(hair, -0.1)} {...s}><circle cx={40} cy={56} r={5.5} /><circle cx={60} cy={56} r={5.5} /></g>}
+      {a.hairStyle === 'undercut' && <><circle cx={50} cy={49} r={12} fill={hair} opacity={0.4} /><ellipse cx={50} cy={47} rx={7} ry={11} fill={hair} {...s} /></>}
       {a.headwear === 'hardhat' && <g {...s}><circle cx={50} cy={48} r={17} fill={shade(a.headwearColor, -0.15)} /><circle cx={50} cy={48} r={13} fill={a.headwearColor} /><rect x={48} y={35} width={4} height={26} fill={shade(a.headwearColor, 0.25)} stroke="none" /></g>}
       {a.headwear === 'cap' && <g {...s}><path d="M41,40 Q50,30 59,40 L57,44 L43,44 Z" fill={shade(a.headwearColor, -0.2)} /><circle cx={50} cy={49} r={12.5} fill={a.headwearColor} /></g>}
       {a.headwear === 'helmet' && <g {...s}><circle cx={50} cy={48} r={15} fill={a.headwearColor} /><path d="M40,40 Q50,32 60,40" stroke={a.accent} strokeWidth={3} fill="none" /></g>}

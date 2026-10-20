@@ -309,9 +309,38 @@ The sort moves rooms, re-aims single-hallway doors at their new neighbours and r
 
 *Undo sort* (or Ctrl+Z) reverts the whole sort. When nothing would bring collaborating rooms meaningfully closer, it says the campus is already well arranged. The engine is `src/engine/autosort.ts` (`roomAffinity`, `planAutoSort`) and is pure until you apply.
 
+### Roblox development headquarters
+
+On first run the app opens the **Roblox Development HQ** (`robloxHQ()` in `src/model/sample.ts`). It uses the bubble preset. The **Throne Room** sits at the centre and is the command centre. Seven team rooms surround it. Each room has a sign naming the team and its work, its own accent colour, floor tint and lighting, and furniture and wall displays that show what the team does:
+
+| Room (id) | Type | What you see |
+|---|---|---|
+| Roblox Development (`room_dev`) | `roblox-dev` | studio workstations (explorer tree, 3D viewport with a play button, properties panel), a live build preview, a code wall and a play-test rig |
+| Research (`room_research`) | `research` | a findings board with strings joining connected findings, searchable reference stacks, a note wall, an archive terminal and a player data station |
+| Game Design (`room_gamedesign`) | `game-design` | a level layout table (route, checkpoints, hazards), a mechanics loop board, a prototype pod and design desks |
+| 3D Design (`room_3d`) | `3d-design` | a dimensional blueprint wall, a wireframe stand, material swatches, a 3D preview turntable and modelling stations |
+| Typography & Fonts (`room_type`) | `typography` | a font specimen wall, a size and weight scale panel, lettering desks and a game interface preview |
+| Roblox Building (`room_build`) | `roblox-build` | a build plan board with phase progress, modular parts racks, a terrain table and scale reference figures |
+| Advertising & Creative (`room_ads`) | `ad-studio` | a campaign timeline, a concept review wall (approved, revise, rejected), image draft galleries and framed final assets |
+| Throne Room (`room_throne`) | `throne-room` | the throne inside a glowing crimson and violet bubble with horn-like spires, a war table mapping every team room, command displays, the briefing board and dark candelabras |
+
+Wide tubes run straight from the throne room's sides to the rooms beside it. An outer ring joins neighbouring rooms, so every room has two ways in, and closing any one tube never cuts a room off. Each team has agents built from role archetypes. The new archetypes are `game-designer`, `type-designer`, `roblox-builder` and `ad-creative`; the others reuse `roblox-dev`, `qa-integrator`, `librarian`, `market-analyst`, `blender-artist` and `coo`. Every agent sits at a workstation in its own room, and every room has a capsule station. Two projects are included: *Sky Islands Obby* and *Launch Campaign*.
+
+To switch between samples, open **Versions** and choose **Roblox HQ** or **NEXUS-7** (the classic sample). The new room types are also built-in room templates, and the AI console understands their names, for example "throne room", "type studio" or "campaign studio".
+
+**Avatar Studio** (`src/ui/AvatarStudio.tsx`) is where you customise your own character (`doc.player`):
+- **Style**: body proportions (blocky, heroic, chibi, sleek), height, build, skin tone and glow accent.
+- **Face**: expression (neutral, smile, grin, focused, surprised, smirk, determined), face shape, eyes, eye colour, brows, nose, mouth, cheeks, facial hair and markings.
+- **Hair**: every style. Swept, spiky, undercut, afro, braids and twin buns are sculpted in 3D and tagged "3D".
+- **Outfit**: tops, bottoms, shoes, headwear, glasses, gloves and belt, with their colours.
+
+Six original one-click looks are included: Neon Runner, Pixel Knight, Star Courier, Cozy Builder, Arcane Scholar and Circuit Ace. You can also **Randomize** or **Reset** the look. Each change is one `player.update` operation, so Undo steps back through them, and an empty name is refused. The studio shows a large 3D preview and the 2D views used on the floor plan. Every control is a labelled radio group, slider or swatch you can operate from the keyboard. The turntable and animations stop when the system asks for reduced motion.
+
+In 2D, the new hair styles and expressions are drawn in every view. A look without the new optional fields (`expression`, `mouth`, `nose`, `cheeks`, `bodyStyle`) draws exactly as before, so existing characters and their sprite keys don't change.
+
 ### Schema version 6
 
-Version 6 adds `settings.layoutPreset`. Older files migrate to the grid preset, so their look doesn't change, and gain the Royal Lounge room template.
+Version 6 adds `settings.layoutPreset`. Older files migrate to the grid preset, so their look doesn't change, and gain the Royal Lounge room template. Moving to version 7 adds your avatar (`player`), the headquarters team room templates and the uniforms for the new roles.
 
 ### Schema version 5
 

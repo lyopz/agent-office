@@ -14,6 +14,8 @@ export const ROOM_TYPES = [
   'executive', 'library', 'finance', 'engineering', 'design', 'studio', 'market',
   'ops-floor', 'arcade', 'blender-studio',
   'royal-lounge',
+  // Roblox development headquarters: one room per team around the throne room
+  'roblox-dev', 'game-design', '3d-design', 'typography', 'roblox-build', 'ad-studio', 'throne-room',
 ] as const;
 export type RoomType = (typeof ROOM_TYPES)[number];
 
@@ -99,6 +101,16 @@ export const FURNITURE_TYPES = [
   'sculpture', 'floor-light', 'wall-panel', 'window', 'deco-robot', 'aquarium', 'wall-art', 'ambient-machine',
   // royal lounge
   'briefing-board', 'throne', 'lounge-sofa', 'crown-chandelier', 'holo-fountain',
+  // Roblox development headquarters (one set per team room)
+  'team-sign',
+  'studio-workstation', 'build-preview', 'code-wall',
+  'evidence-board', 'reference-stack', 'note-wall',
+  'level-layout-table', 'mechanics-board', 'prototype-pod', 'planning-desk',
+  'blueprint-wall', 'wireframe-stand', 'material-swatches', 'preview-turntable',
+  'font-specimen-wall', 'type-scale-panel', 'lettering-desk', 'game-ui-preview',
+  'modular-parts-rack', 'terrain-table', 'scale-figure', 'build-plan-board',
+  'campaign-board', 'concept-review-wall', 'image-draft-gallery', 'final-asset-display',
+  'devil-bubble', 'war-table', 'command-display', 'dark-candelabra',
 ] as const;
 export type FurnitureType = (typeof FURNITURE_TYPES)[number];
 

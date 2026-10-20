@@ -3,7 +3,7 @@ import { useStore } from './store/store';
 import { TopBar } from './ui/TopBar';
 import { Toolbar } from './ui/Toolbar';
 import { AutoSortPanel } from './ui/AutoSort';
-import { useHqView } from './ui/HqSwitch';
+import { setHqView, useHqView } from './ui/HqSwitch';
 import { OverviewPanel } from './ui/OverviewPanel';
 import { AvatarStudio } from './ui/AvatarStudio';
 const HQ3DView = lazy(() => import('./hq3d/HQ3DView'));
@@ -95,7 +95,7 @@ export function App() {
           </Suspense>
         </main>
       )}
-      {page === 'office' && hqView === 'avatar' && <main className="view-fade" key="avatar" style={{ overflow: 'auto', minHeight: 0 }}><AvatarStudio /></main>}
+      {page === 'office' && hqView === 'avatar' && <main className="view-fade" key="avatar" style={{ overflow: 'hidden', minHeight: 0, display: 'grid' }}><AvatarStudio onDone={() => setHqView('3d')} /></main>}
       {page === 'office' && hqView === 'overview' && (
         <main className="main view-fade" data-mobile={mobile} key="overview">
           <AgentPanel />

@@ -14,7 +14,7 @@ import { applyOps, type DocOp } from '../engine/ops';
 import { newErrors, validate, type Issue } from '../engine/validate';
 import { buildNav, type NavGraph } from '../engine/navigation';
 import { createTask, emptyRuntime, goTo, log, reconcileLayout, step, syncRuntime } from '../engine/simulation';
-import { sampleOffice, seedSampleRuntime } from '../model/sample';
+import { robloxHQ, sampleOffice, seedSampleRuntime } from '../model/sample';
 import { emptyOffice } from '../model/defaults';
 import { createRepository, type LoadResult, type OfficeRepository, type Preferences, type SaveResult } from '../persistence/repository';
 import { exportOffice, parseOffice } from '../model/schema';
@@ -111,7 +111,8 @@ interface State {
   loadDoc(doc: OfficeDoc, label: string, runtime?: Partial<RuntimeState> | null): void;
   importText(text: string): { ok: boolean; errors: string[]; warnings: string[] };
   exportText(): string;
-  newOffice(sample: boolean): void;
+  /** true = the classic NEXUS-7 sample, 'roblox' = the Roblox development headquarters, false = blank. */
+  newOffice(sample: boolean | 'roblox'): void;
 }
 
 export const repo: OfficeRepository = createRepository();
@@ -123,7 +124,7 @@ function initial() {
   // a damaged save is reported (recovery dialog), never replaced: the sample below is only a placeholder
   const recovery = loaded.status === 'corrupt' ? loaded : null;
   const saved = loaded.status === 'ok' ? loaded : null;
-  const doc = saved?.doc ?? sampleOffice();
+  const doc = saved?.doc ?? robloxHQ(); // first run opens the Roblox development headquarters
   const runtime: RuntimeState = { ...emptyRuntime(), ...(saved?.runtime ?? {}) } as RuntimeState;
   runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {}; runtime.usage ??= []; runtime.approvals ??= {}; runtime.alerts ??= {}; runtime.capsules ??= {}; runtime.policyHeld ??= []; runtime.arcadeSessions ??= []; runtime.assets ??= {};
   const nav = buildNav(doc);
@@ -372,7 +373,7 @@ export const useStore = create<State>((set, get) => {
       return exportOffice(doc, { runtime: { tasks: runtime.tasks } });
     },
     newOffice(sample) {
-      const doc = sample ? sampleOffice() : emptyOffice('Blank Office');
+      const doc = sample === 'roblox' ? robloxHQ() : sample ? sampleOffice() : emptyOffice('Blank Office');
       const prev = get().doc;
       const rt = emptyRuntime(); const nav = buildNav(doc); syncRuntime(doc, rt, nav);
       if (sample) seedSampleRuntime(doc, rt);
