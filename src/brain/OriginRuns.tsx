@@ -1,12 +1,23 @@
 import { useEffect, useState } from 'react';
 import { Check, Play, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useStore } from '../store/store';
-import { agentProposalAction, publishDecision, runnerStatus, setAutoAgents, setAutoTasks, syncOrigin, taskAction, type AgentProposal, type RunnerStatus, type RunnerTask } from './originLink';
+import { agentProposalAction, mockupUrl, publishDecision, runnerStatus, setAutoAgents, setAutoTasks, syncOrigin, taskAction, type AgentProposal, type PublishRequest, type RunnerStatus, type RunnerTask } from './originLink';
 import { branchKind, describeWindow } from './opportunity';
 import { createProposedAgent } from './skillFiles';
 import { ProgressBar, ProgressLog } from './Progress';
 
 const money = (n: number) => `$${n.toFixed(n < 1 ? 3 : 2)}`;
+
+/** A product's mockup from Printify, fetched through the runner. */
+function Mockup({ id, title }: { id: string; title: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let url: string | null = null, live = true;
+    void mockupUrl(id).then((u) => { url = u; if (live) setSrc(u); else if (u) URL.revokeObjectURL(u); });
+    return () => { live = false; if (url) URL.revokeObjectURL(url); };
+  }, [id]);
+  return src ? <img className="product-mockup" src={src} alt={`Mockup of ${title}`} /> : null;
+}
 
 /**
  * ORIGIN's live runs: the budget, the tasks it may work on (the owner's
@@ -33,6 +44,17 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
     onNotice(r.ok ? r.message : `${r.message}. Reject it, or fix the brain and try again.`);
     void refresh();
   };
+  // one product an agent made: you approve or reject each one; Publish makes it live on your store
+  const productCard = (r: PublishRequest, n?: number) => (
+    <div key={r.id} className="creator-blueprint creator-request product-card">
+      {r.image && <Mockup id={r.id} title={r.title} />}
+      <div className="creator-request">
+        <p><b>{n ? `${n}. ` : ''}{r.title}</b>{r.priceUsd ? ` · ${money(r.priceUsd)}` : ''} · made by {r.agentName}</p>{r.why && <p>{r.why}</p>}
+        <p className="creator-privacy">Check it in Printify (My products) if you want a closer look. Publishing makes it live on your store, which charges its listing fee.</p>
+        <div className="creator-request-row"><button className="creator-secondary" onClick={() => void act(() => publishDecision(r.id, 'reject'), 'Not published.')}><X size={14} /> Don't publish</button><button className="creator-primary" onClick={() => void act(async () => { const x = await publishDecision(r.id, 'publish'); if (x && !x.ok) onNotice(x.reason ?? 'Printify did not publish it.'); return x?.ok ? x : null; }, `Published "${r.title}".`)}><Check size={14} /> Publish</button></div>
+      </div>
+    </div>
+  );
   const spent = (t: RunnerTask) => `${money(t.spentUsd ?? 0)} of ${money(t.budgetUsd ?? st?.taskBudgetUsd ?? 1.5)}${t.runCosts?.length ? ` over ${t.runCosts.length} run${t.runCosts.length === 1 ? '' : 's'}` : ''}`;
 
   if (st === undefined) return <div className="creator-body"><p className="creator-privacy">Checking for ORIGIN's runner…</p></div>;
@@ -49,11 +71,16 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   );
 
   const proposed = st.tasks.filter((t) => t.status === 'proposed');
+  // the command center's tasks: worked first and alone; each one's products are a list to go through
+  const requests = st.publishRequests ?? [];
+  const focusTasks = st.tasks.filter((t) => t.focus && (t.status === 'approved' || requests.some((r) => r.taskId === t.id && r.status === 'waiting')));
+  const focusIds = new Set(focusTasks.map((t) => t.id));
+  const otherWaiting = requests.filter((r) => r.status === 'waiting' && !(r.taskId && focusIds.has(r.taskId)));
   // the runner's order: your tasks first, oldest first, then SKILL.md writing
-  const approved = st.tasks.filter((t) => t.status === 'approved').sort((a, b) => Number(a.kind === 'skill-file') - Number(b.kind === 'skill-file') || Number(a.by === 'origin') - Number(b.by === 'origin'));
-  // the runner works one task per agent at a time, up to `parallel` agents side by side
+  const approved = st.tasks.filter((t) => t.status === 'approved').sort((a, b) => Number(!a.focus) - Number(!b.focus) || Number(a.kind === 'skill-file') - Number(b.kind === 'skill-file') || Number(a.by === 'origin') - Number(b.by === 'origin'));
+  // the runner works one task per agent at a time, up to `parallel` agents side by side; a focus task runs alone
   const workingIds = new Set<string>();
-  { const seen = new Set<string>(); for (const t of approved) { if (t.kind === 'skill-file' || (t.waitingOnOwner && proposed.length)) continue; const who = t.agentId ?? 'origin'; if (seen.has(who) || seen.size >= (st.parallel ?? 1)) continue; seen.add(who); workingIds.add(t.id); } }
+  { const seen = new Set<string>(); const open = approved.some((t) => t.focus) ? approved.filter((t) => t.focus) : approved; for (const t of open) { if (t.kind === 'skill-file' || (t.waitingOnOwner && proposed.length)) continue; const who = t.agentId ?? 'origin'; if (seen.has(who) || seen.size >= (st.parallel ?? 1)) continue; seen.add(who); workingIds.add(t.id); } }
   const agentName = (id: string) => doc.agents[id]?.identity.name ?? (id === 'agent_origin' ? 'ORIGIN' : id);
   const taskSpend = st.tasks.filter((t) => (t.spentUsd ?? 0) > 0 && t.kind !== 'skill-file').sort((a, b) => (b.spentUsd ?? 0) - (a.spentUsd ?? 0)).slice(0, 8);
   const stopped = st.tasks.filter((t) => t.status === 'stopped' && t.stopReason !== 'agent no longer in the brain').slice(-5);
@@ -75,6 +102,21 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         <span>{money(st.spentUsd)} of {money(st.capUsd)} this month{st.unknownCostRuns ? ` · ${st.unknownCostRuns} run(s) with unknown cost` : ''}</span>
         <i style={{ width: `${pct}%` }} />
       </div>
+
+      {focusTasks.length > 0 && <><span className="creator-kicker">FOCUS · FROM YOUR COMMAND CENTER</span>
+        {focusTasks.map((t) => {
+          const mine = requests.filter((r) => r.taskId === t.id);
+          const waiting = mine.filter((r) => r.status === 'waiting');
+          const decided = mine.length - waiting.length;
+          return <div key={t.id} className="focus-task">
+            <p><b>{t.title}</b>{t.status === 'approved' ? <span className="muted"> · {st.running ? 'working on it now' : `next run about ${st.nextScheduledAt ? new Date(st.nextScheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'soon'}`}</span> : <span className="muted"> · done</span>}</p>
+            <ProgressBar pct={t.status === 'done' ? 100 : t.count ? Math.round((mine.length / t.count) * 100) : t.progress} label={`${t.title} progress`} />
+            <p className="creator-privacy">{t.count ? `${mine.length} of ${t.count} items made and sent to you` : `${t.progress ?? 0}% done`}{decided ? `, ${decided} decided` : ''} · {spent(t)} <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></p>
+            {t.steps?.length ? <ol className="task-steps">{t.steps.map((x, j) => <li key={j} className={x.done ? 'done' : ''}>{x.done ? '✓ ' : ''}{x.text}</li>)}</ol> : null}
+            {waiting.length > 0 && <><span className="creator-kicker">YOUR APPROVAL LIST · {waiting.length} TO GO THROUGH</span>{waiting.map((r) => productCard(r, mine.indexOf(r) + 1))}</>}
+            {t.notes && !waiting.length && <details><summary className="creator-privacy">Where it stands</summary><pre className="origin-notes">{t.notes}</pre></details>}
+          </div>;
+        })}</>}
 
       <span className="creator-kicker">SPEND IN DOLLARS</span>
       <div className="spend-grid">
@@ -101,14 +143,8 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         <ul className="creator-request-log">{ventures.map((v) => <li key={v.id}><b>{v.identity.name}</b> · {working(v.id) ? 'approved and working' : 'idle'}{!working(v.id) && <> <button className="link-btn" onClick={() => letWork(v.id)}><Play size={12} /> Approve work</button></>}</li>)}</ul>
         <p className="creator-privacy">You can also just tell ORIGIN in the console, e.g. "allow etsy store to run" or "$1 is fine": your words count as approval, inside the {money(st.capUsd)} cap.</p></>}
 
-      {(st.publishRequests ?? []).some((r) => r.status === 'waiting') && <><span className="creator-kicker">READY TO PUBLISH</span>
-        {(st.publishRequests ?? []).filter((r) => r.status === 'waiting').map((r) => (
-          <div key={r.id} className="creator-blueprint creator-request">
-            <p><b>{r.title}</b> · made by {r.agentName}</p>{r.why && <p>{r.why}</p>}
-            <p className="creator-privacy">Check it in Printify (My products) first. Publishing makes it live on your store, which charges its listing fee.</p>
-            <div className="creator-request-row"><button className="creator-secondary" onClick={() => void act(() => publishDecision(r.id, 'reject'), 'Not published.')}><X size={14} /> Don't publish</button><button className="creator-primary" onClick={() => void act(async () => { const x = await publishDecision(r.id, 'publish'); if (x && !x.ok) onNotice(x.reason ?? 'Printify did not publish it.'); return x?.ok ? x : null; }, `Published "${r.title}".`)}><Check size={14} /> Publish</button></div>
-          </div>
-        ))}</>}
+      {otherWaiting.length > 0 && <><span className="creator-kicker">READY TO PUBLISH</span>
+        {otherWaiting.map((r) => productCard(r))}</>}
 
       <span className="creator-kicker">WAITING FOR YOUR APPROVAL</span>
       {proposed.length === 0 && agentAsks.length === 0 && <p className="creator-privacy">Nothing proposed right now. ORIGIN proposes one thing at a time.</p>}
@@ -128,9 +164,9 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         </div>
       ))}
 
-      <span className="creator-kicker">APPROVED · ONE AT A TIME, YOUR TASKS FIRST</span>
+      <span className="creator-kicker">APPROVED · COMMAND-CENTER TASKS FIRST, THEN YOURS, THEN ORIGIN'S</span>
       {approved.length === 0 ? <p className="creator-privacy">No approved tasks. ORIGIN will only propose tasks until you approve one.</p>
-        : <ul className="creator-request-log">{approved.map((t) => <li key={t.id}><b>{workingIds.has(t.id) ? 'Working on: ' : t.kind === 'skill-file' ? 'SKILL.md: ' : 'Queued: '}{t.title}</b>{t.agentId && doc.agents[t.agentId] ? <span className="muted"> ({doc.agents[t.agentId].identity.name}{t.by === 'origin' ? ', set by ORIGIN' : ''})</span> : t.by === 'origin' ? <span className="muted"> (set by ORIGIN)</span> : null}{t.kind !== 'skill-file' && <ProgressBar pct={t.progress} label={`${t.title} progress`} />}{t.detail && t.kind !== 'skill-file' ? `: ${t.detail.slice(0, 300)}` : ''} · {spent(t)}{t.steps?.length ? <ol className="task-steps">{t.steps.map((x, j) => <li key={j} className={x.done ? 'done' : ''}>{x.done ? '✓ ' : ''}{x.text}</li>)}</ol> : null} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button> <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></li>)}</ul>}
+        : <ul className="creator-request-log">{approved.map((t) => <li key={t.id}><b>{workingIds.has(t.id) ? 'Working on: ' : t.kind === 'skill-file' ? 'SKILL.md: ' : t.focus ? 'Focus: ' : 'Queued: '}{t.title}</b>{t.agentId && doc.agents[t.agentId] ? <span className="muted"> ({doc.agents[t.agentId].identity.name}{t.by === 'origin' ? ', set by ORIGIN' : ''})</span> : t.by === 'origin' ? <span className="muted"> (set by ORIGIN)</span> : null}{t.kind !== 'skill-file' && <ProgressBar pct={t.progress} label={`${t.title} progress`} />}{t.detail && t.kind !== 'skill-file' ? `: ${t.detail.slice(0, 300)}` : ''} · {spent(t)}{t.steps?.length ? <ol className="task-steps">{t.steps.map((x, j) => <li key={j} className={x.done ? 'done' : ''}>{x.done ? '✓ ' : ''}{x.text}</li>)}</ol> : null} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button> <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></li>)}</ul>}
       {stopped.length > 0 && <><span className="creator-kicker">STOPPED BY BUDGET WATCH</span>
         <ul className="creator-request-log">{stopped.map((t) => <li key={t.id}><b>{t.title}</b> · {spent(t)}{t.stopReason ? `. ${t.stopReason}` : ''} <button className="link-btn" onClick={() => void act({ action: 'approve', id: t.id }, 'Restarted with a fresh budget.')}>restart</button></li>)}</ul></>}
       <div className="creator-agent-grid">

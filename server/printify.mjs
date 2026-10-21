@@ -118,3 +118,12 @@ export async function publishProduct(shop, productId, deps) {
   await pf(`/shops/${shop}/products/${encodeURIComponent(productId)}/publish.json`, { deps, method: 'POST', body: { title: true, description: true, images: true, variants: true, tags: true, keyFeatures: true, shipping_template: true } });
   return true;
 }
+
+/** A product's default mockup and its lowest price, for the owner's approval list. */
+export async function productPreview(productId, deps) {
+  const shop = await shopId(deps);
+  const p = await pf(`/shops/${shop}/products/${encodeURIComponent(productId)}.json`, { deps });
+  const img = (p.images || []).find((i) => i.is_default) || (p.images || [])[0];
+  const cents = (p.variants || []).filter((v) => v.is_enabled !== false).map((v) => v.price).filter((n) => n > 0);
+  return { image: img?.src ? String(img.src) : null, priceUsd: cents.length ? Math.min(...cents) / 100 : null };
+}

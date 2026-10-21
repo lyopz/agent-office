@@ -439,3 +439,51 @@ describe('origin runner: agents work side by side, through their plans', () => {
     expect(d.allowanceUsd).toBeCloseTo((10 + 0.5) / 11, 5);
   });
 });
+
+describe('origin runner: the command center sets the focus', () => {
+  test('the number of items the owner asked for is read from their words', () => {
+    expect(runner.itemCount('i need 5 items for my etsy store')).toBe(5);
+    expect(runner.itemCount('make three cat mugs')).toBe(3);
+    expect(runner.itemCount('make 40 new shirts')).toBe(10);
+    expect(runner.itemCount('find a niche in 2026')).toBeNull();
+  });
+
+  test('a command-center task goes first and alone, with no agents or self-tasks, and its products land in one list for the owner', async () => {
+    write({ ...base, agents: [{ id: 'a1', name: 'Research' }], tasks: [
+      { id: 'o1', title: 'Old owner task', detail: '', status: 'approved', by: 'owner', agentId: 'a1', createdAt: '' },
+      { id: 'x1', title: 'ORIGIN self task', detail: '', status: 'approved', by: 'origin', createdAt: '' },
+    ] });
+    const s0 = runner.loadState(file);
+    const focus: any = runner.addFocusTask(s0, { title: 'Make 2 items for my etsy store' });
+    expect(focus).toMatchObject({ focus: true, by: 'owner', status: 'approved', count: 2 });
+    fs.writeFileSync(file, JSON.stringify(s0));
+    expect(runner.pickTasks(runner.loadState(file)).map((t: any) => t.id)).toEqual([focus.id]);
+
+    const tools = { tools: [{ name: 'printify_create_product', description: 'd', input_schema: { type: 'object', properties: {} } }, { name: 'printify_request_publish', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }), preview: async (id: string) => ({ image: `https://img/${id}.png`, priceUsd: 18 }) };
+    let n = 0, brief = '';
+    const fetch = async (_u: string, init: any) => {
+      n++;
+      if (n === 1) brief = JSON.parse(init.body).messages[0].content;
+      if (n <= 2) return { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: `u${n}`, name: 'printify_request_publish', input: { product_id: `p${n}`, title: `Item ${n}` } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) };
+      return reply(result({ memory: 'm', proposedTasks: [{ title: 'Grow more' }], proposedAgents: [{ parentId: 'agent_origin', name: 'A' }, { parentId: 'agent_origin', name: 'B' }], completedTaskIds: [focus.id], summary: 's' }), { input_tokens: 10, output_tokens: 5 });
+    };
+    const r: any = await runner.runOnce('focus', { fetch, file, key: 'test', etsy: tools } as any);
+    expect(brief).toMatch(/FOCUS: the owner gave you this task in the command center/);
+    expect(brief).toMatch(/asked for 2 items/);
+    expect(brief).not.toMatch(/EMPIRE MODE/);
+    expect(r.run.workers).toHaveLength(1);
+    const s = read();
+    expect(s.publishRequests.map((x: any) => [x.taskId, x.title, x.image, x.priceUsd])).toEqual([[focus.id, 'Item 1', 'https://img/p1.png', 18], [focus.id, 'Item 2', 'https://img/p2.png', 18]]);
+    expect(s.tasks.some((t: any) => t.title === 'Grow more')).toBe(false);
+    expect(s.agentProposals).toHaveLength(1);
+    expect(s.tasks.find((t: any) => t.id === focus.id).status).toBe('done');
+    // with the focus done, the other work comes back
+    expect(runner.pickTasks(s).map((t: any) => t.id)).toEqual(['o1', 'x1']);
+  });
+
+  test("the owner's words in the console become the focus task", () => {
+    const s: any = { ...base, tasks: [], agents: [] };
+    expect(runner.applyConsent(s, { title: 'Make 5 items', detail: 'for the store', count: 5 })).toEqual(['Make 5 items']);
+    expect(s.tasks[0]).toMatchObject({ focus: true, count: 5, via: 'console' });
+  });
+});

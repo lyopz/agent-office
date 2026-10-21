@@ -7,10 +7,12 @@ import { ORIGIN_ID, agentPrompt, branchKind } from './opportunity';
 export interface RunnerTask {
   id: string; title: string; detail: string; status: 'proposed' | 'approved' | 'rejected' | 'done' | 'stopped'; by: 'owner' | 'origin'; createdAt: string;
   spentUsd?: number; runCosts?: number[]; budgetUsd?: number; stopReason?: string; progress?: number; steps?: { text: string; done: boolean }[]; notes?: string; waitingOnOwner?: boolean;
+  /** Typed in the command center: worked first and alone until done. count is how many items the owner asked for. */
+  focus?: boolean; count?: number; via?: string;
   kind?: 'skill-file'; agentId?: string; agentName?: string; version?: number;
 }
 /** A product an agent made in Printify and asked the owner to publish. */
-export interface PublishRequest { id: string; productId: string; title: string; why: string; agentName: string; status: 'waiting' | 'published' | 'rejected'; at: string }
+export interface PublishRequest { id: string; productId: string; title: string; why: string; agentName: string; taskId?: string | null; taskTitle?: string | null; image?: string; priceUsd?: number; status: 'waiting' | 'published' | 'rejected'; at: string }
 /** One line of progress, filed under the agent the work was for. */
 export interface ProgressEntry { id: string; at: string; runId?: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; pct: number | null; note: string }
 /** A SKILL.md ORIGIN wrote for one agent, waiting for the app to save it to the bank. */
@@ -20,11 +22,11 @@ export interface AgentProposal {
   everyMinutes: number; maxMinutes: number; reason: string; skillFile?: { name: string; description: string; body: string } | null; auto?: boolean; status: 'proposed' | 'approved' | 'rejected'; createdAt: string; agentId?: string | null;
 }
 export interface RunnerWorker { taskId: string | null; agentId: string; agentName: string; title: string | null; costUsd: number; status: string; rounds: number; summary?: string }
-export interface RunnerRun { workers?: RunnerWorker[]; id: string; agentId?: string; taskId?: string | null; skillFileFor?: string; trigger: 'manual' | 'schedule'; startedAt: string; endedAt: string | null; costUsd: number; costKnown: boolean; searches: number; fetches?: number; etsyCalls?: number; printifyCalls?: number; status: string; summary: string; notify?: string | null }
+export interface RunnerRun { workers?: RunnerWorker[]; id: string; agentId?: string; taskId?: string | null; skillFileFor?: string; trigger: 'manual' | 'schedule' | 'focus'; startedAt: string; endedAt: string | null; costUsd: number; costKnown: boolean; searches: number; fetches?: number; etsyCalls?: number; printifyCalls?: number; status: string; summary: string; notify?: string | null }
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
   spentUsd: number; spentByAgent?: Record<string, number>; allowanceUsd?: number; spentTodayUsd?: number; parallel?: number; rounds?: number; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
-  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null;
+  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
 }
 
 // in the browser the dev server forwards /api/origin; the desktop app talks to the runner directly
@@ -71,11 +73,28 @@ export interface OriginAsk { at: string; q: string; a: string; costUsd: number |
 
 /** Ask ORIGIN a question from the console; it answers right away, any time, against the same cap. */
 export async function askOrigin(question: string) {
-  const r = await call<{ ok: true; answer: string; costUsd: number | null; taskTitle: string | null; approved?: string[] | null; by?: string } | { ok: false; reason: string }>('/ask', { question }, 70_000);
+  const r = await call<{ ok: true; answer: string; costUsd: number | null; taskTitle: string | null; approved?: string[] | null; by?: string; started?: boolean } | { ok: false; reason: string }>('/ask', { question }, 70_000);
   if (!r) return null;
   // an older runner without /ask answers 404
   if (!r.data.ok && !('reason' in r.data && r.data.reason)) return { ok: false as const, reason: "ORIGIN's runner is out of date. Stop it and start it again with npm.cmd run origin." };
   return r.data;
+}
+
+/** Give ORIGIN a task from the command center: approved by your words, its focus until done, and started right away. */
+export async function giveTask(text: string) {
+  const r = await call<{ ok: true; task: RunnerTask; started: boolean } | { ok: false; reason: string }>('/focus', { text }, 10_000);
+  if (!r) return null;
+  if (!r.data.ok && !('reason' in r.data && r.data.reason)) return { ok: false as const, reason: "ORIGIN's runner is out of date. Restart the app (or npm.cmd run origin)." };
+  return r.data;
+}
+
+/** A product mockup, fetched through the runner and shown as a local blob (the app loads no outside images). */
+export async function mockupUrl(id: string) {
+  try {
+    const r = await fetch(`${BASE}/printify/image?id=${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(25_000) });
+    if (!r.ok || !(r.headers.get('content-type') || '').startsWith('image/')) return null;
+    return URL.createObjectURL(await r.blob());
+  } catch { return null; }
 }
 
 export async function agentProposalAction(body: { action: 'approve' | 'reject'; id: string; agentId?: string }) {
