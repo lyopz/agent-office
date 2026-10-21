@@ -378,3 +378,21 @@ describe('origin runner: Etsy tools', () => {
     expect(read().tasks[0].progress).toBe(20);
   });
 });
+
+describe('origin runner: Printify publish requests', () => {
+  test('an agent asks to publish; the runner records it for the owner and tells them, without publishing', async () => {
+    write({ ...base, tasks: [{ id: 't1', title: 'Make mugs', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
+    const urls: string[] = [];
+    const tools = { tools: [{ name: 'printify_request_publish', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }) };
+    let n = 0;
+    const fetch = async (u: string) => {
+      urls.push(u); n++;
+      if (n === 1) return { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'a', name: 'printify_request_publish', input: { product_id: 'p1', title: 'Cat Mug', why: 'sells' } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) };
+      return reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 });
+    };
+    const r: any = await runner.runOnce('manual', { fetch, file, key: 'test', etsy: tools } as any);
+    expect(urls.every((u) => u.includes('anthropic'))).toBe(true);
+    expect(read().publishRequests).toMatchObject([{ productId: 'p1', title: 'Cat Mug', status: 'waiting' }]);
+    expect(r.run.notify).toMatch(/1 product ready for you to publish/);
+  });
+});

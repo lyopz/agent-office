@@ -9,6 +9,8 @@ export interface RunnerTask {
   spentUsd?: number; runCosts?: number[]; budgetUsd?: number; stopReason?: string; progress?: number;
   kind?: 'skill-file'; agentId?: string; agentName?: string; version?: number;
 }
+/** A product an agent made in Printify and asked the owner to publish. */
+export interface PublishRequest { id: string; productId: string; title: string; why: string; agentName: string; status: 'waiting' | 'published' | 'rejected'; at: string }
 /** One line of progress, filed under the agent the work was for. */
 export interface ProgressEntry { id: string; at: string; runId?: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; pct: number | null; note: string }
 /** A SKILL.md ORIGIN wrote for one agent, waiting for the app to save it to the bank. */
@@ -17,11 +19,11 @@ export interface AgentProposal {
   id: string; parentId: string; name: string; specialty: string; purpose: string; skill: string; bankSkillIds: string[];
   everyMinutes: number; maxMinutes: number; reason: string; skillFile?: { name: string; description: string; body: string } | null; auto?: boolean; status: 'proposed' | 'approved' | 'rejected'; createdAt: string; agentId?: string | null;
 }
-export interface RunnerRun { id: string; agentId?: string; taskId?: string | null; skillFileFor?: string; trigger: 'manual' | 'schedule'; startedAt: string; endedAt: string | null; costUsd: number; costKnown: boolean; searches: number; fetches?: number; etsyCalls?: number; status: string; summary: string; notify?: string | null }
+export interface RunnerRun { id: string; agentId?: string; taskId?: string | null; skillFileFor?: string; trigger: 'manual' | 'schedule'; startedAt: string; endedAt: string | null; costUsd: number; costKnown: boolean; searches: number; fetches?: number; etsyCalls?: number; printifyCalls?: number; status: string; summary: string; notify?: string | null }
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
   spentUsd: number; spentByAgent?: Record<string, number>; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
-  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null;
+  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null;
 }
 
 // in the browser the dev server forwards /api/origin; the desktop app talks to the runner directly
@@ -94,4 +96,10 @@ export async function skillFileImported(id: string) {
 
 export async function taskAction(body: { action: 'add'; title: string; detail?: string; kind?: 'skill-file'; version?: number; agentId?: string; agentName?: string } | { action: 'approve' | 'reject' | 'done' | 'stop'; id: string }) {
   return (await call<{ ok: boolean; tasks: RunnerTask[] }>('/tasks', body))?.data ?? null;
+}
+
+/** The owner's decision on a product: publish sends it live to their store through Printify. */
+export async function publishDecision(id: string, action: 'publish' | 'reject') {
+  const r = await call<{ ok: boolean; reason?: string }>('/printify/publish', { id, action }, 60_000);
+  return r ? r.data : null;
 }

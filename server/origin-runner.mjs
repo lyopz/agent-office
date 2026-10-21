@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readKey } from './key-file.mjs';
 import { ETSY_TOOLS, authUrl, etsyPublic, finishAuth, runEtsyTool } from './etsy.mjs';
+import { PRINTIFY_TOOLS, printifyConfig, printifyPublic, publishProduct, runPrintifyTool } from './printify.mjs';
 
 const PORT = Number(process.env.ORIGIN_PORT || 8788);
 const MODEL = process.env.ORIGIN_MODEL || 'claude-haiku-5-5';
@@ -184,6 +185,25 @@ export function pruneGone(s, at) {
   return n;
 }
 
+/** The tools agents get in task runs, from whatever the owner has set up. */
+function agentTools() {
+  const list = [...(etsyPublic().configured ? ETSY_TOOLS : []), ...(printifyPublic().configured ? PRINTIFY_TOOLS : [])];
+  if (!list.length) return null;
+  return { tools: list, run: (name, input) => (name.startsWith('etsy_') ? runEtsyTool(name, input) : runPrintifyTool(name, input)) };
+}
+
+/** An agent asks the owner to publish a Printify product: recorded for the owner's Publish button, never published here. */
+function requestPublish(s, task, input, record) {
+  const productId = String(input?.product_id || '').slice(0, 64);
+  if (!productId) return { content: 'Give the product_id from printify_create_product.', isError: true };
+  s.publishRequests = s.publishRequests || [];
+  if (s.publishRequests.some((r) => r.productId === productId && r.status === 'waiting')) return { content: 'Already waiting for the owner.', isError: false };
+  const agent = taskAgent(s, task || { title: '' });
+  s.publishRequests.push({ id: newId('pub'), productId, shopId: printifyConfig()?.shopId ?? null, title: String(input.title || 'Product').slice(0, 140), why: String(input.why || '').slice(0, 400), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'ORIGIN', taskId: task?.id ?? null, status: 'waiting', at: new Date().toISOString() });
+  record.publishAsks = (record.publishAsks || 0) + 1;
+  return { content: 'Sent to the owner. It goes live only when they press Publish.', isError: false };
+}
+
 const PROGRESS_KEEP = 300;
 /** One line in the progress log, filed under the agent the work was for (ORIGIN when none). */
 function logProgress(s, task, e) {
@@ -223,7 +243,7 @@ function briefFor(s, task, deadline, etsy = null) {
     task?.kind === 'skill-file'
       ? `Your one task this run (the owner approved it): [${task.id}] write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId})${task.sharedWith?.length ? `. ${task.sharedWith.length} other agents do exactly the same job (${task.sharedWith.join(', ')}) and will share this file, so write it for the role, not the one name` : ''}. What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions${task.version > 1 ? ' and its earlier, thinner SKILL.md (replace it with a much more detailed one)' : ''}:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}\nResearch only if it makes the playbook more specific (for example current platform rules or prices). Return it as "skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"} and list the task id in completedTaskIds.`
       : task
-      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}\nIf you finish it, list its id in completedTaskIds. If not, record in your notes exactly where you stopped; the next run continues it.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. ${etsy ? `ETSY (read-only, free): etsy_search shows real active listings with prices, favorites, views and tags; use it to measure demand, competition and price ranges. ${etsyPublic().connected ? "etsy_my_shop shows the owner's own shop and its numbers." : "The owner's own shop is not connected yet."} ` : ''}You cannot post, list, buy or contact anyone; for that, say what you need in notifyOwner.\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
+      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}\nIf you finish it, list its id in completedTaskIds. If not, record in your notes exactly where you stopped; the next run continues it.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. ${etsy?.tools.some((t) => t.name === 'etsy_search') ? `ETSY (read-only, free): etsy_search shows real active listings with prices, favorites, views and tags; use it to measure demand, competition and price ranges. ${etsyPublic().connected ? "etsy_my_shop shows the owner's own shop and its numbers." : ''} ` : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? `PRINTIFY (the owner's shop "${printifyPublic().shopTitle || 'shop'}", ${printifyPublic().channel || 'connected store'}): you can make products to sell. Find a product type (printify_find_product_type), a provider and variants, upload a design (write it yourself as clean SVG, typography or simple vector art, sized for print), then printify_create_product with a researched price, SEO title, full description and 13 tags. Products stay unpublished in Printify (no cost). When one is finished and your research supports it, call printify_request_publish: the owner approves each one before it goes live on their store, where the store charges its listing fee. At most 3 products a run. ` : ''}You cannot publish, buy or contact anyone yourself; for that, say what you need in notifyOwner.\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
       : canSelfApprove(s)
       ? 'No task is ready. Do not research this run. Review your notes, make sure each venture has the skill agents it needs (below), and set the single most valuable next task in proposedTasks; in empire mode it is approved at once and worked next run.'
       : 'No approved task is ready. Do not research. Review your notes, make sure each venture has the skill agents it needs (below), and propose the single most valuable, cheap task for the owner to approve.',
@@ -263,7 +283,8 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   const runLimit = Math.min(RUN_LIMIT_USD, remaining(s));
   const record = { id: `run_${start.getTime().toString(36)}`, trigger, model: MODEL, startedAt: start.toISOString(), endedAt: null, costUsd: 0, costKnown: true, calls: 0, searches: 0, status: 'running', summary: '' };
   running = record;
-  const etsy = 'etsy' in deps ? deps.etsy : (etsyPublic().configured ? { tools: ETSY_TOOLS, run: runEtsyTool } : null);
+  // the agents' own tools: Etsy research (if set up) and Printify products (if set up)
+  const etsy = 'etsy' in deps ? deps.etsy : agentTools();
   const messages = [{ role: 'user', content: briefFor(s, task, deadline, etsy) }];
   // research tools: search to find sources, fetch to read a page in full
   const tools = task ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: MAX_SEARCHES }, { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: MAX_FETCHES, max_content_tokens: FETCH_TOKENS }, ...(etsy && task.kind !== 'skill-file' ? etsy.tools : [])] : [];
@@ -293,8 +314,9 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
         messages.push({ role: 'assistant', content: data.content });
         const results = [];
         for (const c of calls) {
-          const out = await etsy.run(c.name, c.input);
-          record.etsyCalls = (record.etsyCalls || 0) + 1;
+          const out = c.name === 'printify_request_publish' ? requestPublish(s, task, c.input, record) : await etsy.run(c.name, c.input);
+          if (c.name.startsWith('etsy_')) record.etsyCalls = (record.etsyCalls || 0) + 1;
+          else record.printifyCalls = (record.printifyCalls || 0) + 1;
           results.push({ type: 'tool_result', tool_use_id: c.id, content: out.content, ...(out.isError ? { is_error: true } : {}) });
         }
         messages.push({ role: 'user', content: results });
@@ -414,6 +436,8 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   }
   for (const a of s.agentProposals) if (!now.agentProposals.some((x) => x.id === a.id)) now.agentProposals.push(a);
   for (const f of s.skillFiles) if (!now.skillFiles.some((x) => x.id === f.id)) now.skillFiles.push(f);
+  for (const r of s.publishRequests || []) if (!(now.publishRequests || []).some((x) => x.id === r.id)) now.publishRequests = [...(now.publishRequests || []), r].slice(-100);
+  if (record.publishAsks) record.notify = `${record.notify ? `${record.notify} ` : ''}${record.publishAsks} product${record.publishAsks === 1 ? '' : 's'} ready for you to publish in ORIGIN runs.`;
   for (const e of s.progressLog || []) if (!(now.progressLog || []).some((x) => x.id === e.id)) now.progressLog = [...(now.progressLog || []), e].slice(-PROGRESS_KEEP);
   now.ledger.spentUsd = round(now.ledger.spentUsd + record.costUsd);
   now.ledger.byAgent[AGENT_ID] = round((now.ledger.byAgent[AGENT_ID] || 0) + record.costUsd);
@@ -551,7 +575,7 @@ function publicState() {
   return {
     configured: Boolean(KEY), model: MODEL, capUsd: CAP, everyMinutes: EVERY_MIN, maxMinutes: MAX_MIN, schedule: SCHEDULE,
     spentUsd: s.ledger.spentUsd, spentByAgent: s.ledger.byAgent, taskBudgetUsd: TASK_BUDGET_USD, unknownCostRuns: s.ledger.unknownCostRuns, month: s.ledger.month, running: running ? running.startedAt : null,
-    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, etsy: etsyPublic(), skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
+    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, etsy: etsyPublic(), printify: printifyPublic(), publishRequests: (s.publishRequests || []).slice(-30), skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
     // with no scheduled run yet, the next one starts within a minute
     nextScheduledAt: SCHEDULE ? new Date(s.lastScheduledAt ? Math.max(Date.now(), Date.parse(s.lastScheduledAt) + EVERY_MIN * 60_000) : Date.now() + 60_000).toISOString() : null,
   };
@@ -640,6 +664,23 @@ async function handle(req, res) {
   if (url === '/api/origin/ask') {
     const r = await ask(body.question);
     return send(req, res, r.ok ? 200 : 409, r);
+  }
+  if (url === '/api/origin/printify/publish') {
+    // the owner's decision on one product an agent made; Publish sends it live to their store
+    const s = loadState();
+    const r = (s.publishRequests || []).find((x) => x.id === body.id && x.status === 'waiting');
+    if (!r) return send(req, res, 404, { error: 'not waiting' });
+    if (body.action === 'reject') { r.status = 'rejected'; saveState(s); return send(req, res, 200, { ok: true }); }
+    if (body.action !== 'publish') return send(req, res, 400, { error: 'unknown action' });
+    try {
+      await publishProduct(r.shopId ?? printifyConfig()?.shopId, r.productId);
+      const now = loadState();
+      const cur = (now.publishRequests || []).find((x) => x.id === r.id);
+      if (cur) Object.assign(cur, { status: 'published', publishedAt: new Date().toISOString() });
+      logProgress(now, now.tasks.find((t) => t.id === r.taskId) ?? null, { at: new Date().toISOString(), agentId: r.agentId, note: `The owner published "${r.title}" to their store.` });
+      saveState(now);
+      return send(req, res, 200, { ok: true });
+    } catch (e) { return send(req, res, 502, { ok: false, reason: e.message }); }
   }
   if (url === '/api/origin/settings') {
     // whether ORIGIN and its ventures create agents without asking (the owner's choice)

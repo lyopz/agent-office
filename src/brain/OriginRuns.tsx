@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Play, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useStore } from '../store/store';
-import { agentProposalAction, runnerStatus, setAutoAgents, setAutoTasks, syncOrigin, taskAction, type AgentProposal, type RunnerStatus, type RunnerTask } from './originLink';
+import { agentProposalAction, publishDecision, runnerStatus, setAutoAgents, setAutoTasks, syncOrigin, taskAction, type AgentProposal, type RunnerStatus, type RunnerTask } from './originLink';
 import { branchKind, describeWindow } from './opportunity';
 import { createProposedAgent } from './skillFiles';
 import { ProgressBar, ProgressLog } from './Progress';
@@ -81,14 +81,22 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         <input type="checkbox" checked={st.autoTasks !== false} onChange={(e) => void act(() => setAutoTasks(e.target.checked), e.target.checked ? 'Empire mode on: ORIGIN picks ventures and sets its own research tasks, inside the cap.' : 'ORIGIN will ask you before working on tasks it thinks of.')} />
         Empire mode: ORIGIN picks the ventures and sets its own research tasks (3 open at most, each within its budget and the {money(st.capUsd)} cap). It still asks before using your accounts, publishing, or spending money.
       </label>
-      <p className="creator-privacy"><b>Etsy:</b> {!st.etsy?.configured ? <>not set up. In the app folder run <code>npm.cmd run set-etsy</code> once with your Etsy app key; agents then search real listings (read-only).</>
-        : st.etsy.connected ? <>agents search listings and read {st.etsy.shopName ? <b>{st.etsy.shopName}</b> : 'your shop'} (read-only; they can't list, change or buy anything).</>
-        : <>agents search real listings (read-only). <a className="link-btn" href="http://localhost:8788/api/origin/etsy/connect" target="_blank" rel="noreferrer">Connect my Etsy shop</a> so they can read your shop's numbers too (read-only).</>}</p>
+      <p className="creator-privacy"><b>Printify:</b> {st.printify?.configured ? <>agents make products in <b>{st.printify.shopTitle ?? 'your shop'}</b>{st.printify.channel ? ` (${st.printify.channel})` : ''}. They stay unpublished until you press Publish below.</> : <>not set up. Connect your Etsy shop in Printify, then run <code>npm.cmd run set-printify</code> once with a Printify personal access token.</>}</p>
+      {st.etsy?.configured && <p className="creator-privacy"><b>Etsy research:</b> on (read-only).</p>}
       {created.length > 0 && <p className="creator-privacy">Recently created by ORIGIN: {created.map((p) => `${p.name} (for ${doc.agents[p.parentId]?.identity.name ?? p.parentId})`).join(', ')}.</p>}
 
       {ventures.length > 0 && <><span className="creator-kicker">VENTURES</span>
         <ul className="creator-request-log">{ventures.map((v) => <li key={v.id}><b>{v.identity.name}</b> · {working(v.id) ? 'approved and working' : 'idle'}{!working(v.id) && <> <button className="link-btn" onClick={() => letWork(v.id)}><Play size={12} /> Approve work</button></>}</li>)}</ul>
         <p className="creator-privacy">You can also just tell ORIGIN in the console, e.g. "allow etsy store to run" or "$1 is fine": your words count as approval, inside the {money(st.capUsd)} cap.</p></>}
+
+      {(st.publishRequests ?? []).some((r) => r.status === 'waiting') && <><span className="creator-kicker">READY TO PUBLISH</span>
+        {(st.publishRequests ?? []).filter((r) => r.status === 'waiting').map((r) => (
+          <div key={r.id} className="creator-blueprint creator-request">
+            <p><b>{r.title}</b> · made by {r.agentName}</p>{r.why && <p>{r.why}</p>}
+            <p className="creator-privacy">Check it in Printify (My products) first. Publishing makes it live on your store, which charges its listing fee.</p>
+            <div className="creator-request-row"><button className="creator-secondary" onClick={() => void act(() => publishDecision(r.id, 'reject'), 'Not published.')}><X size={14} /> Don't publish</button><button className="creator-primary" onClick={() => void act(async () => { const x = await publishDecision(r.id, 'publish'); if (x && !x.ok) onNotice(x.reason ?? 'Printify did not publish it.'); return x?.ok ? x : null; }, `Published "${r.title}".`)}><Check size={14} /> Publish</button></div>
+          </div>
+        ))}</>}
 
       <span className="creator-kicker">WAITING FOR YOUR APPROVAL</span>
       {proposed.length === 0 && agentAsks.length === 0 && <p className="creator-privacy">Nothing proposed right now. ORIGIN proposes one thing at a time.</p>}
@@ -132,7 +140,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
       {st.nextAction && <><span className="creator-kicker">NEXT ACTION</span><p className="creator-privacy">{st.nextAction}</p></>}
       {st.memory && <><span className="creator-kicker">ORIGIN'S NOTES</span><pre className="origin-notes">{st.memory}</pre></>}
       {st.runs.length > 0 && <><span className="creator-kicker">RECENT RUNS</span>
-        <ul className="creator-request-log">{st.runs.map((r) => <li key={r.id}>{new Date(r.startedAt).toLocaleString()} · {r.trigger} · {r.status} · {r.costKnown ? money(r.costUsd) : 'cost unknown'}{r.searches ? ` · ${r.searches} searches` : ''}{r.fetches ? ` · ${r.fetches} pages read` : ''}{r.etsyCalls ? ` · ${r.etsyCalls} Etsy lookups` : ''}{r.skillFileFor ? ` · wrote ${r.skillFileFor}'s SKILL.md` : ''}{r.summary ? `: ${r.summary}` : ''}{r.notify ? <b> · {r.notify}</b> : null}</li>)}</ul></>}
+        <ul className="creator-request-log">{st.runs.map((r) => <li key={r.id}>{new Date(r.startedAt).toLocaleString()} · {r.trigger} · {r.status} · {r.costKnown ? money(r.costUsd) : 'cost unknown'}{r.searches ? ` · ${r.searches} searches` : ''}{r.fetches ? ` · ${r.fetches} pages read` : ''}{r.etsyCalls ? ` · ${r.etsyCalls} Etsy lookups` : ''}{r.printifyCalls ? ` · ${r.printifyCalls} Printify steps` : ''}{r.skillFileFor ? ` · wrote ${r.skillFileFor}'s SKILL.md` : ''}{r.summary ? `: ${r.summary}` : ''}{r.notify ? <b> · {r.notify}</b> : null}</li>)}</ul></>}
     </div>
   );
 }
