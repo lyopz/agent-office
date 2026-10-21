@@ -73,8 +73,8 @@ describe('meme databases and connectors', () => {
     expect(JSON.stringify(r)).not.toMatch(/i\.redd\.it|i\.imgflip/);
     const bad: any = await popularMemes({ source: 'reddit', subreddit: 'bad name!' }, { fetch });
     expect(bad.reddit_errors[0]).toMatch(/not a subreddit/);
-    expect(trendTools({ google: true, memes: true, instagram: { configured: false, username: null, hashtagsLeft: null }, pinterest: { configured: false, username: null, board: null, canSave: false } }).map((t) => t.name)).toEqual(['trends_google', 'trends_memes', 'assets_public_domain']);
-    expect(trendTools({ google: true, memes: true, instagram: { configured: true, username: 'ed', hashtagsLeft: 30 }, pinterest: { configured: true, username: 'ed', board: 'memez', canSave: true } }).map((t) => t.name)).toContain('trends_instagram');
+    expect(trendTools({ google: true, memes: true, instagram: { configured: false, kind: null, hashtags: false, username: null, hashtagsLeft: null }, pinterest: { configured: false, username: null, board: null, canSave: false } }).map((t) => t.name)).toEqual(['trends_google', 'trends_memes', 'assets_public_domain']);
+    expect(trendTools({ google: true, memes: true, instagram: { configured: true, kind: 'facebook', hashtags: true, username: 'ed', hashtagsLeft: 30 }, pinterest: { configured: true, username: 'ed', board: 'memez', canSave: true } }).map((t) => t.name)).toContain('trends_instagram');
     expect(trendSources()).not.toMatch(/INSTAGRAM CONNECTED/);
     expect(TREND_SOURCES).toMatch(/MEME DATABASES: trends_memes/);
     expect(MEMES_TOOL.name).toBe('trends_memes');
@@ -95,9 +95,34 @@ describe('meme databases and connectors', () => {
     expect(r.posts).toEqual([{ caption: 'fih shirt day', type: 'IMAGE', likes: 10, comments: 2, at: '2026-10-20T00:00:00+0000', link: 'https://www.instagram.com/p/x/' }]);
     expect(JSON.stringify(r)).not.toMatch(/cdn\/x\.jpg/);
     expect(saved[0].recent).toEqual([expect.objectContaining({ tag: 'fihshirt' })]);
-    expect(instagramPublic(saved[0])).toEqual({ configured: true, username: null, hashtagsLeft: 29 });
+    expect(instagramPublic(saved[0])).toEqual({ configured: true, kind: 'facebook', hashtags: true, username: null, hashtagsLeft: 29 });
     await expect(instagramHashtag({ hashtag: 'x' }, { config: { token: 't', igUserId: '1', recent: [] }, fetch: async () => ({ ok: false, status: 400, json: async () => ({ error: { code: 190 } }) }) })).rejects.toThrow(/expired/);
     await expect(instagramHashtag({ hashtag: 'x' }, { config: null as any })).rejects.toThrow(/set-instagram/);
+  });
+
+  test('an Instagram-login token reads the owner\'s own account on graph.instagram.com and says plainly that hashtag search is not on it', async () => {
+    const { instagramTool, instagramPublic, pingInstagram } = await import('../server/instagram.mjs');
+    const urls: string[] = [];
+    const fetch = async (u: URL, init: any) => {
+      const url = String(u); urls.push(url);
+      expect(init.method).toBe('GET');
+      if (url.includes('graph.instagram.com/v21.0/me?') && url.includes('user_id')) return { ok: true, json: async () => ({ user_id: '777', username: 'memezarizing' }) };
+      if (url.includes('graph.instagram.com/v21.0/me?')) return { ok: true, json: async () => ({ username: 'memezarizing', followers_count: 120, media_count: 9 }) };
+      if (url.includes('graph.instagram.com/v21.0/me/media')) return { ok: true, json: async () => ({ data: [{ id: '1', caption: 'fih', media_type: 'IMAGE', permalink: 'https://www.instagram.com/p/y/', like_count: 5, comments_count: 1, timestamp: '2026-10-19T00:00:00+0000', media_url: 'https://cdn/y.jpg' }] }) };
+      return { ok: false, status: 400, json: async () => ({ error: { code: 100, message: 'nope' } }) };
+    };
+    expect(await pingInstagram({ kind: 'instagram', token: 't' }, fetch)).toEqual({ igUserId: '777', username: 'memezarizing' });
+    const cfg: any = { kind: 'instagram', token: 't', igUserId: '777', username: 'memezarizing' };
+    expect(instagramPublic(cfg)).toEqual({ configured: true, kind: 'instagram', hashtags: false, username: 'memezarizing', hashtagsLeft: null });
+    expect(await instagramTool({ action: 'account' }, { config: cfg, fetch })).toEqual({ username: 'memezarizing', followers: 120, posts: 9, hashtagSearch: false });
+    const mine: any = await instagramTool({ action: 'my_posts' }, { config: cfg, fetch });
+    expect(mine.posts).toEqual([{ caption: 'fih', type: 'IMAGE', likes: 5, comments: 1, at: '2026-10-19T00:00:00+0000', link: 'https://www.instagram.com/p/y/' }]);
+    await expect(instagramTool({ action: 'hashtag', hashtag: 'fih' }, { config: cfg, fetch })).rejects.toThrow(/not available on this connection/);
+    expect(urls.every((u) => u.startsWith('https://graph.instagram.com/') && !u.includes('ig_hashtag_search'))).toBe(true);
+    // The Facebook-login kind reads the same things on graph.facebook.com by account id.
+    const fb = async (u: URL) => { const url = String(u); expect(url).toMatch(/graph\.facebook\.com\/v21\.0\/123/); return { ok: true, json: async () => (url.includes('/media') ? { data: [] } : { username: 'ed', followers_count: 1, media_count: 2 }) }; };
+    expect(await instagramTool({ action: 'account' }, { config: { token: 't', igUserId: '123' }, fetch: fb })).toEqual({ username: 'ed', followers: 1, posts: 2, hashtagSearch: true });
+    expect(((await instagramTool({ action: 'my_posts' }, { config: { token: 't', igUserId: '123' }, fetch: fb })) as any).posts).toEqual([]);
   });
 
   test('Pinterest trends and pin search return keywords, titles and links, never images', async () => {
