@@ -565,3 +565,7 @@
 .money-table td.neg { color: #ff9f9f; }
 .money-table .link-btn { padding: 0; font-size: 12px; }
 .money-detail { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid rgba(172,199,231,.14); border-radius: 10px; }
+.skill-drop { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border: 1px dashed rgba(172,199,231,.35); border-radius: 10px; font-size: 12px; color: #bdc9d9; }
+.skill-drop.over { border-color: #8edcff; background: rgba(142,220,255,.08); }
+.skill-drop .grow { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.skill-drop-error { flex-basis: 100%; color: #ff9f9f; }

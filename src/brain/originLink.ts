@@ -9,7 +9,9 @@ export interface RunnerTask {
   spentUsd?: number; runCosts?: number[]; budgetUsd?: number; stopReason?: string; progress?: number; steps?: { text: string; done: boolean }[]; notes?: string; waitingOnOwner?: boolean;
   /** Typed in the command center: worked first and alone until done. count is how many items the owner asked for. */
   focus?: boolean; count?: number; via?: string;
-  kind?: 'skill-file'; agentId?: string; agentName?: string; version?: number;
+  kind?: 'skill-file' | 'bank-skill'; agentId?: string; agentName?: string; version?: number;
+  /** A shared bank skill JARVIS writes for these agents; requested = the owner asked, so it is written right away. */
+  skillName?: string; agentIds?: string[]; agentNames?: string[]; requested?: boolean;
 }
 /** A product an agent made in Printify and asked the owner to publish. */
 export interface PublishRequest { id: string; productId: string; title: string; why: string; agentName: string; taskId?: string | null; taskTitle?: string | null; image?: string; priceUsd?: number; status: 'waiting' | 'published' | 'rejected'; at: string }
@@ -22,7 +24,7 @@ export interface ImageEntry { id: string; at: string; model: string; quality: st
 /** One line of progress, filed under the agent the work was for. */
 export interface ProgressEntry { id: string; at: string; runId?: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; pct: number | null; note: string }
 /** A SKILL.md JARVIS wrote for one agent, waiting for the app to save it to the bank. */
-export interface SkillFile { id: string; agentId: string; agentName: string; agentIds?: string[]; agentNames?: string[]; version?: number; name: string; description: string; body: string; status: 'new' | 'imported'; createdAt: string }
+export interface SkillFile { id: string; agentId: string; agentName: string; agentIds?: string[]; agentNames?: string[]; version?: number; bank?: boolean; skillKey?: string; skillName?: string; name: string; description: string; body: string; status: 'new' | 'imported'; createdAt: string }
 export interface AgentProposal {
   id: string; parentId: string; name: string; specialty: string; purpose: string; skill: string; bankSkillIds: string[];
   everyMinutes: number; maxMinutes: number; reason: string; skillFile?: { name: string; description: string; body: string } | null; auto?: boolean; status: 'proposed' | 'approved' | 'rejected'; createdAt: string; agentId?: string | null;
@@ -79,7 +81,7 @@ export interface OriginAsk { at: string; q: string; a: string; costUsd: number |
 
 /** Ask JARVIS a question from the console; it answers right away, any time, against the same cap. */
 export async function askOrigin(question: string) {
-  const r = await call<{ ok: true; answer: string; costUsd: number | null; taskTitle: string | null; approved?: string[] | null; by?: string; started?: boolean } | { ok: false; reason: string }>('/ask', { question }, 70_000);
+  const r = await call<{ ok: true; answer: string; costUsd: number | null; taskTitle: string | null; approved?: string[] | null; skills?: { files: string[]; bank: string[]; unknown: string[] } | null; skillsStarted?: boolean; by?: string; started?: boolean } | { ok: false; reason: string }>('/ask', { question }, 70_000);
   if (!r) return null;
   // an older runner without /ask answers 404
   if (!r.data.ok && !('reason' in r.data && r.data.reason)) return { ok: false as const, reason: "JARVIS's runner is out of date. Stop it and start it again with npm.cmd run origin." };
@@ -131,7 +133,7 @@ export async function skillFileImported(id: string) {
   return !!(await call('/skillfiles', { action: 'imported', id }));
 }
 
-export async function taskAction(body: { action: 'add'; title: string; detail?: string; kind?: 'skill-file'; version?: number; agentId?: string; agentName?: string } | { action: 'approve' | 'reject' | 'done' | 'stop'; id: string }) {
+export async function taskAction(body: { action: 'add'; title: string; detail?: string; kind?: 'skill-file'; version?: number; requested?: boolean; agentId?: string; agentName?: string } | { action: 'approve' | 'reject' | 'done' | 'stop'; id: string }) {
   return (await call<{ ok: boolean; tasks: RunnerTask[] }>('/tasks', body))?.data ?? null;
 }
 

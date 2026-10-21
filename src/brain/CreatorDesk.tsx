@@ -8,7 +8,8 @@ import OriginRuns from './OriginRuns';
 import SkillBank, { BankSkillPicker } from './SkillBank';
 import { brainMap, syncOrigin, taskAction } from './originLink';
 import { growIdeaOps, ownerIdeaOps } from './ideas';
-import { useSkillFiles } from './skillFiles';
+import { ownSkillFileOps, useSkillFiles } from './skillFiles';
+import { SkillFileDrop, type OwnSkillFile } from './SkillFileDrop';
 import { useOrigin } from './useOrigin';
 import { say } from '../ui/voice';
 
@@ -36,6 +37,8 @@ export default function CreatorDesk() {
   const openRequests = doc.skillRequests.filter((r) => r.status === 'venture-review' || r.status === 'owner-review').length;
   const [window_, setWindow] = useState<RunWindow>(suggestedWindow('Research'));
   const [agentSkills, setAgentSkills] = useState<string[]>([]);
+  // the owner's own SKILL.md for the new agent; without one, JARVIS writes it as soon as the agent exists
+  const [ownFile, setOwnFile] = useState<OwnSkillFile | null>(null);
   useSkillFiles();
   // what waits for the owner in JARVIS runs, shown on its button since notifications are off
   const runner = useOrigin((st) => st.status);
@@ -112,11 +115,13 @@ export default function CreatorDesk() {
     if (!agentName.trim() || !agentRole.trim() || !agentPurpose.trim()) { setNotice('Complete the agent name, role and purpose first.'); return; }
     if (!growFrom || !kind) { setNotice(`Only ${leaderName} can start a venture, and only a venture can add skill agents.`); return; }
     const parentName = doc.agents[growFrom]?.identity.name ?? leaderName;
-    const { ops, error } = branchAgentOps(doc, growFrom, { id: `agent_custom_${Date.now().toString(36)}`, name: agentName.trim(), specialty: agentRole.trim(), purpose: agentPurpose.trim(), skill: team, window: window_, bankSkillIds: agentSkills });
-    const result = error ? null : useStore.getState().commit(ops, `Approve ${kind}: ${agentName.trim()}`);
+    const newId = `agent_custom_${Date.now().toString(36)}`;
+    const { ops, error } = branchAgentOps(doc, growFrom, { id: newId, name: agentName.trim(), specialty: agentRole.trim(), purpose: agentPurpose.trim(), skill: team, window: window_, bankSkillIds: agentSkills });
+    const own = ownFile ? ownSkillFileOps(doc, newId, agentName.trim(), ownFile, agentSkills) : [];
+    const result = error ? null : useStore.getState().commit([...ops, ...own], `Approve ${kind}: ${agentName.trim()}`);
     if (!result?.ok) { setNotice(error ?? result?.errors.join(' · ') ?? 'The agent could not be added.'); return; }
-    setNotice(`${agentName.trim()} now grows from ${parentName} as a new ${kind} branch${agentSkills.length ? ` with ${agentSkills.length} bank skill${agentSkills.length === 1 ? '' : 's'}` : ''}, planned to work ${describeWindow(window_)}. Only ${leaderName} runs live for now, so this window is a plan until its runner is added.`);
-    setAgentName(''); setAgentRole(''); setAgentPurpose(''); setAgentSkills([]);
+    setNotice(`${agentName.trim()} now grows from ${parentName} as a new ${kind} branch${agentSkills.length ? ` with ${agentSkills.length} bank skill${agentSkills.length === 1 ? '' : 's'}` : ''}, planned to work ${describeWindow(window_)}. ${ownFile ? `Your ${ownFile.fileName} is its SKILL.md.` : `${leaderName} is writing its SKILL.md now.`}`);
+    setAgentName(''); setAgentRole(''); setAgentPurpose(''); setAgentSkills([]); setOwnFile(null);
   };
 
   const setupOrigin = () => {
@@ -178,6 +183,7 @@ export default function CreatorDesk() {
               </span></label>
               <div className="creator-field"><span>Branch rule</span><p className="creator-rule">{kind === 'skill' ? `Works only for ${doc.agents[growFrom ?? '']?.identity.name ?? 'this venture'}. It can't add agents or start another business.` : `Only ${leaderName} starts ventures. A venture can add only the skills it needs.`}</p></div>
               <div className="creator-field creator-wide"><span>Skills from the bank</span><BankSkillPicker value={agentSkills} onChange={setAgentSkills} /></div>
+              <div className="creator-field creator-wide"><span>Its SKILL.md: attach your own, or {leaderName} writes one as soon as the agent is added</span><SkillFileDrop value={ownFile} onChange={setOwnFile} /></div>
               <label className="creator-field creator-wide"><span>{kind === 'venture' ? 'The opportunity: who pays, for what, and the cheap test' : `How does this skill help ${doc.agents[growFrom ?? '']?.identity.name ?? 'the venture'}?`}</span><textarea value={agentPurpose} onChange={(e) => setAgentPurpose(e.target.value)} placeholder="Define the user, inputs, work, outputs and how you'll judge quality." rows={4} /></label>
             </div>
             <div className="creator-blueprint"><span className="creator-kicker">BLUEPRINT PREVIEW</span><p><b>{kind === 'skill' ? 'Skill for' : 'Started by'}:</b> {doc.agents[growFrom ?? '']?.identity.name ?? leaderName} · <b>Works:</b> {describeWindow(window_)} ({window_.setBy === 'origin' ? `suggested by ${leaderName}: ${window_.reason}` : 'set by you'}) · <b>Skills:</b> {agentSkills.length ? agentSkills.map((id) => doc.skillBank.find((k) => k.id === id)?.name).filter(Boolean).join(', ') : 'none picked'}</p><p>Will use dated sources, expose assumptions, show costs and uncertainty, and request approval before external actions.</p></div>

@@ -90,7 +90,7 @@ export function Console() {
       const r = await askOrigin(question);
       if (!r) add({ type: 'error', text: "JARVIS's runner isn't running. Start it on your PC with npm.cmd run origin." });
       else if (!r.ok) add({ type: 'error', text: r.reason });
-      else { if (spoken) say(r.answer); add({ type: 'answer', text: r.answer, meta: [isLeader(r.by) ? '' : `answered by ${r.by}`, r.costUsd == null ? 'cost unknown' : `$${r.costUsd.toFixed(4)}`, r.approved?.length ? `approved: ${r.approved.join('; ')}${r.started ? ' · started' : ''}` : ''].filter(Boolean).join(' · ') }); }
+      else { if (spoken) say(r.answer); add({ type: 'answer', text: r.answer, meta: [isLeader(r.by) ? '' : `answered by ${r.by}`, r.costUsd == null ? 'cost unknown' : `$${r.costUsd.toFixed(4)}`, r.approved?.length ? `approved: ${r.approved.join('; ')}${r.started ? ' · started' : ''}` : '', r.skills && (r.skills.files.length || r.skills.bank.length) ? `writing ${[r.skills.files.length ? `${r.skills.files.length} SKILL.md file${r.skills.files.length === 1 ? '' : 's'}` : '', r.skills.bank.length ? `skills: ${r.skills.bank.join(', ')}` : ''].filter(Boolean).join(' and ')}${r.skills.unknown.length ? ` (not found: ${r.skills.unknown.join(', ')})` : ''}` : ''].filter(Boolean).join(' · ') }); }
     } finally { setBusy(false); }
   };
 

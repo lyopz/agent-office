@@ -17,7 +17,7 @@ export const SKILL_FILE_VERSION = 2;
 const versionTag = `skill-file-v${SKILL_FILE_VERSION}`;
 
 /** The agents that still need a current SKILL.md: every agent but JARVIS, whose rules are its prompt. */
-export function agentsNeedingSkillFile(doc: OfficeDoc, status: Pick<RunnerStatus, 'tasks'> & { skillFiles?: { agentId: string; agentIds?: string[]; version?: number }[] }): string[] {
+export function agentsNeedingSkillFile(doc: OfficeDoc, status: Pick<RunnerStatus, 'tasks'> & { skillFiles?: { agentId: string; agentIds?: string[]; version?: number; bank?: boolean }[] }): string[] {
   // requests and files from the runner are written in the current format (older runners didn't record it)
   const current = (v?: number) => (v ?? SKILL_FILE_VERSION) >= SKILL_FILE_VERSION;
   return Object.values(doc.agents)
@@ -25,7 +25,7 @@ export function agentsNeedingSkillFile(doc: OfficeDoc, status: Pick<RunnerStatus
     .filter((a) => !doc.skillBank.find((k) => k.id === skillFileId(a.id))?.tags.includes(versionTag))
     // already asked for in this format (a stopped or rejected request is not repeated), or written and waiting to be saved
     .filter((a) => !status.tasks.some((t) => t.kind === 'skill-file' && t.agentId === a.id && current(t.version)))
-    .filter((a) => !status.skillFiles?.some((f) => (f.agentIds ?? [f.agentId]).includes(a.id) && current(f.version)))
+    .filter((a) => !status.skillFiles?.some((f) => !f.bank && (f.agentIds ?? [f.agentId]).includes(a.id) && current(f.version)))
     .map((a) => a.id);
 }
 
@@ -59,6 +59,30 @@ export function skillFileOps(doc: OfficeDoc, agentId: string, file: { name: stri
     skillFileUpsert(doc, agentId, a.identity.name, file),
     { op: 'agent.setBankSkills', id: agentId, skillIds: [...new Set([...(a.bankSkills ?? []), skillFileId(agentId)])] },
   ];
+}
+
+/** The owner's own .md as an agent's SKILL.md: saved in the current format (so JARVIS never rewrites it) and marked as the owner's. */
+export function ownSkillFileOps(doc: OfficeDoc, agentId: string, agentName: string, f: { name: string; description: string; body: string }, bankSkillIds: string[]): DocOp[] {
+  const up = skillFileUpsert(doc, agentId, agentName, { ...f, version: SKILL_FILE_VERSION });
+  if (up.op === 'skillBank.upsert') up.skill.tags = [...up.skill.tags, 'owner-file'];
+  return [up, { op: 'agent.setBankSkills', id: agentId, skillIds: [...new Set([...bankSkillIds, skillFileId(agentId)])] }];
+}
+
+/** The bank id of a shared skill JARVIS wrote. */
+export const bankSkillId = (key: string) => `skill_${key}`;
+
+/** The ops that save a shared skill JARVIS wrote to the bank and give it to each of its agents. */
+export function bankSkillOps(doc: OfficeDoc, f: { skillKey?: string; skillName?: string; name: string; description: string; body: string; version?: number; agentIds?: string[] }): DocOp[] {
+  const id = bankSkillId(f.skillKey || f.name.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
+  const base = (f.skillName || f.name).trim();
+  // bank names are unique: a different skill with the same name keeps it, and this one says who wrote it
+  const name = (doc.skillBank.some((k) => k.id !== id && k.name.toLowerCase() === base.toLowerCase()) ? `${base} (JARVIS)` : base).slice(0, 80);
+  const ops: DocOp[] = [{ op: 'skillBank.upsert', skill: { id, name, description: f.description || base, instructions: f.body, tags: ['bank-skill', `skill-file-v${f.version ?? 1}`] } }];
+  for (const agentId of f.agentIds ?? []) {
+    const a = doc.agents[agentId];
+    if (a) ops.push({ op: 'agent.setBankSkills', id: agentId, skillIds: [...new Set([...(a.bankSkills ?? []), id])] });
+  }
+  return ops;
 }
 
 /** Create an agent JARVIS proposed (or created on its own), with its SKILL.md, and tell the runner. */
@@ -95,13 +119,13 @@ export function useSkillFiles() {
       saved.current.add(f.id);
       // one file can serve several agents with the same job; each gets it under its own name
       let d = st.doc;
-      const ops: DocOp[] = [];
-      for (const agentId of f.agentIds ?? [f.agentId]) {
+      const ops: DocOp[] = f.bank ? bankSkillOps(d, f) : [];
+      if (!f.bank) for (const agentId of f.agentIds ?? [f.agentId]) {
         const mine = skillFileOps(d, agentId, f);
         ops.push(...mine);
         if (mine[0]?.op === 'skillBank.upsert') d = { ...d, skillBank: [...d.skillBank, { ...mine[0].skill, createdAt: '' }] };
       }
-      const r = ops.length ? useStore.getState().commit(ops, `Save ${f.agentName}'s SKILL.md`, { silent: true }) : null;
+      const r = ops.length ? useStore.getState().commit(ops, f.bank ? `Add the ${f.skillName ?? f.name} skill` : `Save ${f.agentName}'s SKILL.md`, { silent: true }) : null;
       if (!ops.length || r?.ok) void skillFileImported(f.id); // an agent removed since is simply skipped
       else saved.current.delete(f.id);
     }
@@ -110,7 +134,8 @@ export function useSkillFiles() {
       asked.current.add(id);
       const d = useStore.getState().doc;
       const again = d.skillBank.some((k) => k.id === skillFileId(id));
-      void taskAction({ action: 'add', kind: 'skill-file', version: SKILL_FILE_VERSION, agentId: id, agentName: d.agents[id].identity.name, title: `${again ? 'Rewrite' : 'Write'} ${d.agents[id].identity.name}'s SKILL.md in full detail`, detail: skillFileBrief(d, id) });
+      // a new agent's first SKILL.md is written right away, so it has its playbook from the start; rewrites go at the normal pace
+      void taskAction({ action: 'add', kind: 'skill-file', version: SKILL_FILE_VERSION, requested: !again, agentId: id, agentName: d.agents[id].identity.name, title: `${again ? 'Rewrite' : 'Write'} ${d.agents[id].identity.name}'s SKILL.md in full detail`, detail: skillFileBrief(d, id) });
     }
   }, [status]);
 }

@@ -223,7 +223,7 @@ export function nextTask(s) {
   const known = (t) => t.kind !== 'skill-file' || !(s.agents || []).length || s.agents.some((a) => a.id === t.agentId);
   const ready = (t) => t.status === 'approved' && !(t.waitingOnOwner && pendingCount(s)) && known(t);
   // the owner's own tasks come before the ones JARVIS set itself
-  return s.tasks.find((t) => ready(t) && t.kind !== 'skill-file' && t.by !== 'origin') || s.tasks.find((t) => ready(t) && t.kind !== 'skill-file') || s.tasks.find(ready) || null;
+  return s.tasks.find((t) => ready(t) && !isSkillTask(t) && t.by !== 'origin') || s.tasks.find((t) => ready(t) && !isSkillTask(t)) || s.tasks.find((t) => ready(t) && t.kind === 'skill-file') || null;
 }
 
 /** An agent's instructions and SKILL.md, as the app last synced them. */
@@ -329,6 +329,71 @@ function saveSkillFile(s, task, file, at) {
   s.skillFiles.push({ id: newId('skillfile'), agentId: task.agentId, agentName: task.agentName, agentIds: same.map((x) => x.agentId), agentNames: same.map((x) => x.agentName), version: SKILL_FILE_VERSION, ...file, status: 'new', createdAt: at });
 }
 
+/** A shared skill for the owner's bank, given to the agents named; the app saves it and attaches it. */
+function saveBankSkill(s, task, file, at) {
+  task.status = 'done';
+  s.skillFiles.push({ id: newId('skillfile'), bank: true, skillKey: task.skillKey, skillName: task.skillName, agentId: task.agentIds[0] ?? AGENT_ID, agentName: task.skillName, agentIds: task.agentIds, agentNames: task.agentNames, version: SKILL_FILE_VERSION, ...file, name: task.skillName, status: 'new', createdAt: at });
+}
+
+/** What JARVIS needs to write one shared bank skill. */
+function bankSkillBrief(s, task) {
+  const who = task.agentIds.map((id) => (s.agents || []).find((a) => a.id === id)).filter(Boolean);
+  return `Write a skill for the owner's skill bank called "${task.skillName}". ${task.detail ? `What it is for: ${task.detail}. ` : ''}It will be given to ${who.map((a) => `${a.name} (${a.title || 'agent'})`).join(', ') || 'agents that need it'}, so write it for that work and this business, never generic. It is a SKILL.md like an agent's own, but for one capability any of them can use.\n\n${SKILL_FILE_RULES}`;
+}
+
+/** Turn names the owner or JARVIS used ("Mockup and Design", "all", "STORE team") into agent ids from the live roster. */
+export function resolveAgents(s, refs) {
+  const all = (s.agents || []);
+  const norm = (x) => String(x || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+  const ids = new Set(), unknown = [];
+  for (const raw of (Array.isArray(refs) ? refs : [refs]).map(String).slice(0, 100)) {
+    const ref = norm(raw);
+    if (!ref) continue;
+    if (ref === 'all' || ref === 'all agents' || ref === 'everyone') { all.forEach((a) => ids.add(a.id)); continue; }
+    const team = ref.replace(/\s*(team|branch|and its agents|agents)$/, '');
+    const byId = all.find((a) => a.id === raw.trim());
+    const exact = byId || all.find((a) => norm(a.name) === ref) || all.find((a) => norm(a.name) === team);
+    const loose = exact || all.find((a) => norm(a.name).includes(ref) || (ref.length > 3 && ref.includes(norm(a.name))));
+    if (!loose) { unknown.push(raw); continue; }
+    ids.add(loose.id);
+    // a venture named as a team brings every agent working for it
+    if (team !== ref || /team|branch/.test(ref)) all.filter((a) => a.ventureId === loose.id).forEach((a) => ids.add(a.id));
+  }
+  return { ids: [...ids], unknown };
+}
+
+/**
+ * The owner's request for skills: a SKILL.md for each agent named, and shared skills for the bank
+ * given to the agents named. Queued as requested work that runs right away (see runSkills).
+ */
+export function queueSkills(s, req) {
+  const at = new Date().toISOString();
+  const out = { files: [], bank: [], unknown: [] };
+  const nameOf = (id) => (s.agents || []).find((a) => a.id === id)?.name ?? id;
+  const files = resolveAgents(s, req?.files ?? []);
+  out.unknown.push(...files.unknown);
+  for (const id of files.ids) {
+    const open = s.tasks.find((t) => t.kind === 'skill-file' && t.agentId === id && t.status === 'approved');
+    if (open) open.requested = true;
+    else s.tasks.push({ id: newId('task'), kind: 'skill-file', version: SKILL_FILE_VERSION, agentId: id, agentName: nameOf(id), title: `Write ${nameOf(id)}'s SKILL.md in full detail`, detail: `${nameOf(id)}: ${(s.agents || []).find((a) => a.id === id)?.title || 'agent'}.`, status: 'approved', by: 'owner', requested: true, createdAt: at });
+    out.files.push(nameOf(id));
+  }
+  for (const b of Array.isArray(req?.bank) ? req.bank.slice(0, 20) : []) {
+    const name = String(b?.name || '').trim().slice(0, 60);
+    if (!name) continue;
+    const key = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
+    const who = resolveAgents(s, b.agents ?? []);
+    out.unknown.push(...who.unknown);
+    const open = s.tasks.find((t) => t.kind === 'bank-skill' && t.skillKey === key && t.status === 'approved');
+    if (open) { open.agentIds = [...new Set([...open.agentIds, ...who.ids])]; open.agentNames = open.agentIds.map(nameOf); open.requested = true; }
+    else s.tasks.push({ id: newId('task'), kind: 'bank-skill', skillKey: key, skillName: name, agentIds: who.ids, agentNames: who.ids.map(nameOf), title: `Write the "${name}" skill${who.ids.length ? ` for ${who.ids.map(nameOf).join(', ')}` : ''}`.slice(0, 160), detail: String(b.description || '').slice(0, 600), status: 'approved', by: 'owner', requested: true, createdAt: at });
+    out.bank.push(name);
+  }
+  return out;
+}
+const isSkillTask = (t) => t.kind === 'skill-file' || t.kind === 'bank-skill';
+const requestedSkills = (s) => s.tasks.filter((t) => isSkillTask(t) && t.status === 'approved' && t.requested && (t.kind === 'bank-skill' || !(s.agents || []).length || s.agents.some((a) => a.id === t.agentId)));
+
 /** What JARVIS needs to write one agent's SKILL.md. */
 function skillFileBrief(s, task) {
   return `Write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId})${task.sharedWith?.length ? `. ${task.sharedWith.length} other agents do exactly the same job (${task.sharedWith.join(', ')}) and will share this file, so write it for the role, not the one name` : ''}. What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}`;
@@ -353,7 +418,7 @@ function briefFor(s, task, deadline, etsy = null) {
     task?.kind === 'skill-file'
       ? `Your one task this run (the owner approved it): [${task.id}] write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId})${task.sharedWith?.length ? `. ${task.sharedWith.length} other agents do exactly the same job (${task.sharedWith.join(', ')}) and will share this file, so write it for the role, not the one name` : ''}. What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions${task.version > 1 ? ' and its earlier, thinner SKILL.md (replace it with a much more detailed one)' : ''}:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}\nResearch only if it makes the playbook more specific (for example current platform rules or prices). Return it as "skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"} and list the task id in completedTaskIds.`
       : task
-      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}${task.focus ? `\n${focusBrief(s, task, etsy)}` : ''}\nPLAN AND STEPS: work the task from start to finish through an ordered plan. ${task.steps?.length ? `Your plan so far:\n${task.steps.map((x, i) => `${i + 1}. [${x.done ? 'x' : ' '}] ${x.text}`).join('\n')}\nDo the first unchecked step now.` : 'This is the first run on it: write a plan of 3 to 8 concrete, ordered steps that end in a finished deliverable, then do step 1 now.'}${task.notes ? `\nWhere it stood after the last run: ${task.notes}` : ''}\nReturn the whole plan in "steps" with each finished step marked done, and in "taskNotes" exactly where the task stands (findings so far, sources, what is next). You get up to ${roundsFor(task)} rounds this run: after each reply you may be asked to continue with the next step. When every step is done, list the task id in completedTaskIds and put the deliverable in taskNotes and notifyOwner.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. ${etsy?.tools.some((t) => t.name === 'etsy_search') ? `ETSY (read-only, free): etsy_search shows real active listings with prices, favorites, views and tags; use it to measure demand, competition and price ranges. ${etsyPublic().connected ? "etsy_my_shop shows the owner's own shop and its numbers." : ''} ` : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? `PRINTIFY (the owner's shop "${printifyPublic().shopTitle || 'shop'}", ${printifyPublic().channel || 'connected store'}): you can make products to sell. Find a product type (printify_find_product_type), a provider and variants, upload a design (write it yourself as clean SVG, typography or simple vector art, sized for print), then printify_create_product with a researched price, SEO title, full description and 13 tags. ${etsy?.tools.some((t) => t.name === IMAGE_TOOL.name) ? `For illustrated or photo-style art, design_generate_image makes it with the owner's ChatGPT image model and uploads it for you ($${Math.max(0, imageCap(s) - rollImages(s).spentUsd).toFixed(2)} of the $${imageCap(s).toFixed(2)} monthly image budget left); text-only designs are better as SVG. ` : ''}Products stay unpublished in Printify (no cost). When one is finished and your research supports it, call printify_request_publish: the owner approves each one before it goes live on their store, where the store charges its listing fee. At most ${perRun} product${perRun === 1 ? '' : 's'} this run. ` : ''}You cannot publish, buy or contact anyone yourself; for that, say what you need in notifyOwner.\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
+      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}${task.focus ? `\n${focusBrief(s, task, etsy)}` : ''}\nPLAN AND STEPS: work the task from start to finish through an ordered plan. ${task.steps?.length ? `Your plan so far:\n${task.steps.map((x, i) => `${i + 1}. [${x.done ? 'x' : ' '}] ${x.text}`).join('\n')}\nDo the first unchecked step now.` : 'This is the first run on it: write a plan of 3 to 8 concrete, ordered steps that end in a finished deliverable, then do step 1 now.'}${task.notes ? `\nWhere it stood after the last run: ${task.notes}` : ''}\nReturn the whole plan in "steps" with each finished step marked done, and in "taskNotes" exactly where the task stands (findings so far, sources, what is next). You get up to ${roundsFor(task)} rounds this run: after each reply you may be asked to continue with the next step. When every step is done, list the task id in completedTaskIds and put the deliverable in taskNotes and notifyOwner.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. ${etsy?.tools.some((t) => t.name === 'etsy_search') ? `ETSY (read-only, free): etsy_search shows real active listings with prices, favorites, views and tags; use it to measure demand, competition and price ranges. ${etsyPublic().connected ? "etsy_my_shop shows the owner's own shop and its numbers." : ''} ` : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? `PRINTIFY (the owner's shop "${printifyPublic().shopTitle || 'shop'}", ${printifyPublic().channel || 'connected store'}): you can make products to sell. Find a product type (printify_find_product_type), a provider and variants, upload a design (write it yourself as clean SVG, typography or simple vector art, sized for print), then printify_create_product with a researched price, SEO title, full description and 13 tags. ${etsy?.tools.some((t) => t.name === IMAGE_TOOL.name) ? `For illustrated or photo-style art, design_generate_image makes it with the owner's ChatGPT image model and uploads it for you ($${Math.max(0, imageCap(s) - rollImages(s).spentUsd).toFixed(2)} of the $${imageCap(s).toFixed(2)} monthly image budget left); text-only designs are better as SVG. ` : ''}Products stay unpublished in Printify (no cost). When one is finished and your research supports it, call printify_request_publish: the owner approves each one before it goes live on their store, where the store charges its listing fee. At most ${perRun} product${perRun === 1 ? '' : 's'} this run. ` : ''}You cannot publish, buy or contact anyone yourself; for that, say what you need in notifyOwner. SKILLS: if the task is (or needs) SKILL.md files or bank skills for agents, do not write them here: list them in "skillRequests" ({"files": ["agent names"], "bank": [{"name": "...", "description": "...", "agents": ["agent names"]}]}) and the runner writes each one in full right after this run, saves it to the bank and attaches it; count that step as done.\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
       : canSelfApprove(s)
       ? 'No task is ready. Do not research this run. Review your notes, make sure each venture has the skill agents it needs (below), and set the single most valuable next task in proposedTasks; in empire mode it is approved at once and worked next run.'
       : 'No approved task is ready. Do not research. Review your notes, make sure each venture has the skill agents it needs (below), and propose the single most valuable, cheap task for the owner to approve.',
@@ -366,7 +431,7 @@ function briefFor(s, task, deadline, etsy = null) {
         ? 'Something is already waiting for the owner, so propose nothing new this run (leave proposedTasks and proposedAgents empty). If your task cannot continue until the owner decides, set "waitingOnOwner": true and the runner moves on to other work.'
         : `You may propose at most one new task, or one new agent if the work clearly needs a lasting specialist (follow HOW TO CREATE AN AGENT and the branch rules; parentId is your own id for a venture, or an existing venture's id for a skill agent working for it). Give it a clear purpose of two or three sentences; its SKILL.md is written in full in a later run.`)
       : `GROWING THE BRAIN: the owner lets you create agents without asking; they exist as soon as you list them, cost nothing until they are given work, and the owner can delete any. Each venture should have the skill agents it needs to make money (for an Etsy store, for example: product research, listing copy and SEO, design or mockups, pricing, and ads). In proposedAgents, create up to ${agentsPerRun(s)} agents this run that a venture clearly needs and does not have yet; parentId is the venture's id (from AGENTS IN THE BRAIN NOW) for its skill agents, or your own id for a new venture ${s.autoTasks !== false ? '(start a new venture when your research shows real demand)' : '(a new venture needs a business the owner already asked for or approved)'}. Never duplicate an agent that already exists. Give each a clear purpose of two or three sentences; do not write its SKILL.md here, because the runner has you write each one in full in a later run.${canSelfApprove(s) ? ' You may also set one new task in proposedTasks; it is approved at once.' : pendingCount(s) ? ' A task proposal is waiting for the owner, so propose no new task this run.' : ' You may also propose one new task for the owner to approve.'}`,
-    'Finish with exactly one JSON object in a ```json block: {"memory": "your updated notes, under 4000 characters, with sources and dates", "nextAction": "...", "proposedTasks": [{"title": "...", "detail": "...", "agentId": "the agent who should do it, or null"}], "proposedAgents": [{"parentId": "...", "name": "...", "specialty": "...", "purpose": "...", "skill": "a team such as Research", "bankSkillIds": ["..."], "everyMinutes": 120, "maxMinutes": 5, "reason": "why this window"}], "waitingOnOwner": false, "skillFile": "only for a SKILL.md task, else null", "steps": [{"text": "...", "done": true}], "taskNotes": "where this task stands", "progress": {"percent": 40, "note": "..."}, "completedTaskIds": ["..."], "stopTaskIds": [], "stopReason": "...", "notifyOwner": "only a result the owner must see, else null", "summary": "one line on what this run did"}',
+    'Finish with exactly one JSON object in a ```json block: {"memory": "your updated notes, under 4000 characters, with sources and dates", "nextAction": "...", "proposedTasks": [{"title": "...", "detail": "...", "agentId": "the agent who should do it, or null"}], "proposedAgents": [{"parentId": "...", "name": "...", "specialty": "...", "purpose": "...", "skill": "a team such as Research", "bankSkillIds": ["..."], "everyMinutes": 120, "maxMinutes": 5, "reason": "why this window"}], "waitingOnOwner": false, "skillFile": "only for a SKILL.md task, else null", "steps": [{"text": "...", "done": true}], "taskNotes": "where this task stands", "progress": {"percent": 40, "note": "..."}, "completedTaskIds": ["..."], "skillRequests": null, "stopTaskIds": [], "stopReason": "...", "notifyOwner": "only a result the owner must see, else null", "summary": "one line on what this run did"}',
   ].filter(Boolean).join('\n\n');
 }
 
@@ -386,7 +451,7 @@ export function pickTasks(s, n = PARALLEL, only = null) {
   const known = (t) => !(s.agents || []).length || !t.agentId || s.agents.some((a) => a.id === t.agentId);
   // a branch's own run: only the tasks of the agents in that branch
   const inBranch = (t) => !only || only.includes(t.agentId || AGENT_ID);
-  const ready = (t) => t.status === 'approved' && t.kind !== 'skill-file' && !(t.waitingOnOwner && pendingCount(s)) && known(t) && inBranch(t);
+  const ready = (t) => t.status === 'approved' && !isSkillTask(t) && !(t.waitingOnOwner && pendingCount(s)) && known(t) && inBranch(t);
   // the owner's command-center tasks come before everything else, and while one is open nothing else runs
   const focus = s.tasks.filter((t) => ready(t) && t.focus);
   const work = (focus.length ? focus : s.tasks.filter(ready)).map((t, i) => [t, i]).sort((a, b) => (Number(a[0].by === 'origin') - Number(b[0].by === 'origin')) || a[1] - b[1]).map(([t]) => t);
@@ -478,8 +543,9 @@ async function work(s, task, ctx) {
 /** Write one SKILL.md in its own call. */
 async function writeSkillFile(s, extra, ctx) {
   const { deps, deadline, record } = ctx;
-  extra.sharedWith = s.tasks.filter((x) => x !== extra && x.kind === 'skill-file' && x.status === 'approved' && roleOf(x) === roleOf(extra)).map((x) => x.agentName);
-  const prompt = [roster(s), skillFileBrief(s, extra), 'Reply with only one JSON object in a ```json block: {"skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"}}'].join('\n\n');
+  const bank = extra.kind === 'bank-skill';
+  if (!bank) extra.sharedWith = s.tasks.filter((x) => x !== extra && x.kind === 'skill-file' && x.status === 'approved' && roleOf(x) === roleOf(extra)).map((x) => x.agentName);
+  const prompt = [roster(s), bank ? bankSkillBrief(s, extra) : skillFileBrief(s, extra), `Reply with only one JSON object in a \`\`\`json block: {"skillFile": {"name": "${bank ? 'the skill name' : 'a short skill name'}", "description": "one line on when ${bank ? 'an agent' : 'this agent'} uses it", "body": "the full Markdown"}}`].join('\n\n');
   try {
     const r = await deps.fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -493,7 +559,8 @@ async function writeSkillFile(s, extra, ctx) {
     const c = costOf(MODEL, data.usage || {});
     if (c == null) record.costKnown = false;
     const file = cleanSkillFile(parseResult((data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join(''))?.skillFile);
-    if (file) { saveSkillFile(s, extra, file, new Date().toISOString()); record.skillFileFor = extra.agentName; logProgress(s, extra, { at: new Date().toISOString(), runId: record.id, pct: 100, note: `JARVIS wrote ${extra.agentName}'s SKILL.md.` }); }
+    if (file && bank) { saveBankSkill(s, extra, file, new Date().toISOString()); record.skillFileFor = extra.skillName; logProgress(s, extra, { at: new Date().toISOString(), runId: record.id, pct: 100, note: `JARVIS wrote the "${extra.skillName}" skill for ${extra.agentNames.join(', ')}.` }); }
+    else if (file) { saveSkillFile(s, extra, file, new Date().toISOString()); record.skillFileFor = extra.agentName; logProgress(s, extra, { at: new Date().toISOString(), runId: record.id, pct: 100, note: `JARVIS wrote ${extra.agentName}'s SKILL.md.` }); }
     return c ?? 0;
   } catch (e) {
     console.error(`[origin] SKILL.md call: ${e.name}`);
@@ -539,6 +606,11 @@ function applyOut(s, { task, w, out }, at, record, lead) {
   if (task && task.kind !== 'skill-file' && (out.waitingOnOwner === true || (pendingCount(s) > wasPending && !(out.completedTaskIds || []).includes(task.id)))) task.waitingOnOwner = true;
   const file = task?.kind === 'skill-file' ? cleanSkillFile(out.skillFile) : null;
   if (file) { saveSkillFile(s, task, file, at); logProgress(s, task, { at, runId: record.id, pct: 100, note: `JARVIS wrote ${task.agentName}'s SKILL.md.` }); }
+  // SKILL.md files and bank skills the work needs: written right after this run
+  if (out.skillRequests && typeof out.skillRequests === 'object') {
+    const q = queueSkills(s, out.skillRequests);
+    if (q.files.length || q.bank.length) logProgress(s, task, { at, runId: record.id, note: `Asked for ${[...q.files.map((n) => `${n}'s SKILL.md`), ...q.bank.map((n) => `the "${n}" skill`)].join(', ')}.` });
+  }
   // only the task this worker had can be completed or stopped by it
   if (task && Array.isArray(out.completedTaskIds) && out.completedTaskIds.includes(task.id)) task.status = 'done';
   if (task && task.status === 'approved' && Array.isArray(out.stopTaskIds) && out.stopTaskIds.includes(task.id)) {
@@ -587,7 +659,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   try {
     results = await Promise.all(picks.map((t) => work(s, t, ctx)));
     // one SKILL.md every run, so the files get written while the agents work their tasks (not while the owner's focus task runs)
-    const extra = picks[0]?.kind === 'skill-file' || focus || only ? null : nextTask({ ...s, tasks: s.tasks.filter((t) => t.kind === 'skill-file') });
+    const extra = picks[0]?.kind === 'skill-file' || focus || only ? null : requestedSkills(s)[0] || nextTask({ ...s, tasks: s.tasks.filter((t) => t.kind === 'skill-file') });
     const used = results.reduce((x, r) => x + r.w.costUsd, 0);
     if (extra && Date.now() < deadline.getTime() - 60_000 && used + CALL_WORST_USD <= runLimit) {
       const c = await writeSkillFile(s, extra, ctx);
@@ -639,7 +711,8 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
       if (cur.status === 'approved' && t.status === 'done') cur.status = 'done';
       if (cur.status === 'approved' && t.status !== 'approved') Object.assign(cur, { status: t.status, stopReason: t.stopReason, stoppedAt: t.stoppedAt });
       if (t.waitingOnOwner) cur.waitingOnOwner = true;
-    } else if (t.kind === 'skill-file' && t.status === 'done' && cur.status === 'approved') cur.status = 'done'; // shared SKILL.md
+    } else if (isSkillTask(t) && t.status === 'done' && cur.status === 'approved') cur.status = 'done'; // written this run (or shared)
+    else if (isSkillTask(t) && t.requested && cur.status === 'approved') Object.assign(cur, { requested: true, ...(t.agentIds ? { agentIds: t.agentIds, agentNames: t.agentNames } : {}) }); // asked for again this run
   }
   for (const a of s.agentProposals) if (!now.agentProposals.some((x) => x.id === a.id)) now.agentProposals.push(a);
   for (const f of s.skillFiles) if (!now.skillFiles.some((x) => x.id === f.id)) now.skillFiles.push(f);
@@ -663,11 +736,85 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   return { ok: true, run: record };
 }
 
+/**
+ * A run that only writes skills: the SKILL.md files and bank skills the owner asked for (then any
+ * other waiting SKILL.md), up to PARALLEL at a time, within the window and the cap. It starts right
+ * after the request, so the files reach the app in minutes instead of one per run.
+ */
+export async function runSkills(trigger = 'skills', deps = { fetch: globalThis.fetch, file: FILE }) {
+  if (running) return { ok: false, reason: 'A run is already in progress.' };
+  const s = loadState(deps.file);
+  rollMonth(s);
+  if (!KEY && !deps.key) return { ok: false, reason: 'No API key.' };
+  if (!s.instructions) return { ok: false, reason: 'Open the app once with the runner on so it can send JARVIS\'s instructions.' };
+  if (remaining(s) < CALL_WORST_USD) return { ok: false, reason: `The $${CAP} monthly cap is reached.` };
+  const known = (t) => t.kind === 'bank-skill' || !(s.agents || []).length || s.agents.some((a) => a.id === t.agentId);
+  const queue = [...requestedSkills(s), ...s.tasks.filter((t) => t.kind === 'skill-file' && t.status === 'approved' && !t.requested)].filter(known);
+  if (!queue.length) return { ok: false, reason: 'No skills waiting to be written.' };
+  const start = new Date(), deadline = new Date(start.getTime() + MAX_MIN * 60_000);
+  const limit = Math.min(RUN_LIMIT_USD * PARALLEL, remaining(s));
+  const record = { id: `run_${start.getTime().toString(36)}`, trigger, model: MODEL, startedAt: start.toISOString(), endedAt: null, costUsd: 0, costKnown: true, calls: 0, searches: 0, fetches: 0, status: 'running', summary: '', skillsWritten: [] };
+  running = record;
+  const ctx = { deps, deadline, record };
+  try {
+    // a few writers at once, each taking the next file until the window, the budget or the queue runs out
+    const writer = async () => {
+      for (;;) {
+        const t = queue.find((x) => x.status === 'approved' && !x.taking);
+        if (!t || Date.now() > deadline.getTime() - 60_000 || record.costUsd + CALL_WORST_USD > limit) return;
+        t.taking = true;
+        record.costUsd = round6(record.costUsd + await writeSkillFile(s, t, ctx));
+        delete t.taking;
+        if (t.status === 'done') record.skillsWritten.push(t.kind === 'bank-skill' ? t.skillName : `${t.agentName}'s SKILL.md`);
+        else if (t.status === 'approved') {
+          // two failed tries: it goes back to the normal pace (one SKILL.md a run) instead of holding this run
+          t.tries = (t.tries || 0) + 1;
+          if (t.tries >= 2) t.requested = false;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(PARALLEL, queue.length) }, writer));
+  } finally {
+    running = null;
+  }
+  record.endedAt = new Date().toISOString();
+  const left = queue.filter((t) => t.status === 'approved').length;
+  record.status = record.skillsWritten.length ? 'done' : 'no-result';
+  record.summary = `Wrote ${record.skillsWritten.length ? record.skillsWritten.join(', ') : 'nothing'}${left ? `; ${left} still to write` : ''}.`;
+  record.notify = record.skillsWritten.length ? `${record.skillsWritten.length} skill file${record.skillsWritten.length === 1 ? '' : 's'} written and added to your agents.` : null;
+  const now = loadState(deps.file);
+  rollMonth(now);
+  for (const t of s.tasks) {
+    const cur = now.tasks.find((x) => x.id === t.id);
+    if (!cur) now.tasks.push(t);
+    else if (isSkillTask(t) && cur.status === 'approved') Object.assign(cur, { status: t.status, requested: t.requested, ...(t.tries ? { tries: t.tries } : {}) });
+  }
+  for (const f of s.skillFiles) if (!now.skillFiles.some((x) => x.id === f.id)) now.skillFiles.push(f);
+  for (const e of s.progressLog || []) if (!(now.progressLog || []).some((x) => x.id === e.id)) now.progressLog = [...(now.progressLog || []), e].slice(-PROGRESS_KEEP);
+  charge(now, AGENT_ID, record.costUsd);
+  if (!record.costKnown) now.ledger.unknownCostRuns++;
+  record.workers = [{ taskId: null, agentId: AGENT_ID, agentName: 'JARVIS', title: 'Skills', costUsd: record.costUsd, status: record.status, rounds: record.skillsWritten.length, summary: record.summary }];
+  now.runs = [record, ...now.runs].slice(0, 50);
+  saveState(now, deps.file);
+  return { ok: true, run: record };
+}
+
 /** Most one console answer may cost: a short reply with JARVIS's prompt, no tools. */
 const ASK_WORST_USD = 0.05;
 
 /** The APPROVE line JARVIS adds when the owner's words in the console approve work. */
+/** One action line JARVIS ends a console answer with: `WORD {json}` on its own line. */
+function actionLine(text, word) {
+  const line = String(text || '').split('\n').find((l) => l.trim().startsWith(`${word} {`) || l.trim().startsWith(`${word}{`));
+  if (!line) return null;
+  try { const o = JSON.parse(line.trim().slice(word.length).trim()); return o && typeof o === 'object' ? o : null; } catch { return null; }
+}
+/** The SKILLS line: SKILL.md files and bank skills the owner asked for. */
+export const parseSkills = (text) => actionLine(text, 'SKILLS');
+
 export function parseConsent(text) {
+  const one = actionLine(text, 'APPROVE');
+  if (one) return one;
   const m = String(text || '').match(/^\s*APPROVE\s*(\{.*\})\s*$/ms);
   if (!m) return null;
   try { const o = JSON.parse(m[1]); return o && typeof o === 'object' ? o : null; } catch { return null; }
@@ -736,6 +883,7 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
       : 'The owner is asking you a question in the console, outside your work window. Answer directly and briefly from what you know; you have no tools here and this does not count as a run. Do not propose tasks or agents here.',
     `Recent progress${agent ? ` on your work` : ''}:\n${progress.map((e) => `- ${e.at.slice(0, 16)} ${e.agentName}${e.taskTitle ? ` on "${e.taskTitle}"` : ''}${e.pct != null ? ` (${e.pct}%)` : ''}: ${e.note}`).join('\n') || '(none yet)'}`,
     `OWNER CONSENT: the owner's plain words are approval, inside the $${CAP} monthly cap and the per-task budget. "allow etsy store to run", "go ahead", "yes do it", "1 dollar approval" all count; never ask them to repeat it in exact wording or to restate a scope. A request to do something ("make 5 items for my etsy store", "find me 3 trending niches") is approval of that work too. When their message approves or asks for work, say in one sentence what you will do, then end your answer with one line exactly like this: APPROVE {"title": "short task title", "detail": "what to do and what a good result looks like, in the owner's words", "agentId": "id from AGENTS IN THE BRAIN NOW of the agent who should do it, or null for you", "count": how many items they asked for or null, "budgetUsd": the dollar amount they named or null, "approveIds": ["ids of waiting proposals they approved"]}. It becomes your focus: worked first, right away, before anything else. Write that line only when they approved or asked for work. Ventures create the skill agents they need without asking; that never needs approval.`,
+    `SKILLS: you can write skills yourself; never tell the owner you can't, and never ask them for agent ids (the runner finds agents by name). A SKILL.md is an agent's own detailed playbook; a bank skill is a shared skill in the owner's skill bank given to the agents that need it. When the owner asks for SKILL.md files or skills (or names skills an agent is missing), say in one sentence what you will write, then end your answer with one line exactly like this: SKILLS {"files": ["agent names, a venture name + \" team\" for its whole team, or \"all\""], "bank": [{"name": "Web research", "description": "one line on what it covers", "agents": ["agent names, \"<venture> team\", or \"all\""]}]}. Writing starts right away and each file is saved to the bank and attached to its agents automatically. You may write both an APPROVE line and a SKILLS line.`,
     'Old runs that failed with a 401 or "no API key" were before the owner set their key. The key works now (this answer proves it), so never say it is broken.',
     `Your current task: ${task ? `${task.title}: ${task.detail}${task.progress != null ? ` (${task.progress}% done)` : ''} (cost so far $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} runs)` : 'none approved yet'}.`,
     `Queued after it: ${s.tasks.filter((t) => t.status === 'approved' && t !== task).map((t) => t.title).join('; ') || 'nothing'}.`,
@@ -761,7 +909,8 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
   }
   const raw = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
   const consent = parseConsent(raw);
-  const answer = raw.replace(/^\s*APPROVE\s*\{.*$/ms, '').trim() || (consent ? 'Approved. I will start on it in my next run.' : '(no answer)');
+  const skillsAsk = parseSkills(raw);
+  const answer = raw.split('\n').filter((l) => !/^\s*(APPROVE|SKILLS)\s*\{/.test(l)).join('\n').replace(/^\s*APPROVE\s*\{.*$/ms, '').trim() || (consent ? 'Approved. I will start on it in my next run.' : skillsAsk ? 'On it: writing those skills now.' : '(no answer)');
   const answerCost = costOf(MODEL, data.usage || {});
   const cost = answerCost == null ? null : answerCost + routeCost;
   // no await between this load and save, so a run in progress can't lose it
@@ -770,9 +919,10 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
   if (cost == null) now.ledger.unknownCostRuns++;
   else charge(now, agent?.id ?? AGENT_ID, cost);
   const approved = consent ? applyConsent(now, consent) : null;
-  now.asks = [{ at: new Date().toISOString(), q, a: answer.slice(0, 4000), costUsd: cost, approved, agentId: agent?.id ?? null, by: agent?.name ?? 'JARVIS' }, ...(now.asks || [])].slice(0, 20);
+  const skills = skillsAsk ? queueSkills(now, skillsAsk) : null;
+  now.asks = [{ at: new Date().toISOString(), q, a: answer.slice(0, 4000), costUsd: cost, approved, skills, agentId: agent?.id ?? null, by: agent?.name ?? 'JARVIS' }, ...(now.asks || [])].slice(0, 20);
   saveState(now, deps.file);
-  return { ok: true, answer, costUsd: cost, taskTitle: task?.title ?? null, approved, by: agent?.name ?? 'JARVIS' };
+  return { ok: true, answer, costUsd: cost, taskTitle: task?.title ?? null, approved, skills, by: agent?.name ?? 'JARVIS' };
 }
 
 function publicState() {
@@ -882,7 +1032,7 @@ async function handle(req, res) {
       // a SKILL.md request for one agent; only one open request per agent
       if (body.kind === 'skill-file' && typeof body.agentId === 'string') {
         if (s.tasks.some((t) => t.kind === 'skill-file' && t.agentId === body.agentId && t.status === 'approved')) return send(req, res, 200, { ok: true, tasks: s.tasks });
-        Object.assign(task, { kind: 'skill-file', agentId: body.agentId.slice(0, 80), agentName: String(body.agentName || body.agentId).slice(0, 80), version: Number(body.version) || 1 });
+        Object.assign(task, { kind: 'skill-file', agentId: body.agentId.slice(0, 80), agentName: String(body.agentName || body.agentId).slice(0, 80), version: Number(body.version) || 1, ...(body.requested === true ? { requested: true } : {}) });
       } else if (typeof body.agentId === 'string') task.agentId = body.agentId.slice(0, 80);
       s.tasks.push(task);
     } else {
@@ -901,7 +1051,8 @@ async function handle(req, res) {
   if (url === '/api/origin/ask') {
     const r = await ask(body.question);
     // the owner's words approved work: start on it now instead of at the next scheduled run
-    if (r.ok && r.approved?.length) r.started = startFocus();
+    if (r.ok && (r.skills?.files.length || r.skills?.bank.length)) r.skillsStarted = startSkills();
+    else if (r.ok && r.approved?.length) r.started = startFocus();
     return send(req, res, r.ok ? 200 : 409, r);
   }
   if (url === '/api/origin/focus') {
@@ -995,6 +1146,28 @@ export async function syncSales(deps = {}) {
   return salesSyncing;
 }
 
+/** Start writing requested skills in the background; false when a run is going (they are written right after it). */
+function startSkills() {
+  if (running || !KEY) return false;
+  runSkills('skills').then((r) => console.log(`[origin] skills run: ${r.ok ? r.run.summary : r.reason}`));
+  return true;
+}
+
+/** Owner requests dropped as files in origin-data/inbox (for example by a setup step): applied once, then removed. */
+function readInbox() {
+  const dir = path.join(DIR, 'inbox');
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { return; }
+  for (const f of names) {
+    const file = path.join(dir, f);
+    try {
+      const req = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (req?.type === 'skills') { const s = loadState(); const r = queueSkills(s, req); saveState(s); console.log(`[origin] inbox ${f}: ${r.files.length} SKILL.md, ${r.bank.length} bank skills${r.unknown.length ? `; not found: ${r.unknown.join(', ')}` : ''}`); }
+    } catch (e) { console.error(`[origin] inbox ${f}: ${e.message}`); }
+    try { fs.renameSync(file, `${file}.done`); } catch { /* leave it */ }
+  }
+}
+
 /** Start a run in the background for the owner's focus task; false when one is already running (it is picked up next). */
 function startFocus() {
   if (running || !KEY) return false;
@@ -1004,7 +1177,10 @@ function startFocus() {
 
 let lastSkip = '';
 function tick() {
+  readInbox();
   const s0 = loadState();
+  // skills the owner asked for are written right away, between other runs
+  if (!running && KEY && requestedSkills(s0).length && remaining(s0) >= CALL_WORST_USD) { startSkills(); return; }
   if (printifyPublic().configured && (!s0.salesSync?.at || Date.now() - Date.parse(s0.salesSync.at) > SALES_EVERY_MIN * 60_000)) void syncSales().catch(() => {});
   if (!SCHEDULE || running) return;
   const s = loadState();

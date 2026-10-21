@@ -8,7 +8,8 @@ import { useStore } from '../store/store';
 import { useOrigin } from './useOrigin';
 import { ORIGIN_ID, branchKind } from './opportunity';
 import { taskAction, type RunnerTask } from './originLink';
-import { skillFileId } from './skillFiles';
+import { ownSkillFileOps, skillFileId } from './skillFiles';
+import { SkillFileDrop, type OwnSkillFile } from './SkillFileDrop';
 import { skillFileText } from './SkillBank';
 import { ProgressBar, ProgressLog } from './Progress';
 
@@ -67,7 +68,18 @@ export function AgentSkillFile({ a }: { a: Agent }) {
   const own = doc.skillBank.find((k) => k.id === skillFileId(a.id));
   const others = doc.skillBank.filter((k) => k.id !== skillFileId(a.id) && (a.bankSkills ?? []).includes(k.id));
   const kind = branchKind(doc, a.id);
-  const request = status?.tasks.find((t) => t.kind === 'skill-file' && t.agentId === a.id);
+  const request = status?.tasks.find((t) => t.kind === 'skill-file' && t.agentId === a.id && t.status === 'approved') ?? status?.tasks.find((t) => t.kind === 'skill-file' && t.agentId === a.id);
+  const [ownFile, setOwnFile] = useState<OwnSkillFile | null>(null);
+  const [saved, setSaved] = useState('');
+  // the owner's own .md becomes this agent's SKILL.md; a request for JARVIS to write one is withdrawn so it isn't replaced
+  const attachOwn = (f: OwnSkillFile | null) => {
+    setOwnFile(f);
+    if (!f) return;
+    const r = useStore.getState().commit(ownSkillFileOps(doc, a.id, a.identity.name, f, a.bankSkills ?? []), `Attach ${f.fileName} to ${a.identity.name}`);
+    if (r.ok && request?.status === 'approved') void taskAction({ action: 'reject', id: request.id });
+    setSaved(r.ok ? `${f.fileName} is now ${a.identity.name}'s SKILL.md.` : r.errors.join(' · '));
+    setOwnFile(null);
+  };
   const download = (k: { name: string; description: string; instructions: string }) => {
     const url = URL.createObjectURL(new Blob([skillFileText(k)], { type: 'text/markdown;charset=utf-8' }));
     const link = document.createElement('a');
@@ -83,10 +95,15 @@ export function AgentSkillFile({ a }: { a: Agent }) {
           <pre className="skill-file">{own.instructions}</pre>
         </> : <p className="note">{
           kind === 'root' ? "JARVIS's playbook is its instructions, under AI model. Each agent it creates gets its own SKILL.md here."
-            : request ? `JARVIS is writing it: “${request.title}” is ${request.status === 'approved' ? 'queued for its next run' : request.status}. It appears here when it's done.`
+            : request ? `JARVIS is writing it: “${request.title}” is ${request.status === 'approved' ? (request.requested ? 'being written now' : 'queued for its next run') : request.status}. It appears here when it's done.`
             : status ? 'JARVIS will be asked to write it on its next check.' : "JARVIS writes it in its runs. Start the runner on your PC with npm.cmd run origin."
         }</p>}
       </div>
+      {kind !== 'root' && <div className="card">
+        <h4>{own ? 'Replace it with your own .md' : 'Attach your own .md'}</h4>
+        <SkillFileDrop value={ownFile} onChange={attachOwn} label="Choose a .md file" />
+        {saved && <p className="note" role="status">{saved}</p>}
+      </div>}
       {others.length > 0 && <div className="card">
         <h4>Skills from the bank</h4>
         {others.map((k) => <details key={k.id}><summary>{k.name}{k.description ? ` · ${k.description}` : ''}</summary><pre className="skill-file">{k.instructions}</pre></details>)}

@@ -79,12 +79,12 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   const focusIds = new Set(focusTasks.map((t) => t.id));
   const otherWaiting = requests.filter((r) => r.status === 'waiting' && !(r.taskId && focusIds.has(r.taskId)));
   // the runner's order: your tasks first, oldest first, then SKILL.md writing
-  const approved = st.tasks.filter((t) => t.status === 'approved').sort((a, b) => Number(!a.focus) - Number(!b.focus) || Number(a.kind === 'skill-file') - Number(b.kind === 'skill-file') || Number(a.by === 'origin') - Number(b.by === 'origin'));
+  const approved = st.tasks.filter((t) => t.status === 'approved').sort((a, b) => Number(!a.focus) - Number(!b.focus) || Number(a.kind != null) - Number(b.kind != null) || Number(a.by === 'origin') - Number(b.by === 'origin'));
   // the runner works one task per agent at a time, up to `parallel` agents side by side; a focus task runs alone
   const workingIds = new Set<string>();
-  { const seen = new Set<string>(); const open = approved.some((t) => t.focus) ? approved.filter((t) => t.focus) : approved; for (const t of open) { if (t.kind === 'skill-file' || (t.waitingOnOwner && proposed.length)) continue; const who = t.agentId ?? 'origin'; if (seen.has(who) || seen.size >= (st.parallel ?? 1)) continue; seen.add(who); workingIds.add(t.id); } }
+  { const seen = new Set<string>(); const open = approved.some((t) => t.focus) ? approved.filter((t) => t.focus) : approved; for (const t of open) { if (t.kind != null || (t.waitingOnOwner && proposed.length)) continue; const who = t.agentId ?? 'origin'; if (seen.has(who) || seen.size >= (st.parallel ?? 1)) continue; seen.add(who); workingIds.add(t.id); } }
   const agentName = (id: string) => doc.agents[id]?.identity.name ?? (id === 'agent_origin' ? 'JARVIS' : id);
-  const taskSpend = st.tasks.filter((t) => (t.spentUsd ?? 0) > 0 && t.kind !== 'skill-file').sort((a, b) => (b.spentUsd ?? 0) - (a.spentUsd ?? 0)).slice(0, 8);
+  const taskSpend = st.tasks.filter((t) => (t.spentUsd ?? 0) > 0 && t.kind == null).sort((a, b) => (b.spentUsd ?? 0) - (a.spentUsd ?? 0)).slice(0, 8);
   const stopped = st.tasks.filter((t) => t.status === 'stopped' && t.stopReason !== 'agent no longer in the brain').slice(-5);
   // with auto-create on, JARVIS's agents are added for you; only ones made while you were asked first still wait
   const agentAsks = (st.agentProposals ?? []).filter((p) => p.status === 'proposed' && !st.autoAgents);
@@ -92,7 +92,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   const pct = Math.min(100, (st.spentUsd / st.capUsd) * 100);
   // one tap approves real work for a venture: it is worked as that venture, within its task budget
   const ventures = Object.values(doc.agents).filter((a) => branchKind(doc, a.id) === 'venture');
-  const working = (id: string) => st.tasks.some((t) => t.status === 'approved' && t.kind !== 'skill-file' && t.agentId === id);
+  const working = (id: string) => st.tasks.some((t) => t.status === 'approved' && t.kind == null && t.agentId === id);
   const letWork = (id: string) => {
     const a = doc.agents[id];
     void act({ action: 'add', agentId: id, title: `Get ${a.identity.name} started`, detail: `Work as ${a.identity.name}. Take the next concrete step toward making this venture earn money (${a.identity.bio || a.identity.title}). Make sure it has the skill agents it needs, then do the first piece of real work and report what you found, with sources.` }, `Approved. ${a.identity.name} works on it in JARVIS's next run.`);
@@ -186,7 +186,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
 
       <span className="creator-kicker">APPROVED · COMMAND-CENTER TASKS FIRST, THEN YOURS, THEN JARVIS'S</span>
       {approved.length === 0 ? <p className="creator-privacy">No approved tasks. JARVIS will only propose tasks until you approve one.</p>
-        : <ul className="creator-request-log">{approved.map((t) => <li key={t.id}><b>{workingIds.has(t.id) ? 'Working on: ' : t.kind === 'skill-file' ? 'SKILL.md: ' : t.focus ? 'Focus: ' : 'Queued: '}{t.title}</b>{t.agentId && doc.agents[t.agentId] ? <span className="muted"> ({doc.agents[t.agentId].identity.name}{t.by === 'origin' ? ', set by JARVIS' : ''})</span> : t.by === 'origin' ? <span className="muted"> (set by JARVIS)</span> : null}{t.kind !== 'skill-file' && <ProgressBar pct={t.progress} label={`${t.title} progress`} />}{t.detail && t.kind !== 'skill-file' ? `: ${t.detail.slice(0, 300)}` : ''} · {spent(t)}{t.steps?.length ? <ol className="task-steps">{t.steps.map((x, j) => <li key={j} className={x.done ? 'done' : ''}>{x.done ? '✓ ' : ''}{x.text}</li>)}</ol> : null} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button> <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></li>)}</ul>}
+        : <ul className="creator-request-log">{approved.map((t) => <li key={t.id}><b>{workingIds.has(t.id) ? 'Working on: ' : t.kind === 'skill-file' ? (t.requested ? 'SKILL.md (writing now): ' : 'SKILL.md: ') : t.kind === 'bank-skill' ? 'Skill (writing now): ' : t.focus ? 'Focus: ' : 'Queued: '}{t.title}</b>{t.agentId && doc.agents[t.agentId] ? <span className="muted"> ({doc.agents[t.agentId].identity.name}{t.by === 'origin' ? ', set by JARVIS' : ''})</span> : t.by === 'origin' ? <span className="muted"> (set by JARVIS)</span> : null}{t.kind == null && <ProgressBar pct={t.progress} label={`${t.title} progress`} />}{t.detail && t.kind == null ? `: ${t.detail.slice(0, 300)}` : ''} · {spent(t)}{t.steps?.length ? <ol className="task-steps">{t.steps.map((x, j) => <li key={j} className={x.done ? 'done' : ''}>{x.done ? '✓ ' : ''}{x.text}</li>)}</ol> : null} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button> <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></li>)}</ul>}
       {stopped.length > 0 && <><span className="creator-kicker">STOPPED BY BUDGET WATCH</span>
         <ul className="creator-request-log">{stopped.map((t) => <li key={t.id}><b>{t.title}</b> · {spent(t)}{t.stopReason ? `. ${t.stopReason}` : ''} <button className="link-btn" onClick={() => void act({ action: 'approve', id: t.id }, 'Restarted with a fresh budget.')}>restart</button></li>)}</ul></>}
       <div className="creator-agent-grid">

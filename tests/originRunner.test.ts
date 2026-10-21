@@ -541,3 +541,43 @@ describe('origin runner: money', () => {
     expect(s.salesSync.error).toBeNull();
   });
 });
+
+describe('origin runner: skills from the command center', () => {
+  const store = [{ id: 'v1', name: 'STORE', kind: 'venture' }, { id: 'm1', name: 'Mockup & Design', ventureId: 'v1' }, { id: 'a1', name: 'Ads Research', ventureId: 'v1' }, { id: 'o1', name: 'Other' }];
+
+  test('agents are found by name, loosely, and a venture team brings its agents', () => {
+    const s: any = { agents: store };
+    expect(runner.resolveAgents(s, ['mockup and design', 'ads research'])).toEqual({ ids: ['m1', 'a1'], unknown: [] });
+    expect(runner.resolveAgents(s, ['STORE team']).ids.sort()).toEqual(['a1', 'm1', 'v1']);
+    expect(runner.resolveAgents(s, ['all']).ids).toHaveLength(4);
+    expect(runner.resolveAgents(s, ['Nobody']).unknown).toEqual(['Nobody']);
+  });
+
+  test('a SKILLS line in an answer queues the files and bank skills, and is not shown to the owner', async () => {
+    write({ ...base, agents: store, tasks: [{ id: 'k1', kind: 'skill-file', agentId: 'm1', agentName: 'Mockup & Design', title: 'w', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
+    const line = 'SKILLS ' + JSON.stringify({ files: ['STORE team'], bank: [{ name: 'Web research', description: 'find and cite sources', agents: ['STORE team'] }] });
+    const r: any = await runner.ask('make a skill and a file for each agent', { fetch: async () => reply(`Writing them now.\n${line}`, { input_tokens: 10, output_tokens: 5 }), file, key: 'test' } as any);
+    expect(r.answer).toBe('Writing them now.');
+    expect(r.skills).toMatchObject({ bank: ['Web research'], unknown: [] });
+    expect(r.skills.files.sort()).toEqual(['Ads Research', 'Mockup & Design', 'STORE']);
+    const s = read();
+    expect(s.tasks.filter((t: any) => t.kind === 'skill-file')).toHaveLength(3);
+    expect(s.tasks.find((t: any) => t.id === 'k1').requested).toBe(true);
+    expect(s.tasks.find((t: any) => t.kind === 'bank-skill')).toMatchObject({ skillName: 'Web research', requested: true });
+    expect(runner.pickTasks(s)).toEqual([]);
+  });
+
+  test('a skills run writes them all, several at a time, and the bank skill goes to its agents', async () => {
+    const body = 'x'.repeat(300);
+    const fetch = async (_u: string, init: any) => { const p = JSON.parse(init.body).messages[0].content; return reply(result({ skillFile: { name: /bank called/.test(p) ? 'Web research' : 'Playbook', description: 'd', body } }), { input_tokens: 100, output_tokens: 100 }); };
+    const r: any = await runner.runSkills('skills', { fetch, file, key: 'test' } as any);
+    expect(r.ok).toBe(true);
+    expect(r.run.skillsWritten).toHaveLength(4);
+    const s = read();
+    expect(s.tasks.filter((t: any) => (t.kind === 'skill-file' || t.kind === 'bank-skill') && t.status === 'approved')).toHaveLength(0);
+    const bank = s.skillFiles.find((f: any) => f.bank);
+    expect(bank).toMatchObject({ skillKey: 'web_research', name: 'Web research', status: 'new' });
+    expect(bank.agentIds.sort()).toEqual(['a1', 'm1', 'v1']);
+    expect(s.runs[0].trigger).toBe('skills');
+  });
+});
