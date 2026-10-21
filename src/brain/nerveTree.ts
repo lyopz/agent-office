@@ -78,26 +78,54 @@ function spline(ctrl: Vec3[], n: number): Path3 {
   return out;
 }
 
-/** A bundle of strands from a to b: tight at both ends, fanning out in the middle like a nerve. */
+/**
+ * A bundle of strands from a to b that winds like a real nerve tract: the
+ * bundle's own path meanders through the brain (kept inside the cerebrum),
+ * and each fibre wanders around that path on its own, crossing its
+ * neighbours, tight at both ends and loosest in the middle.
+ */
 function bundle(a: Vec3, b: Vec3, count: number, spread: number, rand: () => number): Path3[] {
-  const axis = norm(sub(b, a));
+  const axis = norm(sub(b, a)), L = len(sub(b, a));
   const up: Vec3 = Math.abs(axis[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
   const u = norm(cross(axis, up)), v = cross(axis, u);
-  const bow = mul(norm(sub(lerp(a, b, 0.5), CORE)), len(sub(b, a)) * 0.07); // bundles arc outwards a little
+  const bow = mul(norm(sub(lerp(a, b, 0.5), CORE)), L * 0.07); // bundles arc outwards a little
+  // the tract's path: a smooth random walk sideways, zero at both ends
+  const K = 8, amp = L * (0.17 + rand() * 0.08);
+  let phi = rand() * Math.PI * 2, mag = 0.6 + rand() * 0.4;
+  const path: Vec3[] = [];
+  for (let k = 0; k < K; k++) {
+    const t = k / (K - 1), env = Math.sin(Math.PI * t);
+    phi += (rand() - 0.5) * 2.2; mag = Math.max(0.35, Math.min(1, mag + (rand() - 0.5) * 0.5));
+    let p = add(add(lerp(a, b, t), mul(bow, env)), add(mul(u, Math.cos(phi) * amp * mag * env), mul(v, Math.sin(phi) * amp * mag * env)));
+    while (insideCerebrum(p) > 0.93 && k > 0 && k < K - 1) p = lerp(p, CORE, 0.12);
+    path.push(p);
+  }
   const strands: Path3[] = [];
   for (let i = 0; i < count; i++) {
-    const ang = rand() * Math.PI * 2, r = spread * Math.sqrt(rand());
-    const off = (s: number): Vec3 => add(mul(u, Math.cos(ang + s) * r), mul(v, Math.sin(ang + s) * r));
-    const twist = (rand() - 0.5) * 0.9;
-    const ctrl: Vec3[] = [
-      add(a, mul(off(0), 0.12)),
-      add(add(lerp(a, b, 0.3), off(twist * 0.3)), mul(bow, 0.7)),
-      add(add(lerp(a, b, 0.62), off(twist)), bow),
-      add(b, mul(off(twist), 0.18)),
-    ];
-    strands.push(spline(ctrl, 36));
+    let ang = rand() * Math.PI * 2; const r0 = spread * (0.4 + 0.6 * Math.sqrt(rand()));
+    const ctrl: Vec3[] = path.map((p, k) => {
+      const t = k / (K - 1), env = 0.15 + 0.85 * Math.pow(Math.sin(Math.PI * t), 0.7);
+      ang += (rand() - 0.5) * 1.8;
+      const r = r0 * env * (0.6 + rand() * 0.8);
+      return add(p, add(mul(u, Math.cos(ang) * r), mul(v, Math.sin(ang) * r)));
+    });
+    ctrl[0] = add(a, mul(sub(ctrl[0], a), 0.3));
+    strands.push(spline(ctrl, 56));
   }
   return strands;
+}
+
+/** A few short collateral fibres leaving a tract part way along, like side branches of a real nerve. */
+function collaterals(strand: Path3, n: number, reach: number, rand: () => number): Path3[] {
+  const pts = strand.length / 3, out: Path3[] = [];
+  for (let i = 0; i < n; i++) {
+    const k = Math.floor(pts * (0.3 + rand() * 0.45)) * 3;
+    const at: Vec3 = [strand[k], strand[k + 1], strand[k + 2]], next: Vec3 = [strand[k + 3], strand[k + 4], strand[k + 5]];
+    const along = norm(sub(next, at));
+    const side = norm(cross(along, [rand() - 0.5, rand() - 0.5, rand() - 0.5]));
+    out.push(...tufts(at, norm(add(side, mul(along, 0.6))), 1, reach, rand));
+  }
+  return out;
 }
 
 /** Short wandering fibres around an agent: its dendrites, reaching further out on leaf agents. */
@@ -174,7 +202,8 @@ export function buildNerveTree(agents: TreeAgent[], rootHint = 'agent_origin'): 
       nodes[c] = { id: c, name: a.name, parentId: id, depth: d, pos, color: a.color, teamId: a.teamId, size: sizeOf(c), childIds: kids.get(c) ?? [] };
       const count = Math.min(7, 2 + sizeOf(c));
       const spread = 0.008 + 0.005 * Math.sqrt(sizeOf(c));
-      bundles.push({ id: c, from: id, to: c, color: a.color, depth: d, strands: bundle(from, pos, count, spread, rand), tufts: tufts(pos, norm(sub(pos, from)), isLeaf ? 4 : 2, isLeaf ? 0.07 : 0.045, rand) });
+      const strands = bundle(from, pos, count, spread, rand);
+      bundles.push({ id: c, from: id, to: c, color: a.color, depth: d, strands, tufts: [...tufts(pos, norm(sub(pos, from)), isLeaf ? 4 : 2, isLeaf ? 0.07 : 0.045, rand), ...collaterals(strands[0], 1 + Math.floor(rand() * 2), 0.05, rand)] });
       place(c, at, at + share, elev, d);
       at += share;
     }
