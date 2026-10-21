@@ -345,6 +345,6 @@ export function emptyOffice(name = 'New Office'): OfficeDoc {
     settings: { gridSize: 24, bounds: null, hallwayMode: 'hybrid', minCorridorWidth: 1, defaultCorridorWidth: 2, collisionRule: 'warn', animationIntensity: 'subtle', idleWandering: false, layoutPreset: 'grid' },
     rooms: {}, corridors: {}, furniture: {}, agents: {}, outfitTemplates: JSON.parse(JSON.stringify(DEFAULT_OUTFITS)), roomTemplates: builtinRoomTemplates(),
     cosmetics: BUILTIN_COSMETICS.map((c) => ({ ...c })), appearance: defaultAppearanceSettings(), alertSettings: defaultAlertSettings(),
-    projects: {}, library: {}, departments: {}, control: defaultControl(), arcade: defaultArcade(), player: defaultPlayer(), skillRequests: [],
+    projects: {}, library: {}, departments: {}, control: defaultControl(), arcade: defaultArcade(), player: defaultPlayer(), skillRequests: [], skillBank: [],
   };
 }

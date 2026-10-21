@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Check, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useStore } from '../store/store';
-import { runnerStatus, syncOrigin, taskAction, type RunnerStatus } from './originLink';
+import { agentProposalAction, runnerStatus, syncOrigin, taskAction, type AgentProposal, type RunnerStatus, type RunnerTask } from './originLink';
+import { branchAgentOps, describeWindow } from './opportunity';
 
 const money = (n: number) => `$${n.toFixed(n < 1 ? 3 : 2)}`;
 
@@ -18,11 +19,21 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   const refresh = async () => { const s = await runnerStatus(); setSt(s); if (s && !s.synced) await syncOrigin(doc); };
   useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 15_000); return () => clearInterval(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const act = async (body: Parameters<typeof taskAction>[0], done: string) => {
-    const r = await taskAction(body);
+  const act = async (body: Parameters<typeof taskAction>[0] | (() => Promise<unknown>), done: string) => {
+    const r = typeof body === 'function' ? await body() : await taskAction(body);
     onNotice(r ? done : 'The runner did not answer.');
     void refresh();
   };
+
+  const approveAgent = async (p: AgentProposal) => {
+    const d = useStore.getState().doc;
+    const id = `agent_${p.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'new'}_${Date.now().toString(36)}`;
+    const { ops, error } = branchAgentOps(d, p.parentId, { id, name: p.name, specialty: p.specialty || p.skill, purpose: p.purpose, skill: p.skill, window: { everyMinutes: p.everyMinutes, maxMinutes: p.maxMinutes, setBy: 'origin', reason: p.reason || 'Proposed by ORIGIN.' }, bankSkillIds: p.bankSkillIds.filter((k) => d.skillBank.some((x) => x.id === k)) });
+    const r = error ? null : useStore.getState().commit(ops, `Approve agent: ${p.name}`);
+    if (!r?.ok) { onNotice(`Couldn't add ${p.name}: ${error ?? r?.errors.join(' · ')}. Reject it, or fix the brain and try again.`); return; }
+    await act(() => agentProposalAction({ action: 'approve', id: p.id, agentId: id }), `${p.name} is now a branch of ${d.agents[p.parentId]?.identity.name}.`);
+  };
+  const spent = (t: RunnerTask) => `${money(t.spentUsd ?? 0)} of ${money(t.budgetUsd ?? st?.taskBudgetUsd ?? 1.5)}${t.runCosts?.length ? ` over ${t.runCosts.length} run${t.runCosts.length === 1 ? '' : 's'}` : ''}`;
 
   if (st === undefined) return <div className="creator-body"><p className="creator-privacy">Checking for ORIGIN's runner…</p></div>;
   if (st === null) return (
@@ -39,6 +50,8 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
 
   const proposed = st.tasks.filter((t) => t.status === 'proposed');
   const approved = st.tasks.filter((t) => t.status === 'approved');
+  const stopped = st.tasks.filter((t) => t.status === 'stopped').slice(-5);
+  const agentAsks = (st.agentProposals ?? []).filter((p) => p.status === 'proposed');
   const pct = Math.min(100, (st.spentUsd / st.capUsd) * 100);
   return (
     <div className="creator-body">
@@ -48,8 +61,18 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         <i style={{ width: `${pct}%` }} />
       </div>
 
+      {st.spentByAgent && Object.keys(st.spentByAgent).length > 0 && <p className="creator-privacy">This month by agent (one key, one cap): {Object.entries(st.spentByAgent).map(([id, usd]) => `${doc.agents[id]?.identity.name ?? id} ${money(usd)}`).join(' · ')}</p>}
+
       <span className="creator-kicker">WAITING FOR YOUR APPROVAL</span>
-      {proposed.length === 0 && <p className="creator-privacy">Nothing proposed right now.</p>}
+      {proposed.length === 0 && agentAsks.length === 0 && <p className="creator-privacy">Nothing proposed right now. ORIGIN proposes one thing at a time.</p>}
+      {agentAsks.map((p) => (
+        <div key={p.id} className="creator-blueprint creator-request">
+          <p><b>New agent: {p.name}</b> · {p.skill} for {doc.agents[p.parentId]?.identity.name ?? p.parentId} · works {describeWindow({ everyMinutes: p.everyMinutes, maxMinutes: p.maxMinutes, setBy: 'origin', reason: p.reason })}</p>
+          {p.purpose && <p>{p.purpose}</p>}
+          <p>Skills: {p.bankSkillIds.length ? p.bankSkillIds.map((k) => doc.skillBank.find((x) => x.id === k)?.name ?? `${k} (not in the bank)`).join(', ') : 'none from the bank'}</p>
+          <div className="creator-request-row"><button className="creator-secondary" onClick={() => void act(() => agentProposalAction({ action: 'reject', id: p.id }), 'Rejected.')}><X size={14} /> Reject</button><button className="creator-primary" onClick={() => void approveAgent(p)}><Check size={14} /> Approve & add agent</button></div>
+        </div>
+      ))}
       {proposed.map((t) => (
         <div key={t.id} className="creator-blueprint creator-request">
           <p><b>{t.title}</b></p>{t.detail && <p>{t.detail}</p>}
@@ -57,9 +80,11 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         </div>
       ))}
 
-      <span className="creator-kicker">APPROVED · ORIGIN WORKS ON THESE</span>
+      <span className="creator-kicker">APPROVED · ONE AT A TIME, OLDEST FIRST</span>
       {approved.length === 0 ? <p className="creator-privacy">No approved tasks. ORIGIN will only propose tasks until you approve one.</p>
-        : <ul className="creator-request-log">{approved.map((t) => <li key={t.id}><b>{t.title}</b>{t.detail ? `: ${t.detail}` : ''} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button></li>)}</ul>}
+        : <ul className="creator-request-log">{approved.map((t, i) => <li key={t.id}><b>{i === 0 ? 'Working on: ' : 'Queued: '}{t.title}</b>{t.detail ? `: ${t.detail}` : ''} · {spent(t)} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button> <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></li>)}</ul>}
+      {stopped.length > 0 && <><span className="creator-kicker">STOPPED BY BUDGET WATCH</span>
+        <ul className="creator-request-log">{stopped.map((t) => <li key={t.id}><b>{t.title}</b> · {spent(t)}{t.stopReason ? `. ${t.stopReason}` : ''} <button className="link-btn" onClick={() => void act({ action: 'approve', id: t.id }, 'Restarted with a fresh budget.')}>restart</button></li>)}</ul></>}
       <div className="creator-agent-grid">
         <label className="creator-field"><span>Give ORIGIN a task (approved)</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Check demand for Roblox tycoon gamepasses" /></label>
         <label className="creator-field"><span>Details</span><input value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="What a good answer looks like" /></label>

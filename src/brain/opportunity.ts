@@ -1,11 +1,11 @@
 // ORIGIN as the owner's Opportunity Research and Builder Agent, and the rules
 // for growing branches off it. ORIGIN finds and tests ways to earn money; the
 // specialists it needs grow out of it as nerve branches, and those can grow
-// their own branches down to the owner's depth limit. Nothing here runs a model,
-// a schedule or a payment: ORIGIN stays simulated until the owner connects a
-// provider and approves an allowance.
+// their own skill agents. Agents that create agents equip them with skills from
+// the owner's skill bank. Nothing here runs a model; server/origin-runner.mjs
+// runs ORIGIN live within the owner's cap.
 import type { DocOp } from '../engine/ops';
-import type { Agent, KnowledgeEntry, OfficeDoc, RunWindow } from '../model/types';
+import type { Agent, BankSkill, KnowledgeEntry, OfficeDoc, RunWindow } from '../model/types';
 
 export const ORIGIN_ID = 'agent_origin';
 export const OPPORTUNITY_TAG = 'opportunity-agent';
@@ -151,7 +151,7 @@ export const BRANCH_NOTE = `BRANCHES IN THE BRAIN
 Only you start branches. Each branch is a venture: one business or project you took on after researching it, such as Roblox development, and you need the owner's approval to start it. A venture may add only the skill agents it needs to succeed, such as research, 3D modelling, design or ads, and every skill agent works for that venture alone. Teach every venture you create how to create agents, using the blueprint below. Skill agents can't create agents; they file skill requests, their venture checks relevance, and the owner decides. A venture can never start a different business; it sends any new business idea to your backlog instead. Skill agents cannot create agents. Proposing a branch costs nothing; running one inside a work window is a child agent and follows the delegation and spending rules above (at most two running at once, none running outside the window).
 
 YOUR SCHEDULE AND LIMIT
-The owner changed your operating schedule: wake once every 2 hours and work at most 10 minutes. This replaces the hourly schedule above. The owner can also start an extra 10-minute run from your node at any time; treat it like a normal window. Your spending limit is the tasks the owner approves: work only on approved tasks, and ask before anything else that costs money.
+The owner changed your operating schedule: wake once every 2 hours and work at most 10 minutes. This replaces the hourly schedule above. The owner can also start an extra 10-minute run from your node at any time; treat it like a normal window. Your spending limit is the tasks the owner approves: work only on approved tasks, and ask before anything else that costs money. Work on one task at a time: finish it, or record in your notes exactly where you stopped, before taking the next. Propose at most one new task or agent per run, and keep notifications for results the owner must see.
 
 WORK WINDOWS PER BRANCH
 Each venture and skill agent gets its own work window sized to its task, not your hourly window. For example, research may need 10 minutes every 5 hours while design needs 5 minutes every hour. Set each window from your own research on what the task needs, record the reason, and change it when the evidence changes. The owner can override any window. A window is a plan until the owner approves the scheduler and the spend it implies; never start one without that approval.`;
@@ -194,6 +194,18 @@ const MEMORY: { id: string; title: string; summary: string }[] = [
 ];
 
 /** ORIGIN's role, instructions and starting memory, applied to an office that has an ORIGIN agent. */
+/** ORIGIN's built-in bank skill: stop a task on its own when its spend pattern says it will cost too much. */
+export const BUDGET_WATCH_ID = 'skill_budget_watch';
+export const BUDGET_WATCH: Omit<BankSkill, 'createdAt'> = {
+  id: BUDGET_WATCH_ID, name: 'Budget watch', tags: ['budget', 'origin'],
+  description: 'Watch what each task costs per run and stop it without asking when the pattern shows it will cost far more than it is worth.',
+  instructions: `Every run you see your task's cost so far, its cost per run and its budget (a tenth of the monthly cap unless the owner set another).
+- Look at the pattern, not one run: is each run costing more, is the task close to done, and what would it cost if it kept running to the end of the month?
+- If it will clearly cost far more than it is worth, stop it yourself; do not ask first. Put its id in stopTaskIds, give the reason in stopReason in one plain sentence with the numbers, and tell the owner in notifyOwner.
+- Never stop a task just to save a cent when it is nearly finished; finish it instead.
+- The runner also stops any task that passes its budget, or whose average cost per run would pass twice its budget by month end. The owner can restart a stopped task, which gives it a fresh budget.`,
+};
+
 export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
   const origin = doc.agents[ORIGIN_ID];
   if (!origin) return [];
@@ -209,6 +221,8 @@ export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
       schedule: { runWindow: ORIGIN_WINDOW },
     } as Partial<Agent>,
   }];
+  if (!doc.skillBank?.some((k) => k.id === BUDGET_WATCH_ID)) ops.push({ op: 'skillBank.upsert', skill: BUDGET_WATCH });
+  if (!origin.bankSkills?.includes(BUDGET_WATCH_ID)) ops.push({ op: 'agent.setBankSkills', id: ORIGIN_ID, skillIds: [...(origin.bankSkills ?? []), BUDGET_WATCH_ID] });
   const now = new Date().toISOString();
   for (const m of MEMORY) {
     if (doc.library[m.id]) continue; // keep what ORIGIN has already recorded
@@ -220,11 +234,11 @@ export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
 
 export const isOpportunityOrigin = (doc: OfficeDoc) => !!doc.agents[ORIGIN_ID]?.ai.agentInstructions.startsWith(OPPORTUNITY_PROMPT.slice(0, 60));
 /** ORIGIN has the prompt but older rules (an earlier version of the branch notes or schedule). */
-export const originOutdated = (doc: OfficeDoc) => isOpportunityOrigin(doc) && doc.agents[ORIGIN_ID].ai.agentInstructions !== `${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}`;
+export const originOutdated = (doc: OfficeDoc) => isOpportunityOrigin(doc) && (doc.agents[ORIGIN_ID].ai.agentInstructions !== `${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}` || !doc.agents[ORIGIN_ID].bankSkills?.includes(BUDGET_WATCH_ID));
 
 /** How to design an agent; ORIGIN uses it for ventures, ventures for their skill agents. */
 export const AGENT_BLUEPRINT = `HOW TO CREATE AN AGENT
-Propose a new agent only for a specific, lasting need. Give it: a short name; one specialty; the exact outcome it owns and the deliverable it hands back; the evidence and context it starts with; its permitted tools; a work window sized to the task, with the reason; a spending limit (zero until the owner approves one); and what it must escalate. Check that no existing agent already owns the work. The owner approves every new agent before it exists. A venture you create must know this same blueprint so it can design its own skill agents.`;
+Propose a new agent only for a specific, lasting need. Give it: a short name; one specialty; the exact outcome it owns and the deliverable it hands back; the evidence and context it starts with; its permitted tools; a work window sized to the task, with the reason; a spending limit (zero until the owner approves one); the skills it uses from the owner's skill bank; and what it must escalate. Pick bank skills by their description and give an agent only the ones its work needs. If the bank has no skill for the work, say which skill is missing so the owner can add it; never invent one. Check that no existing agent already owns the work. The owner approves every new agent before it exists. A venture you create must know this same blueprint so it can design its own skill agents.`;
 
 /** How a skill agent asks for help it can't create itself. */
 export const SKILL_REQUESTS = `REQUESTING A NEW SKILL
@@ -268,7 +282,29 @@ export function skillInstructions(name: string, skill: string, venture: string, 
   return `You are ${name}, the ${skill} skill for the ${venture} venture. ${purpose}\n\nWork only on ${skill} for ${venture}. You cannot create agents or start other ventures; raise anything outside your skill with ${venture}.`;
 }
 
-export interface BranchSpec { id: string; name: string; specialty: string; purpose: string; skill: string; window: RunWindow }
+/** The bank skills an agent uses, written out as instructions. */
+export function bankSkillsPrompt(bank: BankSkill[], ids: string[] | undefined): string {
+  const picked = (ids ?? []).map((id) => bank.find((k) => k.id === id)).filter((k): k is BankSkill => !!k);
+  return picked.length ? `YOUR SKILLS (from the owner's skill bank)\n${picked.map((k) => `## ${k.name}\n${k.instructions}`).join('\n\n')}` : '';
+}
+
+/** What an agent that creates agents can choose from: the bank, by id, name and description. */
+export function bankCatalog(bank: BankSkill[]): string {
+  return bank.length
+    ? `THE OWNER'S SKILL BANK (give new agents skills by id)\n${bank.map((k) => `- [${k.id}] ${k.name}: ${k.description || '(no description)'}`).join('\n')}`
+    : "THE OWNER'S SKILL BANK\nEmpty so far. When you propose an agent, say which skills it would need so the owner can add them.";
+}
+
+/** An agent's full prompt: its instructions, its bank skills, and the bank itself when it may create agents. */
+export function agentPrompt(doc: OfficeDoc, id: string): string {
+  const a = doc.agents[id];
+  if (!a) return '';
+  const parts = [a.ai.systemInstructions, bankSkillsPrompt(doc.skillBank ?? [], a.bankSkills)];
+  if (growKind(doc, id)) parts.push(bankCatalog(doc.skillBank ?? []));
+  return parts.filter(Boolean).join('\n\n');
+}
+
+export interface BranchSpec { id: string; name: string; specialty: string; purpose: string; skill: string; window: RunWindow; bankSkillIds?: string[] }
 
 /** The ops that add a venture under ORIGIN or a skill agent under a venture, following the branch rules. */
 export function branchAgentOps(doc: OfficeDoc, parentId: string, spec: BranchSpec): { ops: DocOp[]; error: string | null } {
@@ -279,6 +315,9 @@ export function branchAgentOps(doc: OfficeDoc, parentId: string, spec: BranchSpe
   const scope = kind === 'venture' ? ventureInstructions(spec.name, spec.specialty) : skillInstructions(spec.name, SKILL_LABELS[spec.skill] ?? spec.skill, parentName, spec.purpose);
   const brief = `${kind === 'venture' ? `${spec.purpose}\n\n` : ''}${scope}\n\n${kind === 'venture' ? AGENT_BLUEPRINT : SKILL_REQUESTS}\n\nRole: ${spec.specialty}. For research, cite current sources with publication dates and URLs; separate evidence, assumptions and recommendations. State uncertainty, costs and success criteria. Never claim work ran if it was only planned. Never spend, publish, contact people externally, create accounts or delete data without owner approval.`;
   const tools = ['web-research', 'library-search', 'reports'];
+  const bankSkills = (spec.bankSkillIds ?? []).filter((id) => doc.skillBank?.some((k) => k.id === id));
+  if (bankSkills.length !== (spec.bankSkillIds ?? []).length) return { ops: [], error: 'One of the chosen skills is no longer in the skill bank.' };
+  const skillNames = bankSkills.map((id) => doc.skillBank.find((k) => k.id === id)!.name);
   return {
     error: null,
     ops: [
@@ -286,7 +325,8 @@ export function branchAgentOps(doc: OfficeDoc, parentId: string, spec: BranchSpe
       { op: 'agent.update', id: spec.id, patch: {
         branch: { kind, ventureId: kind === 'venture' ? spec.id : parentId },
         identity: { title: spec.specialty, department: team, bio: spec.purpose, roleDescription: brief },
-        skills: { primaryRole: spec.specialty, supervisorId: parentId, teams: [team], skills: [spec.specialty], expertise: [spec.purpose], tools, taskPermissions: ['draft', 'research', 'recommend'], priorityRules: 'Owner priorities first; make costs and evidence visible.', escalationRules: 'Escalate unclear scope, missing research access, safety issues and any action requiring approval.' },
+        bankSkills,
+        skills: { primaryRole: spec.specialty, supervisorId: parentId, teams: [team], skills: [spec.specialty, ...skillNames], expertise: [spec.purpose], tools, taskPermissions: ['draft', 'research', 'recommend'], priorityRules: 'Owner priorities first; make costs and evidence visible.', escalationRules: 'Escalate unclear scope, missing research access, safety issues and any action requiring approval.' },
         schedule: { runWindow: spec.window },
         permissions: { allowedTools: tools, requireApprovalFor: ['spend', 'publish', 'external-message', 'create-account', 'delete'] },
         ai: { provider: 'simulated', executionMode: 'manual-approval', agentInstructions: brief, systemInstructions: `You are ${spec.name}, ${kind === 'venture' ? 'a venture branch started by' : 'a skill agent reporting to'} ${parentName}. ${brief}`, toolPermissions: tools },

@@ -543,3 +543,10 @@
 .origin-budget i { position: absolute; inset: 0 auto 0 0; background: rgba(95,202,232,.18); }
 .origin-notes { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; padding: 10px 11px; border: 1px solid rgba(172,199,231,.17); border-radius: 9px; background: rgba(1,6,14,.6); color: #bdc9d9; font: 400 11.5px/1.5 var(--font-mono, monospace); }
 .creator-request-log .link-btn { border: 0; background: none; color: #8edcff; cursor: pointer; font-size: 11px; padding: 0 0 0 6px; }
+
+/* skill bank */
+.bank-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.bank-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(140, 200, 255, 0.28); font-size: 12px; cursor: pointer; color: inherit; }
+.bank-chip input { margin: 0; accent-color: #7cc4ff; }
+.bank-chip.on { background: rgba(124, 196, 255, 0.16); border-color: rgba(124, 196, 255, 0.7); }
+.bank-meta { opacity: 0.65; font-size: 12px; }

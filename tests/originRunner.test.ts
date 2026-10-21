@@ -73,3 +73,59 @@ describe('origin runner', () => {
     expect(calls).toBeLessThanOrEqual(3);
   });
 });
+
+describe('origin runner: one task at a time, agent proposals and budget watch', () => {
+  const approvedTask = (id: string, extra: object = {}) => ({ id, title: id, detail: '', status: 'approved', by: 'owner', createdAt: '', ...extra });
+
+  test('a run works only on the oldest approved task and only that task can be completed', async () => {
+    write({ ...base, tasks: [approvedTask('t1'), approvedTask('t2')] });
+    let brief = '';
+    const fetch = async (_u: string, init: any) => { brief = JSON.parse(init.body).messages[0].content; return reply(result({ memory: 'm', completedTaskIds: ['t1', 't2'], summary: 's' }), { input_tokens: 1000, output_tokens: 100 }); };
+    await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
+    expect(brief).toMatch(/\[t1\]/);
+    expect(brief).not.toMatch(/\[t2\]/);
+    const s = read();
+    expect(s.tasks.map((t: any) => t.status)).toEqual(['done', 'approved']);
+    expect(s.tasks[0].spentUsd).toBeGreaterThan(0);
+    expect(s.ledger.byAgent.agent_origin).toBeCloseTo(s.ledger.spentUsd, 6);
+    expect(s.runs[0]).toMatchObject({ agentId: 'agent_origin', taskId: 't1' });
+  });
+
+  test('ORIGIN proposes one thing at a time, and nothing while something waits for the owner', async () => {
+    write(base);
+    const agent = { parentId: 'agent_origin', name: 'ETSY', specialty: 'Etsy store', purpose: 'sell', skill: 'Ventures', bankSkillIds: ['skill_x'], everyMinutes: 60, maxMinutes: 5 };
+    const fetch = async () => reply(result({ memory: 'm', proposedTasks: [{ title: 'a' }, { title: 'b' }], proposedAgent: agent, summary: 's' }), { input_tokens: 100, output_tokens: 10 });
+    await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
+    let s = read();
+    expect(s.tasks.map((t: any) => t.title)).toEqual(['a']);
+    expect(s.agentProposals).toEqual([]);
+    await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
+    s = read();
+    expect(s.tasks).toHaveLength(1);
+    write(base);
+    await runner.runOnce('manual', { fetch: async () => reply(result({ memory: 'm', proposedAgent: agent, summary: 's' }), { input_tokens: 100, output_tokens: 10 }), file, key: 'test' } as any);
+    expect(read().agentProposals[0]).toMatchObject({ name: 'ETSY', parentId: 'agent_origin', status: 'proposed', bankSkillIds: ['skill_x'] });
+  });
+
+  test('budget watch stops a task by its spend pattern, without asking', () => {
+    expect(runner.budgetWatch({ spentUsd: 1.6, runCosts: [0.8, 0.8], budgetUsd: 1.5 })).toMatch(/used its \$1\.50 budget/);
+    expect(runner.budgetWatch({ spentUsd: 0.2, runCosts: [0.1, 0.1] })).toBeNull(); // too few runs to judge
+    expect(runner.budgetWatch({ spentUsd: 0.3, runCosts: [0.1, 0.1, 0.1] }, new Date(Date.UTC(2026, 9, 2)))).toMatch(/by month end/);
+    expect(runner.budgetWatch({ spentUsd: 0.003, runCosts: [0.001, 0.001, 0.001] }, new Date(Date.UTC(2026, 9, 2)))).toBeNull();
+  });
+
+  test('the runner stops a task past its budget, and ORIGIN can stop its task itself', async () => {
+    write({ ...base, tasks: [approvedTask('t1', { spentUsd: 1.49, runCosts: [0.5, 0.5, 0.49], budgetUsd: 1.5 })] });
+    const fetch = async () => reply(result({ memory: 'm', summary: 's' }), { input_tokens: 100_000, output_tokens: 1000 });
+    const r = await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
+    let s = read();
+    expect(s.tasks[0].status).toBe('stopped');
+    expect(s.tasks[0].stopReason).toMatch(/Budget watch/);
+    expect(r.ok && (r.run as any).notify).toMatch(/Stopped "t1"/);
+
+    write({ ...base, tasks: [approvedTask('t2')] });
+    await runner.runOnce('manual', { fetch: async () => reply(result({ memory: 'm', stopTaskIds: ['t2'], stopReason: 'costs rising, little value', summary: 's' }), { input_tokens: 100, output_tokens: 10 }), file, key: 'test' } as any);
+    s = read();
+    expect(s.tasks[0]).toMatchObject({ status: 'stopped', stopReason: 'ORIGIN stopped it: costs rising, little value' });
+  });
+});

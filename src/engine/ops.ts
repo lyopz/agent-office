@@ -4,7 +4,7 @@
 import { produce, type Draft } from 'immer';
 import type { PlayerProfile,
   Agent, AlertSettings, Appearance, AppearanceSettings, CorridorEndpoint, Corridor, CosmeticItem, Door, Furniture, FurnitureMaterial, FurnitureType,
-  ArcadeSettings, ControlSettings, Department, KnowledgeEntry, OfficeDoc, OfficeSettings, OutfitTemplate, Point, Project, Rect, Room, RoomAppearance, RoomTemplate, RoomType, SkillRequest, ThemeDef,
+  ArcadeSettings, ControlSettings, Department, KnowledgeEntry, OfficeDoc, OfficeSettings, OutfitTemplate, Point, Project, Rect, Room, RoomAppearance, RoomTemplate, RoomType, SkillRequest, BankSkill, ThemeDef,
 } from '../model/types';
 import { agentFromArchetype, furniturePreset, makeAgent, makeFurniture, makeRoom, uid, withAppearance } from '../model/defaults';
 import { FURNITURE_META } from '../model/catalog';
@@ -83,6 +83,9 @@ export type DocOp =
   | { op: 'department.setAgentsEnabled'; id: string; enabled: boolean }
   | { op: 'control.update'; patch: DeepPartial<ControlSettings> }
   | { op: 'arcade.update'; patch: DeepPartial<ArcadeSettings> }
+  | { op: 'skillBank.upsert'; skill: Omit<BankSkill, 'createdAt'> & { createdAt?: string } }
+  | { op: 'skillBank.remove'; id: string }
+  | { op: 'agent.setBankSkills'; id: string; skillIds: string[] }
   | { op: 'skillRequest.create'; request: Pick<SkillRequest, 'id' | 'fromAgentId' | 'name' | 'skill' | 'specialty' | 'purpose'> }
   | { op: 'skillRequest.review'; id: string; relevant: boolean; note: string }
   | { op: 'skillRequest.decide'; id: string; approve: boolean; agentId?: string }
@@ -671,6 +674,33 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
       if (!doc.projects[o.id]) { errors.push('Project not found'); return; }
       summary.push(`Deleted project ${doc.projects[o.id].name}`); delete doc.projects[o.id];
       return;
+    case 'skillBank.upsert': {
+      const k = o.skill, name = k.name.trim();
+      if (!name || !k.instructions.trim()) { errors.push('A bank skill needs a name and instructions'); return; }
+      if (doc.skillBank.some((x) => x.id !== k.id && x.name.toLowerCase() === name.toLowerCase())) { errors.push(`The bank already has a skill called ${name}`); return; }
+      const next: BankSkill = { id: k.id, name, description: k.description.trim(), instructions: k.instructions.trim(), tags: k.tags.map((t) => t.trim()).filter(Boolean), createdAt: k.createdAt ?? new Date().toISOString() };
+      const i = doc.skillBank.findIndex((x) => x.id === k.id);
+      if (i >= 0) { next.createdAt = doc.skillBank[i].createdAt; doc.skillBank[i] = next; summary.push(`Updated bank skill ${name}`); }
+      else { doc.skillBank.push(next); summary.push(`Added ${name} to the skill bank`); }
+      return;
+    }
+    case 'skillBank.remove': {
+      const i = doc.skillBank.findIndex((x) => x.id === o.id);
+      if (i < 0) { errors.push('Bank skill not found'); return; }
+      summary.push(`Removed ${doc.skillBank[i].name} from the skill bank`);
+      doc.skillBank.splice(i, 1);
+      for (const a of Object.values(doc.agents)) if (a.bankSkills?.includes(o.id)) a.bankSkills = a.bankSkills.filter((x) => x !== o.id);
+      return;
+    }
+    case 'agent.setBankSkills': {
+      const a = doc.agents[o.id];
+      if (!a) { errors.push('Agent not found'); return; }
+      const missing = o.skillIds.filter((x) => !doc.skillBank.some((k) => k.id === x));
+      if (missing.length) { errors.push('That skill is not in the bank'); return; }
+      a.bankSkills = [...new Set(o.skillIds)];
+      summary.push(`${a.identity.name} now uses ${a.bankSkills.length} bank skill${a.bankSkills.length === 1 ? '' : 's'}`);
+      return;
+    }
     case 'skillRequest.create': {
       const r = o.request, from = doc.agents[r.fromAgentId];
       if (!from || from.branch?.kind !== 'skill' || !from.branch.ventureId || !doc.agents[from.branch.ventureId]) { errors.push('Only a skill agent working for a venture can file a skill request'); return; }

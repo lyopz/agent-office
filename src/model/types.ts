@@ -323,6 +323,18 @@ export interface Agent {
   assets: VisualAssets;
   /** Where the agent sits in the brain's branches (see brain/opportunity.ts); missing = ORIGIN's core staff. */
   branch?: AgentBranch;
+  /** Skills from the owner's skill bank this agent uses (ids into doc.skillBank). */
+  bankSkills?: ID[];
+}
+
+/** A reusable skill the owner adds to the bank; agents that create agents equip them with these. */
+export interface BankSkill {
+  id: ID;
+  name: string;
+  description: string;        // when to use it, shown to agents choosing skills
+  instructions: string;       // the skill itself (a SKILL.md body)
+  tags: string[];
+  createdAt: string;
 }
 
 /** A venture is a business ORIGIN started; a skill agent works for exactly one venture. */
@@ -465,6 +477,7 @@ export interface OfficeDoc {
   player: PlayerProfile;
   /** Skill agents asking for a new skill agent: their venture checks relevance, then the owner decides. */
   skillRequests: SkillRequest[];
+  skillBank: BankSkill[];
 }
 
 // ---------- Departments and executive control ----------

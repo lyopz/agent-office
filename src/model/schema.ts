@@ -148,6 +148,10 @@ export const officeSchema = z.object({
     status: z.enum(['venture-review', 'owner-review', 'not-relevant', 'approved', 'denied']), ventureNote: z.string().max(2000),
     createdAt: z.string(), decidedAt: z.string().nullable(), agentId: id.nullable(),
   })).max(1000).default([]),
+  skillBank: z.array(z.object({
+    id, name: z.string().min(1).max(80), description: z.string().max(1000), instructions: z.string().max(20_000),
+    tags: z.array(z.string().max(40)).max(20).default([]), createdAt: z.string(),
+  })).max(200).default([]),
 });
 
 const SECRET_KEYS = /^(api[-_]?key|secret|token|password|authorization|credential)s?$/i;
