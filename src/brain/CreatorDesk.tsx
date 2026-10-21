@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, Check, FileText, GitBranch, Mic2, Plus, Search, ShieldCheck, Sparkles, Upload, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { KnowledgeEntry, RunWindow } from '../model/types';
-import { SKILL_LABELS, SKILL_TEAMS, VENTURE_TEAM, branchAgentOps, describeWindow, growKind, isOpportunityOrigin, opportunityOriginOps, suggestedWindow } from './opportunity';
+import { SKILL_LABELS, SKILL_TEAMS, VENTURE_TEAM, branchAgentOps, describeWindow, growKind, isOpportunityOrigin, opportunityOriginOps, originOutdated, suggestedWindow } from './opportunity';
 import SkillRequests from './SkillRequests';
 
 type DeskTab = 'ideas' | 'agent' | 'requests' | 'tutorial';
@@ -40,7 +40,7 @@ export default function CreatorDesk() {
   const parents = useMemo(() => Object.values(doc.agents).filter((a) => growKind(doc, a.id)).sort((a, b) => (a.id === leaderId ? -1 : b.id === leaderId ? 1 : a.identity.name.localeCompare(b.identity.name))), [doc, leaderId]);
   const kind = growFrom ? growKind(doc, growFrom) : null;
   const team = kind === 'venture' ? VENTURE_TEAM : agentDept;
-  const needsSetup = !!doc.agents.agent_origin && !isOpportunityOrigin(doc);
+  const needsSetup = !!doc.agents.agent_origin && (!isOpportunityOrigin(doc) || originOutdated(doc));
   const inputRef = useRef<HTMLInputElement>(null);
   const pending = useMemo(() => Object.values(library).filter((item) => item.tags.includes('idea-review')).length, [library]);
 
@@ -115,7 +115,7 @@ export default function CreatorDesk() {
         <button className="creator-action" onClick={() => { setTab('ideas'); setNotice(''); }}><Plus size={14} /> Add idea <span className="creator-count">{pending}</span></button>
         <button className="creator-action" onClick={() => { setTab('agent'); pickParent(null); setNotice(''); }}><GitBranch size={14} /> Start a venture</button>
         <button className="creator-action" onClick={() => { setTab('requests'); setRequestFrom(null); setNotice(''); }}><Plus size={14} /> Skill requests <span className="creator-count">{openRequests}</span></button>
-        {needsSetup && <button className="creator-action" onClick={setupOrigin} title="Give ORIGIN your Opportunity Research & Builder prompt and starting memory"><Sparkles size={14} /> Set up Opportunity agent</button>}
+        {needsSetup && <button className="creator-action" onClick={setupOrigin} title="Give ORIGIN your Opportunity Research & Builder prompt and starting memory"><Sparkles size={14} /> {isOpportunityOrigin(doc) ? 'Update Opportunity agent rules' : 'Set up Opportunity agent'}</button>}
         <button className="creator-action creator-tutorial" onClick={() => { setTab('tutorial'); setNotice(''); }}><BookOpen size={14} /> Tutorial</button>
         <button className="creator-voice" onClick={speak} title={`Hear ${leaderName}'s low-pitched voice`}><Mic2 size={14} /> Hear {leaderName}</button>
       </div>

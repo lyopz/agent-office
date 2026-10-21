@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { creatorBrain } from '../src/model/sample';
 import { applyOps } from '../src/engine/ops';
 import { buildNerveTree } from '../src/brain/nerveTree';
-import { AGENT_BLUEPRINT, OPPORTUNITY_PROMPT, branchAgentOps, branchKind, describeWindow, growKind, isOpportunityOrigin, opportunityOriginOps, ventureOf } from '../src/brain/opportunity';
+import { AGENT_BLUEPRINT, OPPORTUNITY_PROMPT, branchAgentOps, branchKind, describeWindow, growKind, isOpportunityOrigin, opportunityOriginOps, originOutdated, ventureOf } from '../src/brain/opportunity';
 import { growIdeaOps, ownerIdeaOps } from '../src/brain/ideas';
 import { exportOffice, parseOffice } from '../src/model/schema';
 import type { OfficeDoc } from '../src/model/types';
@@ -25,7 +25,12 @@ describe('opportunity agent', () => {
     expect(o.identity.title).toBe('Opportunity Research & Builder Agent');
     expect(o.ai.agentInstructions.startsWith(OPPORTUNITY_PROMPT)).toBe(true);
     expect(o.ai.provider).toBe('simulated');
-    expect(o.schedule.runWindow).toMatchObject({ everyMinutes: 60, maxMinutes: 10 });
+    expect(o.schedule.runWindow).toMatchObject({ everyMinutes: 120, maxMinutes: 10, setBy: 'owner' });
+    expect(o.ai.agentInstructions).toMatch(/once every 2 hours/);
+    expect(originOutdated(doc)).toBe(false);
+    const old = applyOps(doc, [{ op: 'agent.update', id: 'agent_origin', patch: { ai: { agentInstructions: OPPORTUNITY_PROMPT } } }]).doc;
+    expect(originOutdated(old)).toBe(true);
+    expect(originOutdated(applyOps(old, opportunityOriginOps(old)).doc)).toBe(false);
     expect(doc.library.kb_opp_status.summary).toMatch(/allowance: none approved/i);
     expect(doc.library.kb_opp_ledger.summary).toMatch(/unknown/);
     // specialists get windows sized to their team

@@ -5,7 +5,7 @@
 // opens the agent's profile. Under the main agent sit its open ideas: give it
 // one, ask it for one, or grow one into a new branch.
 import { useMemo, useState, type CSSProperties } from 'react';
-import { ChevronRight, GitBranch, Lightbulb, MessageSquarePlus, Sparkles, Sprout, UserRound } from 'lucide-react';
+import { ChevronRight, GitBranch, Play, Lightbulb, MessageSquarePlus, Sparkles, Sprout, UserRound } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { Agent, AgentStatus } from '../model/types';
 import { STATUS_COLOR } from '../viewport/AgentsLayer';
@@ -14,7 +14,7 @@ import { useBrainFocus } from './ConnectomeView';
 import { askGrow, treeOf } from './BrainScene';
 import { byOwner, openIdeas, ownerIdeaOps, suggestIdeaOps } from './ideas';
 import { subtree, type NerveTree } from './nerveTree';
-import { growKind } from './opportunity';
+import { MANUAL_RUN_MINUTES, ORIGIN_ID, describeWindow, growKind } from './opportunity';
 
 const BUSY: AgentStatus[] = ['working', 'researching', 'thinking', 'communicating'];
 
@@ -42,6 +42,14 @@ export function BranchMenu({ agents, teams, live, match, selected }: Props) {
   const focus = (id: string) => useBrainFocus.setState({ brainAgentId: focusId === id ? null : id, agentId: null, teamId: null, selectedTeamId: null });
   const open = (id: string) => useStore.getState().setUi({ selection: { kind: 'agent', id }, profileAgentId: id, profileTab: 'identity' });
 
+  // a manual work window: simulated until a model and an approved budget are connected
+  const runNow = (id: string) => {
+    const name = agents[id]?.identity.name ?? 'The main agent';
+    const live = agents[id]?.ai.provider && agents[id].ai.provider !== 'simulated';
+    useStore.getState().runRuntimeOps([{ op: 'task.create', agentId: id, name: `Manual run (${MANUAL_RUN_MINUTES} min)`, description: `Owner-started ${MANUAL_RUN_MINUTES}-minute work window: advance the highest-value approved task, save progress and record the next action.`, priority: 'high', simulated: !live }]);
+    useStore.getState().notify(live ? `${name} queued a ${MANUAL_RUN_MINUTES}-minute run. It still asks before anything that costs money.` : `${name} started a ${MANUAL_RUN_MINUTES}-minute run in simulation: no model is connected, so nothing ran for real and nothing was spent.`);
+  };
+
   const row = (id: string): JSX.Element | null => {
     if (!shows(id)) return null;
     const n = tree.nodes[id], a = agents[id];
@@ -57,11 +65,12 @@ export function BranchMenu({ agents, teams, live, match, selected }: Props) {
             <span className="bm-dot" style={{ background: STATUS_COLOR[status as AgentStatus] ?? n.color }} aria-hidden />
             <span className="bm-text">
               <span className="bm-name">{a.identity.name}<span className="muted"> · {a.identity.title}</span></span>
-              <span className="bm-meta">{n.depth === 0 ? 'Main agent' : size ? `${size} agent${size === 1 ? '' : 's'} in this branch` : 'Single agent'}{busy ? ` · ${busy} working` : ''}</span>
+              <span className="bm-meta">{n.depth === 0 ? `Main agent${a.schedule.runWindow ? ` · works ${describeWindow(a.schedule.runWindow)}` : ''}` : size ? `${size} agent${size === 1 ? '' : 's'} in this branch` : 'Single agent'}{busy ? ` · ${busy} working` : ''}</span>
               {taskName && <span className="bm-task">{taskName}<span className="am-progress" aria-hidden><i style={{ width: `${progress}%` }} /></span></span>}
             </span>
           </button>
           <button className="bm-open" aria-label={`Open ${a.identity.name}'s profile`} title="Open profile" onClick={() => open(id)}><UserRound size={12} /></button>
+          {id === ORIGIN_ID && <button className="bm-run" title={`Start an extra ${MANUAL_RUN_MINUTES}-minute run now`} onClick={() => runNow(id)}><Play size={11} /> Run {MANUAL_RUN_MINUTES} min</button>}
           {growKind({ agents }, id) && <button className="bm-open" aria-label={n.depth === 0 ? 'Start a venture branch' : `Add a skill to ${a.identity.name}`} title={n.depth === 0 ? 'Start a venture branch' : 'Add a skill to this venture'} onClick={() => window.dispatchEvent(new CustomEvent('agent-office:open-creator', { detail: { tab: 'agent', parentId: id } }))}><GitBranch size={12} /></button>}
           {a.branch?.kind === 'skill' && <button className="bm-open" aria-label={`Ask ${a.identity.name}'s venture for a new skill`} title="Ask this agent's venture for a new skill agent" onClick={() => window.dispatchEvent(new CustomEvent('agent-office:open-creator', { detail: { tab: 'requests', fromId: id } }))}><MessageSquarePlus size={12} /></button>}
         </div>

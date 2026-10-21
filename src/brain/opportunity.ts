@@ -150,11 +150,15 @@ Check whether an operating allowance, authorized information sources, and schedu
 export const BRANCH_NOTE = `BRANCHES IN THE BRAIN
 Only you start branches. Each branch is a venture: one business or project you took on after researching it, such as Roblox development, and you need the owner's approval to start it. A venture may add only the skill agents it needs to succeed, such as research, 3D modelling, design or ads, and every skill agent works for that venture alone. Teach every venture you create how to create agents, using the blueprint below. Skill agents can't create agents; they file skill requests, their venture checks relevance, and the owner decides. A venture can never start a different business; it sends any new business idea to your backlog instead. Skill agents cannot create agents. Proposing a branch costs nothing; running one inside a work window is a child agent and follows the delegation and spending rules above (at most two running at once, none running outside the window).
 
+YOUR SCHEDULE AND LIMIT
+The owner changed your operating schedule: wake once every 2 hours and work at most 10 minutes. This replaces the hourly schedule above. The owner can also start an extra 10-minute run from your node at any time; treat it like a normal window. Your spending limit is the tasks the owner approves: work only on approved tasks, and ask before anything else that costs money.
+
 WORK WINDOWS PER BRANCH
 Each venture and skill agent gets its own work window sized to its task, not your hourly window. For example, research may need 10 minutes every 5 hours while design needs 5 minutes every hour. Set each window from your own research on what the task needs, record the reason, and change it when the evidence changes. The owner can override any window. A window is a plan until the owner approves the scheduler and the spend it implies; never start one without that approval.`;
 
 /** ORIGIN's own window from the owner's prompt: once an hour, at most 10 minutes. */
-export const ORIGIN_WINDOW: RunWindow = { everyMinutes: 60, maxMinutes: 10, setBy: 'owner', reason: 'Owner\'s operating schedule: wake once every hour, work at most 10 minutes.' };
+export const ORIGIN_WINDOW: RunWindow = { everyMinutes: 120, maxMinutes: 10, setBy: 'owner', reason: 'Owner\'s decision (2026-10-21): 10 minutes every 2 hours, plus a manual 10-minute run from ORIGIN\'s node. Spending is limited by the tasks the owner approves.' };
+export const MANUAL_RUN_MINUTES = 10;
 
 /** Starting windows ORIGIN suggests for a new specialist, by team, until its own research says otherwise. */
 export const SUGGESTED_WINDOWS: Record<string, Omit<RunWindow, 'setBy'>> = {
@@ -215,6 +219,8 @@ export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
 }
 
 export const isOpportunityOrigin = (doc: OfficeDoc) => !!doc.agents[ORIGIN_ID]?.ai.agentInstructions.startsWith(OPPORTUNITY_PROMPT.slice(0, 60));
+/** ORIGIN has the prompt but older rules (an earlier version of the branch notes or schedule). */
+export const originOutdated = (doc: OfficeDoc) => isOpportunityOrigin(doc) && doc.agents[ORIGIN_ID].ai.agentInstructions !== `${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}`;
 
 /** How to design an agent; ORIGIN uses it for ventures, ventures for their skill agents. */
 export const AGENT_BLUEPRINT = `HOW TO CREATE AN AGENT
