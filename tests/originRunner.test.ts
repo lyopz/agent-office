@@ -256,3 +256,25 @@ describe('origin runner: ORIGIN sees the real brain', () => {
     expect(runner.nextTask({ agents, tasks: [req('gone', 'agent_nova'), req('here', 'agent_store')] } as any)).toMatchObject({ id: 'here' });
   });
 });
+
+test('every run also writes one SKILL.md in its own call, even while an owner task keeps the main work busy', async () => {
+  const agents = [{ id: 'agent_store', name: 'STORE', title: 'Etsy store', kind: 'venture', prompt: 'p' }];
+  write({ ...base, agents, tasks: [
+    { id: 'o1', title: 'grow the brain', detail: '', status: 'approved', by: 'owner', createdAt: '' },
+    { id: 's1', title: "Write STORE's SKILL.md", detail: 'Venture: STORE, Etsy store.', status: 'approved', by: 'owner', createdAt: '', kind: 'skill-file', agentId: 'agent_store', agentName: 'STORE' },
+  ] });
+  const bodies: any[] = [];
+  const fetch = async (_u: string, init: any) => {
+    const b = JSON.parse(init.body); bodies.push(b);
+    return bodies.length === 1
+      ? reply(result({ memory: 'm', summary: 'worked on o1' }), { input_tokens: 1000, output_tokens: 100 })
+      : reply(result({ skillFile: { name: 'Etsy store playbook', description: 'd', body: '#'.repeat(300) } }), { input_tokens: 1000, output_tokens: 6000 });
+  };
+  const r = await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
+  expect(bodies).toHaveLength(2);
+  expect(bodies[1].messages[0].content).toMatch(/Write the SKILL\.md for the agent "STORE"/);
+  expect(r.ok && (r.run as any).skillFileFor).toBe('STORE');
+  const s = read();
+  expect(s.tasks.map((t: any) => t.status)).toEqual(['approved', 'done']);
+  expect(s.skillFiles[0]).toMatchObject({ agentIds: ['agent_store'], name: 'Etsy store playbook' });
+});

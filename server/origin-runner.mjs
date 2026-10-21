@@ -164,6 +164,18 @@ function roster(s) {
   return `AGENTS IN THE BRAIN NOW (${all.length} besides you; they are real records in the owner's app, and this list is the truth even where your notes disagree):\n${all.map((a) => `- [${a.id}] ${a.name}: ${a.title || 'agent'}${a.kind === 'venture' ? ' (venture)' : a.kind === 'skill' ? ` (skill agent for ${name(a.ventureId)})` : ''}${a.hasSkillFile ? '' : ' (SKILL.md not written yet)'}`).join('\n')}`;
 }
 
+/** One file for every agent with the same job; their requests are done too. */
+function saveSkillFile(s, task, file, at) {
+  const same = s.tasks.filter((x) => x.kind === 'skill-file' && x.status === 'approved' && (x === task || roleOf(x) === roleOf(task)));
+  for (const x of same) x.status = 'done';
+  s.skillFiles.push({ id: newId('skillfile'), agentId: task.agentId, agentName: task.agentName, agentIds: same.map((x) => x.agentId), agentNames: same.map((x) => x.agentName), version: SKILL_FILE_VERSION, ...file, status: 'new', createdAt: at });
+}
+
+/** What ORIGIN needs to write one agent's SKILL.md. */
+function skillFileBrief(s, task) {
+  return `Write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId})${task.sharedWith?.length ? `. ${task.sharedWith.length} other agents do exactly the same job (${task.sharedWith.join(', ')}) and will share this file, so write it for the role, not the one name` : ''}. What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}`;
+}
+
 function briefFor(s, task, deadline) {
   return [
     `Current time: ${new Date().toISOString()}. This work window ends at ${deadline.toISOString()} (${MAX_MIN} minutes). Model: ${MODEL}.`,
@@ -213,7 +225,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   running = record;
   const messages = [{ role: 'user', content: briefFor(s, task, deadline) }];
   const tools = task ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: MAX_SEARCHES }] : [];
-  let text = '';
+  let text = '', stopReason = null;
   try {
     while (record.calls < MAX_CALLS) {
       if (Date.now() > deadline.getTime() - 15_000) { record.status = 'window-ended'; break; }
@@ -233,6 +245,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
       text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
       if (data.stop_reason === 'pause_turn') { messages.push({ role: 'assistant', content: data.content }); continue; }
       record.status = data.stop_reason === 'refusal' ? 'refused' : 'done';
+      stopReason = data.stop_reason;
       break;
     }
   } catch (e) {
@@ -240,6 +253,35 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
     console.error(`[origin] ${e.name}: ${e.message}`);
   } finally {
     running = null;
+  }
+  if (record.status === 'done' && stopReason === 'max_tokens') record.status = 'cut-off';
+  // Every run also writes one SKILL.md in its own call, so the files get written even while
+  // the owner's tasks keep the main work busy. It needs time and budget left over.
+  const extra = task?.kind === 'skill-file' ? null : nextTask({ ...s, tasks: s.tasks.filter((t) => t.kind === 'skill-file') });
+  if (extra && Date.now() < deadline.getTime() - 60_000 && record.costUsd + CALL_WORST_USD <= runLimit) {
+    try {
+      running = record;
+      extra.sharedWith = s.tasks.filter((x) => x !== extra && x.kind === 'skill-file' && x.status === 'approved' && roleOf(x) === roleOf(extra)).map((x) => x.agentName);
+      const prompt = [roster(s), skillFileBrief(s, extra), 'Reply with only one JSON object in a ```json block: {"skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"}}'].join('\n\n');
+      const r = await deps.fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': deps.key || KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: MODEL, max_tokens: 16000, system: s.instructions, messages: [{ role: 'user', content: prompt }] }),
+        signal: AbortSignal.timeout(Math.max(5_000, deadline.getTime() - Date.now())),
+      });
+      record.calls++;
+      if (r.ok) {
+        const data = await r.json();
+        const c = costOf(MODEL, data.usage || {});
+        if (c == null) record.costKnown = false; else record.costUsd += c;
+        const file = cleanSkillFile(parseResult((data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join(''))?.skillFile);
+        if (file) { saveSkillFile(s, extra, file, new Date().toISOString()); record.skillFileFor = extra.agentName; }
+      } else console.error(`[origin] SKILL.md call answered ${r.status}`);
+    } catch (e) {
+      console.error(`[origin] SKILL.md call: ${e.name}`);
+    } finally {
+      running = null;
+    }
   }
   record.endedAt = new Date().toISOString();
   const out = parseResult(text);
@@ -269,12 +311,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
     // a task that can't go on until the owner decides steps aside instead of holding every run
     if (task && task.kind !== 'skill-file' && (out.waitingOnOwner === true || (pendingCount(s) > wasPending && !(out.completedTaskIds || []).includes(task.id)))) task.waitingOnOwner = true;
     const file = task?.kind === 'skill-file' ? cleanSkillFile(out.skillFile) : null;
-    if (file) {
-      // one file for every agent with the same job; their requests are done too
-      const same = s.tasks.filter((x) => x.kind === 'skill-file' && x.status === 'approved' && (x === task || roleOf(x) === roleOf(task)));
-      for (const x of same) x.status = 'done';
-      s.skillFiles.push({ id: newId('skillfile'), agentId: task.agentId, agentName: task.agentName, agentIds: same.map((x) => x.agentId), agentNames: same.map((x) => x.agentName), version: SKILL_FILE_VERSION, ...file, status: 'new', createdAt: record.endedAt });
-    }
+    if (file) saveSkillFile(s, task, file, record.endedAt);
     // only the task this run worked on can be completed or stopped by it
     if (task && Array.isArray(out.completedTaskIds) && out.completedTaskIds.includes(task.id)) task.status = 'done';
     if (task && task.status === 'approved' && Array.isArray(out.stopTaskIds) && out.stopTaskIds.includes(task.id)) {
