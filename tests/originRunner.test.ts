@@ -30,7 +30,7 @@ describe('origin runner', () => {
   });
 
   test('with no approved task it proposes tasks without searching, and saves notes and cost', async () => {
-    write(base);
+    write({ ...base, autoTasks: false });
     let sent: any = null;
     const fetch = async (_u: string, init: any) => { sent = JSON.parse(init.body); return reply(result({ memory: 'notes', nextAction: 'wait', proposedTasks: [{ title: 'Check Roblox tycoon demand', detail: 'search' }], summary: 'proposed one task' }), { input_tokens: 5000, output_tokens: 2000 }); };
     const r = await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
@@ -92,7 +92,7 @@ describe('origin runner: one task at a time, agent proposals and budget watch', 
   });
 
   test('asking first: ORIGIN proposes one thing at a time, and nothing while something waits for the owner', async () => {
-    const base_ = { ...base, autoAgents: false };
+    const base_ = { ...base, autoAgents: false, autoTasks: false };
     write(base_);
     const agent = { parentId: 'agent_origin', name: 'ETSY', specialty: 'Etsy store', purpose: 'sell', skill: 'Ventures', bankSkillIds: ['skill_x'], everyMinutes: 60, maxMinutes: 5 };
     const fetch = async () => reply(result({ memory: 'm', proposedTasks: [{ title: 'a' }, { title: 'b' }], proposedAgent: agent, summary: 's' }), { input_tokens: 100, output_tokens: 10 });
@@ -293,4 +293,52 @@ test('every run also writes one SKILL.md in its own call, even while an owner ta
   const s = read();
   expect(s.tasks.map((t: any) => t.status)).toEqual(['approved', 'done']);
   expect(s.skillFiles[0]).toMatchObject({ agentIds: ['agent_store'], name: 'Etsy store playbook' });
+});
+
+describe('origin runner: empire mode, progress and routing', () => {
+  test('in empire mode ORIGIN approves its own task, owner tasks still go first, and at most 3 of its own are open', async () => {
+    write({ ...base });
+    const fetch = async () => reply(result({ memory: 'm', proposedTasks: [{ title: 'Find a niche' }], summary: 's' }), { input_tokens: 100, output_tokens: 10 });
+    await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
+    let s = read();
+    expect(s.tasks[0]).toMatchObject({ title: 'Find a niche', status: 'approved', by: 'origin' });
+    expect(s.progressLog.at(-1).note).toMatch(/set itself a task/);
+    s.tasks.push({ id: 'o1', title: 'mine', detail: '', status: 'approved', by: 'owner', createdAt: '' });
+    expect(runner.nextTask(s)).toMatchObject({ id: 'o1' });
+    s.tasks.push(...[1, 2].map((i) => ({ id: `x${i}`, title: `x${i}`, detail: '', status: 'approved', by: 'origin', createdAt: '' })));
+    write(s);
+    await runner.runOnce('manual', { fetch: async () => reply(result({ memory: 'm', proposedTasks: [{ title: 'Another' }], summary: 's' }), { input_tokens: 100, output_tokens: 10 }), file, key: 'test' } as any);
+    expect(read().tasks.find((t: any) => t.title === 'Another').status).toBe('proposed');
+  });
+
+  test('a run records the task progress and a log line for the agent it worked as, and has web fetch', async () => {
+    write({ ...base, agents: [{ id: 'v1', name: 'Etsy Store', kind: 'venture', prompt: 'p' }], tasks: [{ id: 't1', title: 'Research', detail: '', status: 'approved', by: 'owner', agentId: 'v1', createdAt: '' }] });
+    let sent: any = null;
+    const fetch = async (_u: string, init: any) => { sent ??= JSON.parse(init.body); return reply(result({ memory: 'm', progress: { percent: 35, note: 'Found 3 niches' }, summary: 's' }), { input_tokens: 100, output_tokens: 10 }); };
+    await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
+    const s = read();
+    expect(sent.tools.map((t: any) => t.name)).toEqual(['web_search', 'web_fetch']);
+    expect(s.tasks[0].progress).toBe(35);
+    expect(s.progressLog.at(-1)).toMatchObject({ agentId: 'v1', agentName: 'Etsy Store', pct: 35, note: 'Found 3 niches', taskId: 't1' });
+  });
+
+  test('a question goes to the best-suited agent, answered with its own prompt and billed to it', async () => {
+    write({ ...base, agents: [{ id: 'a1', name: 'Pricing Analyst', title: 'pricing', prompt: 'PRICING PROMPT' }, { id: 'a2', name: 'Listing Writer', title: 'copy', prompt: 'COPY PROMPT' }] });
+    const bodies: any[] = [];
+    const fetch = async (_u: string, init: any) => { const b = JSON.parse(init.body); bodies.push(b); return reply(bodies.length === 1 ? 'a1' : 'Charge $18.', { input_tokens: 100, output_tokens: 10 }); };
+    const r = await runner.ask('what should we charge for mugs?', { fetch, file, key: 'test' } as any);
+    expect(r).toMatchObject({ ok: true, answer: 'Charge $18.', by: 'Pricing Analyst' });
+    expect(bodies[1].system).toMatch(/^PRICING PROMPT/);
+    const s = read();
+    expect(s.asks[0]).toMatchObject({ agentId: 'a1', by: 'Pricing Analyst' });
+    expect(s.ledger.byAgent.a1).toBeGreaterThan(0);
+  });
+
+  test('naming an agent sends the question straight to it, with no routing call', async () => {
+    write({ ...base, agents: [{ id: 'a2', name: 'Listing Writer', prompt: 'COPY PROMPT' }] });
+    let calls = 0;
+    const r = await runner.ask('listing writer, how are the titles going?', { fetch: async () => { calls++; return reply('Good.', { input_tokens: 10, output_tokens: 5 }); }, file, key: 'test' } as any);
+    expect(r).toMatchObject({ by: 'Listing Writer' });
+    expect(calls).toBe(1);
+  });
 });

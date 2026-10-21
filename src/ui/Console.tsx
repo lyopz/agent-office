@@ -36,7 +36,7 @@ export function Console() {
   useEffect(() => {
     if (loaded.current || !status?.asks?.length) return;
     loaded.current = true;
-    setEntries(status.asks.slice(0, 10).reverse().flatMap((a) => [{ id: nextId++, type: 'user' as const, text: a.q }, { id: nextId++, type: 'answer' as const, text: a.a }]));
+    setEntries(status.asks.slice(0, 10).reverse().flatMap((a) => [{ id: nextId++, type: 'user' as const, text: a.q }, { id: nextId++, type: 'answer' as const, text: a.a, meta: a.by && a.by !== 'ORIGIN' ? `answered by ${a.by}` : undefined }]));
   }, [status]);
 
   const run = async (q: string) => {
@@ -49,7 +49,7 @@ export function Console() {
       const r = await askOrigin(question);
       if (!r) add({ type: 'error', text: "ORIGIN's runner isn't running. Start it on your PC with npm.cmd run origin." });
       else if (!r.ok) add({ type: 'error', text: r.reason });
-      else add({ type: 'answer', text: r.answer, meta: [r.costUsd == null ? 'cost unknown' : `$${r.costUsd.toFixed(4)}`, r.approved?.length ? `approved: ${r.approved.join('; ')}` : ''].filter(Boolean).join(' · ') });
+      else add({ type: 'answer', text: r.answer, meta: [r.by && r.by !== 'ORIGIN' ? `answered by ${r.by}` : '', r.costUsd == null ? 'cost unknown' : `$${r.costUsd.toFixed(4)}`, r.approved?.length ? `approved: ${r.approved.join('; ')}` : ''].filter(Boolean).join(' · ') });
     } finally { setBusy(false); }
   };
 
@@ -62,9 +62,9 @@ export function Console() {
   const badge = !checked ? { kind: 'sim', label: 'checking' } : !status ? { kind: 'off', label: 'runner off' } : !status.configured ? { kind: 'off', label: 'no API key' } : { kind: 'live', label: status.running ? 'ORIGIN working' : 'ORIGIN live' };
 
   return (
-    <section className={`console${open ? (big ? ' big' : '') : ' collapsed'}`} aria-label="Ask ORIGIN">
+    <section className={`console${open ? (big ? ' big' : '') : ' collapsed'}`} aria-label="Command center">
       <div className="panel-h" style={{ position: 'static' }}>
-        <TerminalSquare size={14} /><span className="grow">Ask ORIGIN{task ? <span className="muted"> · working on: {task.title}</span> : null}</span>
+        <TerminalSquare size={14} /><span className="grow" title="Your question goes to the agent best suited to it. Name an agent to ask it directly.">Command center{task ? <span className="muted"> · working on: {task.title}</span> : null}</span>
         <span className={`badge ${badge.kind}`}>{badge.label}</span>
         {open && <button className="btn icon sm ghost" aria-label={big ? 'Make the chat log smaller' : 'Make the chat log bigger'} title={big ? 'Smaller' : 'Bigger'} onClick={() => setBig(!big)}>{big ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>}
         <button className="btn icon sm ghost" aria-label={open ? 'Collapse console' : 'Expand console'} onClick={() => setOpen(!open)}>{open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}</button>
@@ -81,7 +81,7 @@ export function Console() {
           </div>
           <div className="console-input">
             <span className="prompt">&gt;</span>
-            <input id="console-input" type="text" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} aria-label="Question for ORIGIN" disabled={busy} />
+            <input id="console-input" type="text" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} aria-label="Question for your agents" placeholder="Ask anything. It goes to the best-suited agent, or name one." disabled={busy} />
             <button className="btn sm primary" disabled={busy || !text.trim()} onClick={() => void run(text)}><CornerDownLeft size={13} />Ask</button>
           </div>
         </>

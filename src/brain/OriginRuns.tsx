@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Check, Play, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useStore } from '../store/store';
-import { agentProposalAction, runnerStatus, setAutoAgents, syncOrigin, taskAction, type AgentProposal, type RunnerStatus, type RunnerTask } from './originLink';
+import { agentProposalAction, runnerStatus, setAutoAgents, setAutoTasks, syncOrigin, taskAction, type AgentProposal, type RunnerStatus, type RunnerTask } from './originLink';
 import { branchKind, describeWindow } from './opportunity';
 import { createProposedAgent } from './skillFiles';
+import { ProgressBar, ProgressLog } from './Progress';
 
 const money = (n: number) => `$${n.toFixed(n < 1 ? 3 : 2)}`;
 
@@ -17,6 +18,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   const [st, setSt] = useState<RunnerStatus | null | undefined>(undefined);
   const [title, setTitle] = useState('');
   const [detail, setDetail] = useState('');
+  const [logAgent, setLogAgent] = useState('');
   const refresh = async () => { const s = await runnerStatus(); setSt(s); if (s && !s.synced) await syncOrigin(doc); };
   useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 15_000); return () => clearInterval(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -75,6 +77,10 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         <input type="checkbox" checked={st.autoAgents !== false} onChange={(e) => void act(() => setAutoAgents(e.target.checked), e.target.checked ? 'ORIGIN and its ventures now create the agents they need, up to 3 a run, each with its SKILL.md.' : 'ORIGIN will ask you before creating agents.')} />
         Let ORIGIN and its ventures create the agents they need without asking (up to 3 a run; agents cost nothing until they work)
       </label>
+      <label className="creator-privacy" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input type="checkbox" checked={st.autoTasks !== false} onChange={(e) => void act(() => setAutoTasks(e.target.checked), e.target.checked ? 'Empire mode on: ORIGIN picks ventures and sets its own research tasks, inside the cap.' : 'ORIGIN will ask you before working on tasks it thinks of.')} />
+        Empire mode: ORIGIN picks the ventures and sets its own research tasks (3 open at most, each within its budget and the {money(st.capUsd)} cap). It still asks before using your accounts, publishing, or spending money.
+      </label>
       {created.length > 0 && <p className="creator-privacy">Recently created by ORIGIN: {created.map((p) => `${p.name} (for ${doc.agents[p.parentId]?.identity.name ?? p.parentId})`).join(', ')}.</p>}
 
       {ventures.length > 0 && <><span className="creator-kicker">VENTURES</span>
@@ -101,7 +107,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
 
       <span className="creator-kicker">APPROVED · ONE AT A TIME, YOUR TASKS FIRST</span>
       {approved.length === 0 ? <p className="creator-privacy">No approved tasks. ORIGIN will only propose tasks until you approve one.</p>
-        : <ul className="creator-request-log">{approved.map((t, i) => <li key={t.id}><b>{i === 0 ? 'Working on: ' : 'Queued: '}{t.title}</b>{t.detail && t.kind !== 'skill-file' ? `: ${t.detail.slice(0, 300)}` : ''} · {spent(t)} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button> <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></li>)}</ul>}
+        : <ul className="creator-request-log">{approved.map((t, i) => <li key={t.id}><b>{i === 0 ? 'Working on: ' : 'Queued: '}{t.title}</b>{t.agentId && doc.agents[t.agentId] ? <span className="muted"> ({doc.agents[t.agentId].identity.name}{t.by === 'origin' ? ', set by ORIGIN' : ''})</span> : t.by === 'origin' ? <span className="muted"> (set by ORIGIN)</span> : null}{t.kind !== 'skill-file' && <ProgressBar pct={t.progress} label={`${t.title} progress`} />}{t.detail && t.kind !== 'skill-file' ? `: ${t.detail.slice(0, 300)}` : ''} · {spent(t)} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button> <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></li>)}</ul>}
       {stopped.length > 0 && <><span className="creator-kicker">STOPPED BY BUDGET WATCH</span>
         <ul className="creator-request-log">{stopped.map((t) => <li key={t.id}><b>{t.title}</b> · {spent(t)}{t.stopReason ? `. ${t.stopReason}` : ''} <button className="link-btn" onClick={() => void act({ action: 'approve', id: t.id }, 'Restarted with a fresh budget.')}>restart</button></li>)}</ul></>}
       <div className="creator-agent-grid">
@@ -109,6 +115,16 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         <label className="creator-field"><span>Details</span><input value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="What a good answer looks like" /></label>
       </div>
       <div className="creator-dialog-foot"><button className="creator-primary" disabled={!title.trim()} onClick={() => { void act({ action: 'add', title, detail }, 'Added and approved.'); setTitle(''); setDetail(''); }}><Plus size={14} /> Add approved task</button></div>
+
+      <span className="creator-kicker">PROGRESS LOG</span>
+      {(() => {
+        const log = st.progressLog ?? [];
+        const who = [...new Map(log.map((e) => [e.agentId, doc.agents[e.agentId]?.identity.name ?? e.agentName])).entries()];
+        return <>
+          {who.length > 1 && <label className="creator-field"><span>Agent or venture</span><select value={logAgent} onChange={(e) => setLogAgent(e.target.value)}><option value="">Everyone</option>{who.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>}
+          <ProgressLog entries={logAgent ? log.filter((e) => e.agentId === logAgent) : log} showAgent={!logAgent} />
+        </>;
+      })()}
 
       {st.nextAction && <><span className="creator-kicker">NEXT ACTION</span><p className="creator-privacy">{st.nextAction}</p></>}
       {st.memory && <><span className="creator-kicker">ORIGIN'S NOTES</span><pre className="origin-notes">{st.memory}</pre></>}

@@ -10,6 +10,7 @@ import { ORIGIN_ID, branchKind } from './opportunity';
 import { taskAction, type RunnerTask } from './originLink';
 import { skillFileId } from './skillFiles';
 import { skillFileText } from './SkillBank';
+import { ProgressBar, ProgressLog } from './Progress';
 
 /** Hand a task to ORIGIN's runner. A task for another agent names it, so ORIGIN works it with that agent's SKILL.md. */
 export async function giveTask(doc: OfficeDoc, agentId: string, text: string): Promise<{ ok: boolean; message: string }> {
@@ -46,9 +47,10 @@ export function AgentTasks({ a }: { a: Agent }) {
       <h4>Tasks</h4>
       {!status && <p className="note">ORIGIN's runner isn't running, so there are no tasks to show. Tasks only exist when you give them.</p>}
       {status && !mine.length && <p className="note">No tasks yet. Nothing runs until you give one.</p>}
-      {mine.length > 0 && <table className="data"><thead><tr><th>Task</th><th>Status</th><th>Spent</th></tr></thead><tbody>
-        {mine.map((t) => <tr key={t.id}><td>{t.title}{t.stopReason && <div className="small muted">{t.stopReason}</div>}</td><td>{t.status}</td><td className="small">{t.spentUsd != null ? `$${t.spentUsd.toFixed(3)}` : '—'}</td></tr>)}
+      {mine.length > 0 && <table className="data"><thead><tr><th>Task</th><th>Status</th><th>Progress</th><th>Spent</th></tr></thead><tbody>
+        {mine.map((t) => <tr key={t.id}><td>{t.title}{t.stopReason && <div className="small muted">{t.stopReason}</div>}</td><td>{t.status}</td><td>{t.kind === 'skill-file' ? <span className="small muted">SKILL.md</span> : <ProgressBar pct={t.status === 'done' ? 100 : t.progress} label={`${t.title} progress`} />}</td><td className="small">{t.spentUsd != null ? `$${t.spentUsd.toFixed(3)}` : '—'}</td></tr>)}
       </tbody></table>}
+      {status && <><h4 style={{ marginTop: 12 }}>Progress log</h4><ProgressLog entries={(status.progressLog ?? []).filter((e) => e.agentId === a.id || doc.agents[e.agentId]?.skills.supervisorId === a.id)} showAgent={Object.values(doc.agents).some((x) => x.skills.supervisorId === a.id)} limit={20} /></>}
       <form className="row" style={{ marginTop: 8 }} onSubmit={(e) => { e.preventDefault(); void send(); }}>
         <input type="text" className="grow" value={text} onChange={(e) => setText(e.target.value)} placeholder={`Give ${a.identity.name} a task`} aria-label={`Task for ${a.identity.name}`} />
         <button className="btn primary sm" disabled={!text.trim()}><Send size={13} /> Give task</button>

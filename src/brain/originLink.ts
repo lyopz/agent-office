@@ -6,9 +6,11 @@ import { ORIGIN_ID, agentPrompt, branchKind } from './opportunity';
 
 export interface RunnerTask {
   id: string; title: string; detail: string; status: 'proposed' | 'approved' | 'rejected' | 'done' | 'stopped'; by: 'owner' | 'origin'; createdAt: string;
-  spentUsd?: number; runCosts?: number[]; budgetUsd?: number; stopReason?: string;
+  spentUsd?: number; runCosts?: number[]; budgetUsd?: number; stopReason?: string; progress?: number;
   kind?: 'skill-file'; agentId?: string; agentName?: string; version?: number;
 }
+/** One line of progress, filed under the agent the work was for. */
+export interface ProgressEntry { id: string; at: string; runId?: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; pct: number | null; note: string }
 /** A SKILL.md ORIGIN wrote for one agent, waiting for the app to save it to the bank. */
 export interface SkillFile { id: string; agentId: string; agentName: string; agentIds?: string[]; agentNames?: string[]; version?: number; name: string; description: string; body: string; status: 'new' | 'imported'; createdAt: string }
 export interface AgentProposal {
@@ -19,7 +21,7 @@ export interface RunnerRun { id: string; agentId?: string; taskId?: string | nul
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
   spentUsd: number; spentByAgent?: Record<string, number>; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
-  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null;
+  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null;
 }
 
 // in the browser the dev server forwards /api/origin; the desktop app talks to the runner directly
@@ -62,11 +64,11 @@ export async function runOrigin(doc: OfficeDoc, maxMinutes: number) {
   return call<{ ok: boolean; reason?: string; run?: RunnerRun }>('/run', {}, (maxMinutes + 1) * 60_000);
 }
 
-export interface OriginAsk { at: string; q: string; a: string; costUsd: number | null }
+export interface OriginAsk { at: string; q: string; a: string; costUsd: number | null; agentId?: string | null; by?: string }
 
 /** Ask ORIGIN a question from the console; it answers right away, any time, against the same cap. */
 export async function askOrigin(question: string) {
-  const r = await call<{ ok: true; answer: string; costUsd: number | null; taskTitle: string | null; approved?: string[] | null } | { ok: false; reason: string }>('/ask', { question }, 70_000);
+  const r = await call<{ ok: true; answer: string; costUsd: number | null; taskTitle: string | null; approved?: string[] | null; by?: string } | { ok: false; reason: string }>('/ask', { question }, 70_000);
   if (!r) return null;
   // an older runner without /ask answers 404
   if (!r.data.ok && !('reason' in r.data && r.data.reason)) return { ok: false as const, reason: "ORIGIN's runner is out of date. Stop it and start it again with npm.cmd run origin." };
@@ -80,6 +82,10 @@ export async function agentProposalAction(body: { action: 'approve' | 'reject'; 
 /** Whether ORIGIN and its ventures create agents without asking. */
 export async function setAutoAgents(autoAgents: boolean) {
   return !!(await call('/settings', { autoAgents }));
+}
+/** Empire mode: ORIGIN approves its own research tasks (a few at a time, each within its budget and the cap). */
+export async function setAutoTasks(autoTasks: boolean) {
+  return !!(await call('/settings', { autoTasks }));
 }
 
 export async function skillFileImported(id: string) {

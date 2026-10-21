@@ -82,6 +82,10 @@ npm.cmd run dev                            # in a second window; /api/origin is 
 - **Budget watch.** Spend is tracked per agent and per task, all on the one key and cap. Each task gets a budget (a tenth of the cap, `ORIGIN_TASK_BUDGET_USD`). ORIGIN stops a task on its own when its spend pattern shows it will cost far more than it's worth. The runner also stops any task that passes its budget, or whose average cost per run would pass twice its budget by the end of the month. You get one notice, and you can restart a stopped task with a fresh budget.
 - **Ask ORIGIN.** The console at the bottom sends your question straight to ORIGIN. It answers at any time, with no approval and no tools, as one short call on the same cap (usually well under a cent).
 - **Skill bank.** Creator desk → Skill bank holds the skills your agents use. Add them by hand or import `SKILL.md` files. ORIGIN and ventures pick from the bank when they create agents, and every skill ORIGIN has goes into its runs. ORIGIN can propose a new agent with bank skills, and it waits for your approval in ORIGIN runs.
+- **Empire mode** (on by default, ed's choice): ORIGIN picks ventures with real demand, starts them, gives them agents and sets its own research tasks, at most 3 open at a time, each within its task budget and the monthly cap. Your own tasks always go first. It still asks before using your accounts, publishing, spending money or contacting anyone. Turn it off in ORIGIN runs.
+- **Research tools.** Task runs can search the web ($0.01 a search, 5 a run) and read pages in full with web fetch (5 a run, no fee beyond tokens, 20K tokens a page at most). Agents can't log in anywhere.
+- **Progress.** Every run reports how far along its task is. ORIGIN runs shows a bar on each task and a progress log you can filter by agent; each agent's Tasks tab shows its own bar and log.
+- **Command center.** The console sends each question to the agent best suited to it (a tiny routing call, well under a tenth of a cent), or straight to an agent you name. That agent answers with its own instructions and SKILL.md.
 - Without the runner, nothing runs, and the app says so.
 
 ## Saving
