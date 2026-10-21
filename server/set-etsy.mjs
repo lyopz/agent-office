@@ -17,5 +17,5 @@ const cfg = { ...(etsyConfig() || {}), keystring, secret: secret || undefined };
 try { await pingEtsy(cfg); }
 catch (e) { console.log(`\nEtsy did not accept it (${e.message}). If your app is still "pending" on Etsy, wait for approval and run this again. Nothing was saved.`); process.exit(1); }
 saveEtsy(cfg);
-console.log(`\nSaved. ORIGIN's agents can now search Etsy listings (read-only). Stored in ${secretsDir()}, outside the app folder.`);
-console.log('To let them read your own shop too, open the ORIGIN runs panel in the app and press "Connect my Etsy shop".');
+console.log(`\nSaved. JARVIS's agents can now search Etsy listings (read-only). Stored in ${secretsDir()}, outside the app folder.`);
+console.log('To let them read your own shop too, open the JARVIS runs panel in the app and press "Connect my Etsy shop".');

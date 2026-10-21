@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// ORIGIN's real work windows. Runs the main agent on a live model every
+// JARVIS's real work windows. Runs the main agent on a live model every
 // ORIGIN_EVERY_MIN minutes for at most ORIGIN_MAX_MIN minutes, plus manual runs
 // from the app's "Run 10 min" button, and never spends past the monthly cap.
-// ORIGIN works on one owner-approved task per run, oldest first; with none
+// JARVIS works on one owner-approved task per run, oldest first; with none
 // approved it only reviews its notes and proposes a task, without web searches.
 // It can also propose one new agent per run (with skills from the owner's
 // skill bank); the owner approves it in the app, which creates it.
@@ -11,7 +11,7 @@
 //   npm run origin    (listens on 127.0.0.1:8788; ANTHROPIC_API_KEY in the environment wins if set)
 //   ORIGIN_MODEL=claude-haiku-5-5 ORIGIN_MONTHLY_CAP_USD=15 ORIGIN_EVERY_MIN=30 ORIGIN_MAX_MIN=10 ORIGIN_PARALLEL=3 ORIGIN_ROUNDS=3 ORIGIN_SCHEDULE=on
 //
-// State (instructions synced from the app, tasks, ORIGIN's notes, the cost
+// State (instructions synced from the app, tasks, JARVIS's notes, the cost
 // ledger) is kept in origin-data/state.json next to the app. The key lives only
 // in this process's environment and is never written to disk or logged.
 import http from 'node:http';
@@ -57,9 +57,9 @@ const PRICES = {
 };
 const SEARCH_USD = 0.01;
 
-/** A task's default budget: a tenth of the monthly cap. ORIGIN stops a task on its own when its spend pattern would pass it. */
+/** A task's default budget: a tenth of the monthly cap. JARVIS stops a task on its own when its spend pattern would pass it. */
 const TASK_BUDGET_USD = Number(process.env.ORIGIN_TASK_BUDGET_USD || CAP / 10);
-/** Runs a task gets before ORIGIN projects its long-run cost from the pattern. */
+/** Runs a task gets before JARVIS projects its long-run cost from the pattern. */
 const WATCH_AFTER_RUNS = 3;
 const AGENT_ID = 'agent_origin';
 
@@ -141,11 +141,11 @@ function stopTask(task, reason, at) { task.status = 'stopped'; task.stopReason =
 const remaining = (s) => Math.max(0, CAP - s.ledger.spentUsd);
 
 const newId = (p) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`;
-/** Empire mode (the owner's choice, on by default): ORIGIN approves its own research tasks, a few at a time, each within its task budget and the monthly cap. */
+/** Empire mode (the owner's choice, on by default): JARVIS approves its own research tasks, a few at a time, each within its task budget and the monthly cap. */
 const SELF_TASKS_OPEN = 3;
 const selfTasksOpen = (s) => s.tasks.filter((t) => t.status === 'approved' && t.by === 'origin').length;
 const canSelfApprove = (s) => s.autoTasks !== false && selfTasksOpen(s) < SELF_TASKS_OPEN;
-/** The owner's command-center tasks that are still open. While one is, ORIGIN works only on them. */
+/** The owner's command-center tasks that are still open. While one is, JARVIS works only on them. */
 const focusOpen = (s) => s.tasks.filter((t) => t.focus && t.status === 'approved');
 /** How many things the owner asked for ("5 items for my etsy store"), when they gave a number. */
 export function itemCount(text) {
@@ -155,7 +155,7 @@ export function itemCount(text) {
   const n = words[m[1].toLowerCase()] ?? Number(m[1]);
   return n > 0 ? Math.min(n, FOCUS_MAX_ITEMS) : null;
 }
-/** A task the owner gave in the command center: approved, and ORIGIN's focus until it is done. */
+/** A task the owner gave in the command center: approved, and JARVIS's focus until it is done. */
 export function addFocusTask(s, { title, detail = '', agentId = null, budgetUsd = null, count = null }) {
   const t = String(title || '').trim().slice(0, 160);
   if (!t) return null;
@@ -174,14 +174,14 @@ export function addFocusTask(s, { title, detail = '', agentId = null, budgetUsd 
 
 /** Proposals the owner still has to decide. With autoAgents on, agents are created without asking, so only tasks wait. */
 const pendingCount = (s) => s.tasks.filter((t) => t.status === 'proposed').length + (s.autoAgents === false ? s.agentProposals.filter((a) => a.status === 'proposed').length : 0);
-/** How many agents ORIGIN may create (or propose) in one run. */
+/** How many agents JARVIS may create (or propose) in one run. */
 const agentsPerRun = (s) => (s.autoAgents === false ? 1 : 3);
 /** The current SKILL.md format (the full ten-section playbook); the app rewrites files older than this. */
 const SKILL_FILE_VERSION = 2;
 /** Agents with the same job share one SKILL.md: their request with the agent's own name taken out. */
 const roleOf = (t) => t.detail.split(t.agentName || '\u0000').join('').replace(/,? created by [^.,]+/, '').replace(/\s+/g, ' ').trim();
 
-/** What a SKILL.md for one agent must contain. ORIGIN writes one for every agent it or the owner creates. */
+/** What a SKILL.md for one agent must contain. JARVIS writes one for every agent it or the owner creates. */
 const SKILL_FILE_RULES = `A SKILL.md is the full, detailed playbook for one agent's job: specific to that agent and its business, never generic, and complete enough that the agent can do excellent work from it alone. Write it in Markdown, between 6,000 and 18,000 characters, with these sections:
 1. Mission: the outcome it owns, who it serves, and what "done" and "excellent" look like, with measurable targets.
 2. Scope: what it does and explicitly does not do; who it hands work to and receives work from.
@@ -191,7 +191,7 @@ const SKILL_FILE_RULES = `A SKILL.md is the full, detailed playbook for one agen
 6. Deliverables: the exact format of each output (headings, fields, length), with a filled-in example.
 7. Quality bar: a checklist it runs before handing work back, and common mistakes to avoid.
 8. Costs and limits: what each kind of work costs in tokens, searches or money, its budget habits, and when to stop.
-9. Approvals and escalation: what needs the owner's approval, what goes to its venture or to ORIGIN, and how to write that request.
+9. Approvals and escalation: what needs the owner's approval, what goes to its venture or to JARVIS, and how to write that request.
 10. Improving: what it records after each task so the next run is better.`;
 const cleanSkillFile = (f) => (f && typeof f === 'object' && String(f.body || '').trim().length >= 200
   ? { name: String(f.name || '').slice(0, 80), description: String(f.description || '').slice(0, 1000), body: String(f.body).slice(0, 20_000) }
@@ -206,7 +206,7 @@ export function nextTask(s) {
   // a SKILL.md request for an agent that isn't in the open brain waits until that brain is open again
   const known = (t) => t.kind !== 'skill-file' || !(s.agents || []).length || s.agents.some((a) => a.id === t.agentId);
   const ready = (t) => t.status === 'approved' && !(t.waitingOnOwner && pendingCount(s)) && known(t);
-  // the owner's own tasks come before the ones ORIGIN set itself
+  // the owner's own tasks come before the ones JARVIS set itself
   return s.tasks.find((t) => ready(t) && t.kind !== 'skill-file' && t.by !== 'origin') || s.tasks.find((t) => ready(t) && t.kind !== 'skill-file') || s.tasks.find(ready) || null;
 }
 
@@ -254,24 +254,24 @@ async function requestPublish(s, task, input, record, tools = null) {
   const agent = taskAgent(s, task || { title: '' });
   // a mockup and the price, so the owner can judge it in the list without opening Printify
   const look = (await tools?.preview?.(productId).catch(() => null)) || {};
-  s.publishRequests.push({ id: newId('pub'), productId, shopId: printifyConfig()?.shopId ?? null, title: String(input.title || 'Product').slice(0, 140), why: String(input.why || '').slice(0, 400), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'ORIGIN', taskId: task?.id ?? null, taskTitle: task?.title ?? null, ...(look.image ? { image: look.image } : {}), ...(look.priceUsd ? { priceUsd: look.priceUsd } : {}), status: 'waiting', at: new Date().toISOString() });
+  s.publishRequests.push({ id: newId('pub'), productId, shopId: printifyConfig()?.shopId ?? null, title: String(input.title || 'Product').slice(0, 140), why: String(input.why || '').slice(0, 400), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'JARVIS', taskId: task?.id ?? null, taskTitle: task?.title ?? null, ...(look.image ? { image: look.image } : {}), ...(look.priceUsd ? { priceUsd: look.priceUsd } : {}), status: 'waiting', at: new Date().toISOString() });
   record.publishAsks = (record.publishAsks || 0) + 1; // the worker that asked
   return { content: 'Sent to the owner. It goes live only when they press Publish.', isError: false };
 }
 
 const PROGRESS_KEEP = 300;
-/** One line in the progress log, filed under the agent the work was for (ORIGIN when none). */
+/** One line in the progress log, filed under the agent the work was for (JARVIS when none). */
 function logProgress(s, task, e) {
   const agentId = e.agentId || task?.agentId || AGENT_ID;
-  const name = (s.agents || []).find((a) => a.id === agentId)?.name || (agentId === AGENT_ID ? 'ORIGIN' : task?.agentName || agentId);
+  const name = (s.agents || []).find((a) => a.id === agentId)?.name || (agentId === AGENT_ID ? 'JARVIS' : task?.agentName || agentId);
   s.progressLog = [...(s.progressLog || []), { id: newId('prog'), at: e.at, runId: e.runId, agentId, agentName: name, taskId: task?.id ?? null, taskTitle: task?.title ?? null, pct: e.pct ?? null, note: e.note }].slice(-PROGRESS_KEEP);
 }
 
-/** Every agent in the owner's brain as the app last synced it. This, not ORIGIN's notes, is what exists. */
+/** Every agent in the owner's brain as the app last synced it. This, not JARVIS's notes, is what exists. */
 function roster(s) {
   const all = s.agents || [];
   if (!all.length) return 'AGENTS IN THE BRAIN: the app has not sent the list yet.';
-  const name = (id) => all.find((a) => a.id === id)?.name ?? (id === AGENT_ID ? 'ORIGIN' : id);
+  const name = (id) => all.find((a) => a.id === id)?.name ?? (id === AGENT_ID ? 'JARVIS' : id);
   return `AGENTS IN THE BRAIN NOW (${all.length} besides you; they are real records in the owner's app, and this list is the truth even where your notes disagree):\n${all.map((a) => `- [${a.id}] ${a.name}: ${a.title || 'agent'}${a.kind === 'venture' ? ' (venture)' : a.kind === 'skill' ? ` (skill agent for ${name(a.ventureId)})` : ''}${a.hasSkillFile ? '' : ' (SKILL.md not written yet)'}`).join('\n')}`;
 }
 
@@ -282,7 +282,7 @@ function saveSkillFile(s, task, file, at) {
   s.skillFiles.push({ id: newId('skillfile'), agentId: task.agentId, agentName: task.agentName, agentIds: same.map((x) => x.agentId), agentNames: same.map((x) => x.agentName), version: SKILL_FILE_VERSION, ...file, status: 'new', createdAt: at });
 }
 
-/** What ORIGIN needs to write one agent's SKILL.md. */
+/** What JARVIS needs to write one agent's SKILL.md. */
 function skillFileBrief(s, task) {
   return `Write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId})${task.sharedWith?.length ? `. ${task.sharedWith.length} other agents do exactly the same job (${task.sharedWith.join(', ')}) and will share this file, so write it for the role, not the one name` : ''}. What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}`;
 }
@@ -333,7 +333,7 @@ let running = null;
 
 /**
  * The tasks for one run: one per agent, up to PARALLEL agents working side by side.
- * A command-center task (focus) goes first and alone; otherwise the owner's tasks come first, then ones ORIGIN set itself, oldest first.
+ * A command-center task (focus) goes first and alone; otherwise the owner's tasks come first, then ones JARVIS set itself, oldest first.
  */
 export function pickTasks(s, n = PARALLEL) {
   const known = (t) => !(s.agents || []).length || !t.agentId || s.agents.some((a) => a.id === t.agentId);
@@ -360,11 +360,11 @@ function mergeOut(a, b) {
   return { ...a, ...b, proposedTasks: list('proposedTasks'), proposedAgents: list('proposedAgents'), completedTaskIds: list('completedTaskIds'), stopTaskIds: list('stopTaskIds') };
 }
 
-/** One agent working one task (or ORIGIN planning when there is none): several rounds, tools included. Changes nothing in the state. */
+/** One agent working one task (or JARVIS planning when there is none): several rounds, tools included. Changes nothing in the state. */
 async function work(s, task, ctx) {
   const { deps, deadline, limit, etsy, record } = ctx;
   const agent = task ? taskAgent(s, task) : null;
-  const w = { taskId: task?.id ?? null, agentId: task?.agentId || AGENT_ID, agentName: agent?.name ?? 'ORIGIN', title: task?.title ?? null, costUsd: 0, costKnown: true, calls: 0, searches: 0, fetches: 0, rounds: 0, status: 'running', publishAsks: 0 };
+  const w = { taskId: task?.id ?? null, agentId: task?.agentId || AGENT_ID, agentName: agent?.name ?? 'JARVIS', title: task?.title ?? null, costUsd: 0, costKnown: true, calls: 0, searches: 0, fetches: 0, rounds: 0, status: 'running', publishAsks: 0 };
   const messages = [{ role: 'user', content: briefFor(s, task, deadline, etsy) }];
   // research tools: search to find sources, fetch to read a page in full, plus the owner's connected services
   const tools = task ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: MAX_SEARCHES }, { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: MAX_FETCHES, max_content_tokens: FETCH_TOKENS }, ...(etsy ? etsy.tools : [])] : [];
@@ -442,7 +442,7 @@ async function writeSkillFile(s, extra, ctx) {
     const c = costOf(MODEL, data.usage || {});
     if (c == null) record.costKnown = false;
     const file = cleanSkillFile(parseResult((data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join(''))?.skillFile);
-    if (file) { saveSkillFile(s, extra, file, new Date().toISOString()); record.skillFileFor = extra.agentName; logProgress(s, extra, { at: new Date().toISOString(), runId: record.id, pct: 100, note: `ORIGIN wrote ${extra.agentName}'s SKILL.md.` }); }
+    if (file) { saveSkillFile(s, extra, file, new Date().toISOString()); record.skillFileFor = extra.agentName; logProgress(s, extra, { at: new Date().toISOString(), runId: record.id, pct: 100, note: `JARVIS wrote ${extra.agentName}'s SKILL.md.` }); }
     return c ?? 0;
   } catch (e) {
     console.error(`[origin] SKILL.md call: ${e.name}`);
@@ -469,7 +469,7 @@ function applyOut(s, { task, w, out }, at, record, lead) {
   const self = canSelfApprove(s);
   if ((self || !wasPending) && t?.title && !s.tasks.some((x) => x.title.toLowerCase() === String(t.title).toLowerCase() && ['approved', 'proposed'].includes(x.status))) {
     s.tasks.push({ id: newId('task'), title: String(t.title).slice(0, 160), detail: String(t.detail || '').slice(0, 1000), status: self ? 'approved' : 'proposed', by: 'origin', createdAt: at, ...(typeof t.agentId === 'string' && (s.agents || []).some((a) => a.id === t.agentId) ? { agentId: t.agentId } : {}) });
-    if (self) logProgress(s, null, { at, runId: record.id, note: `ORIGIN set itself a task: ${String(t.title).slice(0, 160)}.` });
+    if (self) logProgress(s, null, { at, runId: record.id, note: `JARVIS set itself a task: ${String(t.title).slice(0, 160)}.` });
   }
   if (s.autoAgents !== false || (!wasPending && !t?.title)) {
     for (const a of agents) {
@@ -487,11 +487,11 @@ function applyOut(s, { task, w, out }, at, record, lead) {
   // a task that can't go on until the owner decides steps aside instead of holding every run
   if (task && task.kind !== 'skill-file' && (out.waitingOnOwner === true || (pendingCount(s) > wasPending && !(out.completedTaskIds || []).includes(task.id)))) task.waitingOnOwner = true;
   const file = task?.kind === 'skill-file' ? cleanSkillFile(out.skillFile) : null;
-  if (file) { saveSkillFile(s, task, file, at); logProgress(s, task, { at, runId: record.id, pct: 100, note: `ORIGIN wrote ${task.agentName}'s SKILL.md.` }); }
+  if (file) { saveSkillFile(s, task, file, at); logProgress(s, task, { at, runId: record.id, pct: 100, note: `JARVIS wrote ${task.agentName}'s SKILL.md.` }); }
   // only the task this worker had can be completed or stopped by it
   if (task && Array.isArray(out.completedTaskIds) && out.completedTaskIds.includes(task.id)) task.status = 'done';
   if (task && task.status === 'approved' && Array.isArray(out.stopTaskIds) && out.stopTaskIds.includes(task.id)) {
-    stopTask(task, `ORIGIN stopped it: ${String(out.stopReason || 'its spend pattern was too high for its value').slice(0, 300)}`, at);
+    stopTask(task, `JARVIS stopped it: ${String(out.stopReason || 'its spend pattern was too high for its value').slice(0, 300)}`, at);
   }
   if (task && task.kind !== 'skill-file') {
     // the plan: ordered steps, checked off as the task moves from start to finish
@@ -513,12 +513,12 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   const s = loadState(deps.file);
   rollMonth(s);
   if (!KEY && !deps.key) return { ok: false, reason: 'No API key. In the app folder run npm.cmd run set-key once, then restart the runner.' };
-  if (!s.instructions) return { ok: false, reason: 'Open the app once with the runner on so it can send ORIGIN\'s instructions.' };
+  if (!s.instructions) return { ok: false, reason: 'Open the app once with the runner on so it can send JARVIS\'s instructions.' };
   if (remaining(s) < CALL_WORST_USD) {
     return { ok: false, reason: `The $${CAP} monthly cap is reached ($${s.ledger.spentUsd.toFixed(2)} spent). Runs stop until next month or a new approved cap.` };
   }
   let picks = pickTasks(s, deps.parallel ?? PARALLEL);
-  // with no work of its own, a SKILL.md request is the task (as before); with none at all, ORIGIN plans
+  // with no work of its own, a SKILL.md request is the task (as before); with none at all, JARVIS plans
   const skillTask = picks.length ? null : nextTask(s);
   if (skillTask?.kind === 'skill-file') skillTask.sharedWith = s.tasks.filter((x) => x !== skillTask && x.kind === 'skill-file' && x.status === 'approved' && roleOf(x) === roleOf(skillTask)).map((x) => x.agentName);
   if (!picks.length) picks = [skillTask];
@@ -566,7 +566,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   record.status = ws.length === 1 ? ws[0].status : ws.some((w) => w.status === 'done') ? 'done' : ws[0].status;
   record.summary = ws.length === 1 ? (ws[0].summary || '') : ws.filter((w) => w.summary).map((w) => `${w.agentName}: ${w.summary}`).join(' · ').slice(0, 600);
   const publishAsks = ws.reduce((x, w) => x + (w.publishAsks || 0), 0);
-  const notes = [...ws.map((w) => w.notify).filter(Boolean), ...(publishAsks ? [`${publishAsks} product${publishAsks === 1 ? '' : 's'} ready for you to publish in ORIGIN runs.`] : [])];
+  const notes = [...ws.map((w) => w.notify).filter(Boolean), ...(publishAsks ? [`${publishAsks} product${publishAsks === 1 ? '' : 's'} ready for you to publish in JARVIS runs.`] : [])];
   record.notify = notes.length ? notes.join(' ').slice(0, 800) : null;
   record.agentId = ws[0].agentId;
   record.taskId = ws[0].taskId;
@@ -590,7 +590,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   for (const f of s.skillFiles) if (!now.skillFiles.some((x) => x.id === f.id)) now.skillFiles.push(f);
   for (const r of s.publishRequests || []) if (!(now.publishRequests || []).some((x) => x.id === r.id)) now.publishRequests = [...(now.publishRequests || []), r].slice(-100);
   for (const e of s.progressLog || []) if (!(now.progressLog || []).some((x) => x.id === e.id)) now.progressLog = [...(now.progressLog || []), e].slice(-PROGRESS_KEEP);
-  // spend goes to the agent each worker was; SKILL.md writing is ORIGIN's
+  // spend goes to the agent each worker was; SKILL.md writing is JARVIS's
   for (const w of ws) charge(now.ledger, w.agentId, w.costUsd);
   if (record.skillCostUsd) charge(now.ledger, AGENT_ID, record.skillCostUsd);
   if (!record.costKnown) now.ledger.unknownCostRuns++;
@@ -600,10 +600,10 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   return { ok: true, run: record };
 }
 
-/** Most one console answer may cost: a short reply with ORIGIN's prompt, no tools. */
+/** Most one console answer may cost: a short reply with JARVIS's prompt, no tools. */
 const ASK_WORST_USD = 0.05;
 
-/** The APPROVE line ORIGIN adds when the owner's words in the console approve work. */
+/** The APPROVE line JARVIS adds when the owner's words in the console approve work. */
 export function parseConsent(text) {
   const m = String(text || '').match(/^\s*APPROVE\s*(\{.*\})\s*$/ms);
   if (!m) return null;
@@ -625,7 +625,7 @@ export function applyConsent(s, c) {
 }
 
 /**
- * The owner's question from the console, answered by ORIGIN right away, any time,
+ * The owner's question from the console, answered by JARVIS right away, any time,
  * without approval. It costs one model call against the same monthly cap, uses no
  * tools and changes nothing but the ledger and the question log.
  */
@@ -635,7 +635,7 @@ export function namedAgent(s, q) {
   return (s.agents || []).filter((a) => a.name && a.name.length > 2 && text.includes(a.name.toLowerCase())).sort((a, b) => b.name.length - a.name.length)[0] || null;
 }
 
-/** Which agent should answer: one the owner named, else a tiny model call picks the best suited (ORIGIN when none fits). */
+/** Which agent should answer: one the owner named, else a tiny model call picks the best suited (JARVIS when none fits). */
 async function routeQuestion(s, q, deps) {
   const all = s.agents || [];
   if (!all.length) return { agent: null, cost: 0 };
@@ -661,15 +661,15 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
   if (!KEY && !deps.key) return { ok: false, reason: 'No API key. In the app folder run npm.cmd run set-key once, then restart the runner.' };
   const s = loadState(deps.file);
   rollMonth(s);
-  if (!s.instructions) return { ok: false, reason: 'Open the app once with the runner on so it can send ORIGIN\'s instructions.' };
-  if (remaining(s) < ASK_WORST_USD) return { ok: false, reason: `The $${CAP} monthly cap is reached, so ORIGIN can't answer until next month.` };
+  if (!s.instructions) return { ok: false, reason: 'Open the app once with the runner on so it can send JARVIS\'s instructions.' };
+  if (remaining(s) < ASK_WORST_USD) return { ok: false, reason: `The $${CAP} monthly cap is reached, so JARVIS can't answer until next month.` };
   const { agent, cost: routeCost } = await routeQuestion(s, q, deps);
   const task = agent ? s.tasks.find((t) => t.status === 'approved' && t.agentId === agent.id && t.kind !== 'skill-file') || null : nextTask(s);
   const progress = (s.progressLog || []).filter((e) => !agent || e.agentId === agent.id).slice(-8);
   const recent = (s.asks || []).filter((a) => (a.agentId || null) === (agent?.id || null)).slice(0, 4).reverse().flatMap((a) => [{ role: 'user', content: a.q }, { role: 'assistant', content: a.a }]);
   const context = [
     agent
-      ? `You are ${agent.name}${agent.title ? `, ${agent.title}` : ''}, an agent in the owner's brain working under ORIGIN. The owner asked you this in the console because you are the agent best suited to it. Answer as ${agent.name}, from your own job and work, directly and briefly; you have no tools here and this is not a work run.`
+      ? `You are ${agent.name}${agent.title ? `, ${agent.title}` : ''}, an agent in the owner's brain working under JARVIS. The owner asked you this in the console because you are the agent best suited to it. Answer as ${agent.name}, from your own job and work, directly and briefly; you have no tools here and this is not a work run.`
       : 'The owner is asking you a question in the console, outside your work window. Answer directly and briefly from what you know; you have no tools here and this does not count as a run. Do not propose tasks or agents here.',
     `Recent progress${agent ? ` on your work` : ''}:\n${progress.map((e) => `- ${e.at.slice(0, 16)} ${e.agentName}${e.taskTitle ? ` on "${e.taskTitle}"` : ''}${e.pct != null ? ` (${e.pct}%)` : ''}: ${e.note}`).join('\n') || '(none yet)'}`,
     `OWNER CONSENT: the owner's plain words are approval, inside the $${CAP} monthly cap and the per-task budget. "allow etsy store to run", "go ahead", "yes do it", "1 dollar approval" all count; never ask them to repeat it in exact wording or to restate a scope. A request to do something ("make 5 items for my etsy store", "find me 3 trending niches") is approval of that work too. When their message approves or asks for work, say in one sentence what you will do, then end your answer with one line exactly like this: APPROVE {"title": "short task title", "detail": "what to do and what a good result looks like, in the owner's words", "agentId": "id from AGENTS IN THE BRAIN NOW of the agent who should do it, or null for you", "count": how many items they asked for or null, "budgetUsd": the dollar amount they named or null, "approveIds": ["ids of waiting proposals they approved"]}. It becomes your focus: worked first, right away, before anything else. Write that line only when they approved or asked for work. Ventures create the skill agents they need without asking; that never needs approval.`,
@@ -694,7 +694,7 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
     if (!r.ok) return { ok: false, reason: `The model service answered ${r.status}.` };
     data = await r.json();
   } catch (e) {
-    return { ok: false, reason: e.name === 'TimeoutError' ? 'ORIGIN took too long to answer.' : 'Could not reach the model service.' };
+    return { ok: false, reason: e.name === 'TimeoutError' ? 'JARVIS took too long to answer.' : 'Could not reach the model service.' };
   }
   const raw = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
   const consent = parseConsent(raw);
@@ -707,9 +707,9 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
   if (cost == null) now.ledger.unknownCostRuns++;
   else charge(now.ledger, agent?.id ?? AGENT_ID, cost);
   const approved = consent ? applyConsent(now, consent) : null;
-  now.asks = [{ at: new Date().toISOString(), q, a: answer.slice(0, 4000), costUsd: cost, approved, agentId: agent?.id ?? null, by: agent?.name ?? 'ORIGIN' }, ...(now.asks || [])].slice(0, 20);
+  now.asks = [{ at: new Date().toISOString(), q, a: answer.slice(0, 4000), costUsd: cost, approved, agentId: agent?.id ?? null, by: agent?.name ?? 'JARVIS' }, ...(now.asks || [])].slice(0, 20);
   saveState(now, deps.file);
-  return { ok: true, answer, costUsd: cost, taskTitle: task?.title ?? null, approved, by: agent?.name ?? 'ORIGIN' };
+  return { ok: true, answer, costUsd: cost, taskTitle: task?.title ?? null, approved, by: agent?.name ?? 'JARVIS' };
 }
 
 function publicState() {
@@ -758,7 +758,7 @@ async function handle(req, res) {
   if (req.method === 'GET' && url === '/api/origin/etsy/callback') {
     const q = new URL(req.url, 'http://127.0.0.1').searchParams;
     if (q.get('error')) return page(res, 400, 'Etsy sign-in was cancelled. Nothing changed.');
-    try { const name = await finishAuth(String(q.get('code') || ''), String(q.get('state') || '')); return page(res, 200, `Connected${name ? ` to ${name}` : ''}. ORIGIN's agents can now read your shop (read-only). You can close this tab.`); }
+    try { const name = await finishAuth(String(q.get('code') || ''), String(q.get('state') || '')); return page(res, 200, `Connected${name ? ` to ${name}` : ''}. JARVIS's agents can now read your shop (read-only). You can close this tab.`); }
     catch (e) { return page(res, 400, e.message); }
   }
   if (req.method === 'GET' && url === '/api/origin/printify/image') {
@@ -785,7 +785,7 @@ async function handle(req, res) {
   if (url === '/api/origin/sync') {
     if (typeof body.instructions !== 'string' || body.instructions.length < 100 || body.instructions.length > MAX_INSTRUCTIONS) return send(req, res, 400, { error: 'instructions required' });
     const s = loadState(); s.instructions = body.instructions;
-    // the other agents' instructions and SKILL.md, so ORIGIN can work a task as one of them
+    // the other agents' instructions and SKILL.md, so JARVIS can work a task as one of them
     if (Array.isArray(body.agents)) {
       s.agents = body.agents.filter((a) => a && typeof a.id === 'string' && typeof a.name === 'string').slice(0, 100)
         .map((a) => ({ id: a.id.slice(0, 80), name: a.name.slice(0, 80), title: String(a.title || '').slice(0, 120), kind: String(a.kind || 'core'), ventureId: a.ventureId ? String(a.ventureId).slice(0, 80) : null, hasSkillFile: !!a.hasSkillFile, prompt: String(a.prompt || '').slice(0, 40_000) }));
@@ -829,7 +829,7 @@ async function handle(req, res) {
     return send(req, res, r.ok ? 200 : 409, r);
   }
   if (url === '/api/origin/focus') {
-    // a task typed in the command center: approved by the owner's own words, and ORIGIN's focus from now on
+    // a task typed in the command center: approved by the owner's own words, and JARVIS's focus from now on
     const s = loadState();
     const task = addFocusTask(s, { title: body.title ?? body.text, detail: body.detail ?? body.text, agentId: body.agentId, count: body.count });
     if (!task) return send(req, res, 400, { ok: false, reason: 'Type the task.' });
@@ -854,7 +854,7 @@ async function handle(req, res) {
     } catch (e) { return send(req, res, 502, { ok: false, reason: e.message }); }
   }
   if (url === '/api/origin/settings') {
-    // whether ORIGIN and its ventures create agents without asking (the owner's choice)
+    // whether JARVIS and its ventures create agents without asking (the owner's choice)
     const s = loadState();
     if (typeof body.autoAgents === 'boolean') s.autoAgents = body.autoAgents;
     if (typeof body.autoTasks === 'boolean') s.autoTasks = body.autoTasks;

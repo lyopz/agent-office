@@ -1,4 +1,4 @@
-// Etsy for ORIGIN's agents: read-only research on public listings with the owner's
+// Etsy for JARVIS's agents: read-only research on public listings with the owner's
 // app key, and (once the owner signs in) read-only stats for their own shop.
 // The key, secret and sign-in tokens live only on this PC in the secrets folder;
 // they are never logged, sent to the app, or put in a prompt.

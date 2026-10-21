@@ -20,7 +20,7 @@ function Mockup({ id, title }: { id: string; title: string }) {
 }
 
 /**
- * ORIGIN's live runs: the budget, the tasks it may work on (the owner's
+ * JARVIS's live runs: the budget, the tasks it may work on (the owner's
  * approval is the spending limit), its notes and recent runs. Reads from
  * server/origin-runner.mjs; without it, explains how to start it.
  */
@@ -57,14 +57,14 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   );
   const spent = (t: RunnerTask) => `${money(t.spentUsd ?? 0)} of ${money(t.budgetUsd ?? st?.taskBudgetUsd ?? 1.5)}${t.runCosts?.length ? ` over ${t.runCosts.length} run${t.runCosts.length === 1 ? '' : 's'}` : ''}`;
 
-  if (st === undefined) return <div className="creator-body"><p className="creator-privacy">Checking for ORIGIN's runner…</p></div>;
+  if (st === undefined) return <div className="creator-body"><p className="creator-privacy">Checking for JARVIS's runner…</p></div>;
   if (st === null) return (
     <div className="creator-body">
-      <div className="creator-context"><ShieldCheck size={16} /><span><b>ORIGIN is offline.</b> The live runner isn't running, so nothing runs and nothing is spent.</span></div>
+      <div className="creator-context"><ShieldCheck size={16} /><span><b>JARVIS is offline.</b> The live runner isn't running, so nothing runs and nothing is spent.</span></div>
       <ol className="creator-steps">
         <li><b>Start the runner on your PC.</b><span>In the app folder, run <code>npm.cmd run set-key</code> once to save your Anthropic API key, then <code>npm.cmd run origin</code>. It uses Claude Haiku 5.5 and stops at your $15 monthly cap.</span></li>
-        <li><b>Keep the app open once.</b><span>It sends ORIGIN's current rules to the runner. After that, runs happen every 2 hours even with the app closed, while the runner is on.</span></li>
-        <li><b>Approve tasks here.</b><span>ORIGIN works only on tasks you approve. With none approved it just proposes tasks, which costs almost nothing.</span></li>
+        <li><b>Keep the app open once.</b><span>It sends JARVIS's current rules to the runner. After that, runs happen every 2 hours even with the app closed, while the runner is on.</span></li>
+        <li><b>Approve tasks here.</b><span>JARVIS works only on tasks you approve. With none approved it just proposes tasks, which costs almost nothing.</span></li>
       </ol>
       <div className="creator-dialog-foot"><button className="creator-secondary" onClick={() => void refresh()}><RefreshCw size={14} /> Check again</button></div>
     </div>
@@ -81,10 +81,10 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   // the runner works one task per agent at a time, up to `parallel` agents side by side; a focus task runs alone
   const workingIds = new Set<string>();
   { const seen = new Set<string>(); const open = approved.some((t) => t.focus) ? approved.filter((t) => t.focus) : approved; for (const t of open) { if (t.kind === 'skill-file' || (t.waitingOnOwner && proposed.length)) continue; const who = t.agentId ?? 'origin'; if (seen.has(who) || seen.size >= (st.parallel ?? 1)) continue; seen.add(who); workingIds.add(t.id); } }
-  const agentName = (id: string) => doc.agents[id]?.identity.name ?? (id === 'agent_origin' ? 'ORIGIN' : id);
+  const agentName = (id: string) => doc.agents[id]?.identity.name ?? (id === 'agent_origin' ? 'JARVIS' : id);
   const taskSpend = st.tasks.filter((t) => (t.spentUsd ?? 0) > 0 && t.kind !== 'skill-file').sort((a, b) => (b.spentUsd ?? 0) - (a.spentUsd ?? 0)).slice(0, 8);
   const stopped = st.tasks.filter((t) => t.status === 'stopped' && t.stopReason !== 'agent no longer in the brain').slice(-5);
-  // with auto-create on, ORIGIN's agents are added for you; only ones made while you were asked first still wait
+  // with auto-create on, JARVIS's agents are added for you; only ones made while you were asked first still wait
   const agentAsks = (st.agentProposals ?? []).filter((p) => p.status === 'proposed' && !st.autoAgents);
   const created = (st.agentProposals ?? []).filter((p) => p.status === 'approved' && (p.auto || st.autoAgents)).slice(-6).reverse();
   const pct = Math.min(100, (st.spentUsd / st.capUsd) * 100);
@@ -93,7 +93,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   const working = (id: string) => st.tasks.some((t) => t.status === 'approved' && t.kind !== 'skill-file' && t.agentId === id);
   const letWork = (id: string) => {
     const a = doc.agents[id];
-    void act({ action: 'add', agentId: id, title: `Get ${a.identity.name} started`, detail: `Work as ${a.identity.name}. Take the next concrete step toward making this venture earn money (${a.identity.bio || a.identity.title}). Make sure it has the skill agents it needs, then do the first piece of real work and report what you found, with sources.` }, `Approved. ${a.identity.name} works on it in ORIGIN's next run.`);
+    void act({ action: 'add', agentId: id, title: `Get ${a.identity.name} started`, detail: `Work as ${a.identity.name}. Take the next concrete step toward making this venture earn money (${a.identity.bio || a.identity.title}). Make sure it has the skill agents it needs, then do the first piece of real work and report what you found, with sources.` }, `Approved. ${a.identity.name} works on it in JARVIS's next run.`);
   };
   return (
     <div className="creator-body">
@@ -128,26 +128,26 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
       {taskSpend.length > 0 && <table className="spend-table"><thead><tr><th>Task</th><th>Spent</th><th>Status</th></tr></thead><tbody>{taskSpend.map((t) => <tr key={t.id}><td>{t.title}</td><td>{money(t.spentUsd ?? 0)}</td><td>{t.status}{t.progress != null ? ` · ${t.progress}%` : ''}</td></tr>)}</tbody></table>}
 
       <label className="creator-privacy" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input type="checkbox" checked={st.autoAgents !== false} onChange={(e) => void act(() => setAutoAgents(e.target.checked), e.target.checked ? 'ORIGIN and its ventures now create the agents they need, up to 3 a run, each with its SKILL.md.' : 'ORIGIN will ask you before creating agents.')} />
-        Let ORIGIN and its ventures create the agents they need without asking (up to 3 a run; agents cost nothing until they work)
+        <input type="checkbox" checked={st.autoAgents !== false} onChange={(e) => void act(() => setAutoAgents(e.target.checked), e.target.checked ? 'JARVIS and its ventures now create the agents they need, up to 3 a run, each with its SKILL.md.' : 'JARVIS will ask you before creating agents.')} />
+        Let JARVIS and its ventures create the agents they need without asking (up to 3 a run; agents cost nothing until they work)
       </label>
       <label className="creator-privacy" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input type="checkbox" checked={st.autoTasks !== false} onChange={(e) => void act(() => setAutoTasks(e.target.checked), e.target.checked ? 'Empire mode on: ORIGIN picks ventures and sets its own research tasks, inside the cap.' : 'ORIGIN will ask you before working on tasks it thinks of.')} />
-        Empire mode: ORIGIN picks the ventures and sets its own research tasks (3 open at most, each within its budget and the {money(st.capUsd)} cap). It still asks before using your accounts, publishing, or spending money.
+        <input type="checkbox" checked={st.autoTasks !== false} onChange={(e) => void act(() => setAutoTasks(e.target.checked), e.target.checked ? 'Empire mode on: JARVIS picks ventures and sets its own research tasks, inside the cap.' : 'JARVIS will ask you before working on tasks it thinks of.')} />
+        Empire mode: JARVIS picks the ventures and sets its own research tasks (3 open at most, each within its budget and the {money(st.capUsd)} cap). It still asks before using your accounts, publishing, or spending money.
       </label>
       <p className="creator-privacy"><b>Printify:</b> {st.printify?.configured ? <>agents make products in <b>{st.printify.shopTitle ?? 'your shop'}</b>{st.printify.channel ? ` (${st.printify.channel})` : ''}. They stay unpublished until you press Publish below.</> : <>not set up. Connect your Etsy shop in Printify, then run <code>npm.cmd run set-printify</code> once with a Printify personal access token.</>}</p>
       {st.etsy?.configured && <p className="creator-privacy"><b>Etsy research:</b> on (read-only).</p>}
-      {created.length > 0 && <p className="creator-privacy">Recently created by ORIGIN: {created.map((p) => `${p.name} (for ${doc.agents[p.parentId]?.identity.name ?? p.parentId})`).join(', ')}.</p>}
+      {created.length > 0 && <p className="creator-privacy">Recently created by JARVIS: {created.map((p) => `${p.name} (for ${doc.agents[p.parentId]?.identity.name ?? p.parentId})`).join(', ')}.</p>}
 
       {ventures.length > 0 && <><span className="creator-kicker">VENTURES</span>
         <ul className="creator-request-log">{ventures.map((v) => <li key={v.id}><b>{v.identity.name}</b> · {working(v.id) ? 'approved and working' : 'idle'}{!working(v.id) && <> <button className="link-btn" onClick={() => letWork(v.id)}><Play size={12} /> Approve work</button></>}</li>)}</ul>
-        <p className="creator-privacy">You can also just tell ORIGIN in the console, e.g. "allow etsy store to run" or "$1 is fine": your words count as approval, inside the {money(st.capUsd)} cap.</p></>}
+        <p className="creator-privacy">You can also just tell JARVIS in the console, e.g. "allow etsy store to run" or "$1 is fine": your words count as approval, inside the {money(st.capUsd)} cap.</p></>}
 
       {otherWaiting.length > 0 && <><span className="creator-kicker">READY TO PUBLISH</span>
         {otherWaiting.map((r) => productCard(r))}</>}
 
       <span className="creator-kicker">WAITING FOR YOUR APPROVAL</span>
-      {proposed.length === 0 && agentAsks.length === 0 && <p className="creator-privacy">Nothing proposed right now. ORIGIN proposes one thing at a time.</p>}
+      {proposed.length === 0 && agentAsks.length === 0 && <p className="creator-privacy">Nothing proposed right now. JARVIS proposes one thing at a time.</p>}
       {agentAsks.map((p) => (
         <div key={p.id} className="creator-blueprint creator-request">
           <p><b>New agent: {p.name}</b> · {p.skill} for {doc.agents[p.parentId]?.identity.name ?? p.parentId} · works {describeWindow({ everyMinutes: p.everyMinutes, maxMinutes: p.maxMinutes, setBy: 'origin', reason: p.reason })}</p>
@@ -160,17 +160,17 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
       {proposed.map((t) => (
         <div key={t.id} className="creator-blueprint creator-request">
           <p><b>{t.title}</b></p>{t.detail && <p>{t.detail}</p>}
-          <div className="creator-request-row"><button className="creator-secondary" onClick={() => void act({ action: 'reject', id: t.id }, 'Rejected.')}><X size={14} /> Reject</button><button className="creator-primary" onClick={() => void act({ action: 'approve', id: t.id }, 'Approved. ORIGIN can spend its run time on it.')}><Check size={14} /> Approve</button></div>
+          <div className="creator-request-row"><button className="creator-secondary" onClick={() => void act({ action: 'reject', id: t.id }, 'Rejected.')}><X size={14} /> Reject</button><button className="creator-primary" onClick={() => void act({ action: 'approve', id: t.id }, 'Approved. JARVIS can spend its run time on it.')}><Check size={14} /> Approve</button></div>
         </div>
       ))}
 
-      <span className="creator-kicker">APPROVED · COMMAND-CENTER TASKS FIRST, THEN YOURS, THEN ORIGIN'S</span>
-      {approved.length === 0 ? <p className="creator-privacy">No approved tasks. ORIGIN will only propose tasks until you approve one.</p>
-        : <ul className="creator-request-log">{approved.map((t) => <li key={t.id}><b>{workingIds.has(t.id) ? 'Working on: ' : t.kind === 'skill-file' ? 'SKILL.md: ' : t.focus ? 'Focus: ' : 'Queued: '}{t.title}</b>{t.agentId && doc.agents[t.agentId] ? <span className="muted"> ({doc.agents[t.agentId].identity.name}{t.by === 'origin' ? ', set by ORIGIN' : ''})</span> : t.by === 'origin' ? <span className="muted"> (set by ORIGIN)</span> : null}{t.kind !== 'skill-file' && <ProgressBar pct={t.progress} label={`${t.title} progress`} />}{t.detail && t.kind !== 'skill-file' ? `: ${t.detail.slice(0, 300)}` : ''} · {spent(t)}{t.steps?.length ? <ol className="task-steps">{t.steps.map((x, j) => <li key={j} className={x.done ? 'done' : ''}>{x.done ? '✓ ' : ''}{x.text}</li>)}</ol> : null} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button> <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></li>)}</ul>}
+      <span className="creator-kicker">APPROVED · COMMAND-CENTER TASKS FIRST, THEN YOURS, THEN JARVIS'S</span>
+      {approved.length === 0 ? <p className="creator-privacy">No approved tasks. JARVIS will only propose tasks until you approve one.</p>
+        : <ul className="creator-request-log">{approved.map((t) => <li key={t.id}><b>{workingIds.has(t.id) ? 'Working on: ' : t.kind === 'skill-file' ? 'SKILL.md: ' : t.focus ? 'Focus: ' : 'Queued: '}{t.title}</b>{t.agentId && doc.agents[t.agentId] ? <span className="muted"> ({doc.agents[t.agentId].identity.name}{t.by === 'origin' ? ', set by JARVIS' : ''})</span> : t.by === 'origin' ? <span className="muted"> (set by JARVIS)</span> : null}{t.kind !== 'skill-file' && <ProgressBar pct={t.progress} label={`${t.title} progress`} />}{t.detail && t.kind !== 'skill-file' ? `: ${t.detail.slice(0, 300)}` : ''} · {spent(t)}{t.steps?.length ? <ol className="task-steps">{t.steps.map((x, j) => <li key={j} className={x.done ? 'done' : ''}>{x.done ? '✓ ' : ''}{x.text}</li>)}</ol> : null} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button> <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></li>)}</ul>}
       {stopped.length > 0 && <><span className="creator-kicker">STOPPED BY BUDGET WATCH</span>
         <ul className="creator-request-log">{stopped.map((t) => <li key={t.id}><b>{t.title}</b> · {spent(t)}{t.stopReason ? `. ${t.stopReason}` : ''} <button className="link-btn" onClick={() => void act({ action: 'approve', id: t.id }, 'Restarted with a fresh budget.')}>restart</button></li>)}</ul></>}
       <div className="creator-agent-grid">
-        <label className="creator-field"><span>Give ORIGIN a task (approved)</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Check demand for Roblox tycoon gamepasses" /></label>
+        <label className="creator-field"><span>Give JARVIS a task (approved)</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Check demand for Roblox tycoon gamepasses" /></label>
         <label className="creator-field"><span>Details</span><input value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="What a good answer looks like" /></label>
       </div>
       <div className="creator-dialog-foot"><button className="creator-primary" disabled={!title.trim()} onClick={() => { void act({ action: 'add', title, detail }, 'Added and approved.'); setTitle(''); setDetail(''); }}><Plus size={14} /> Add approved task</button></div>
@@ -186,7 +186,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
       })()}
 
       {st.nextAction && <><span className="creator-kicker">NEXT ACTION</span><p className="creator-privacy">{st.nextAction}</p></>}
-      {st.memory && <><span className="creator-kicker">ORIGIN'S NOTES</span><pre className="origin-notes">{st.memory}</pre></>}
+      {st.memory && <><span className="creator-kicker">JARVIS'S NOTES</span><pre className="origin-notes">{st.memory}</pre></>}
       {st.runs.length > 0 && <><span className="creator-kicker">RECENT RUNS</span>
         <ul className="creator-request-log">{st.runs.map((r) => <li key={r.id}>{new Date(r.startedAt).toLocaleString()} · {r.trigger} · {r.status} · {r.costKnown ? money(r.costUsd) : 'cost unknown'}{r.workers && r.workers.length > 1 ? ` · ${r.workers.map((w) => `${w.agentName} ${money(w.costUsd)}${w.rounds > 1 ? ` (${w.rounds} steps)` : ''}`).join(', ')}` : r.workers?.[0]?.rounds && r.workers[0].rounds > 1 ? ` · ${r.workers[0].rounds} steps` : ''}{r.searches ? ` · ${r.searches} searches` : ''}{r.fetches ? ` · ${r.fetches} pages read` : ''}{r.etsyCalls ? ` · ${r.etsyCalls} Etsy lookups` : ''}{r.printifyCalls ? ` · ${r.printifyCalls} Printify steps` : ''}{r.skillFileFor ? ` · wrote ${r.skillFileFor}'s SKILL.md` : ''}{r.summary ? `: ${r.summary}` : ''}{r.notify ? <b> · {r.notify}</b> : null}</li>)}</ul></>}
     </div>

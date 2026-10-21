@@ -1,4 +1,4 @@
-// Printify for ORIGIN's agents. The owner connects their Etsy shop inside Printify
+// Printify for JARVIS's agents. The owner connects their Etsy shop inside Printify
 // and saves a Printify personal access token once (npm run set-printify). Agents can
 // browse the catalog, upload designs and create products, which stay unpublished in
 // Printify. Only the owner publishes: each product an agent marks ready waits for the

@@ -127,7 +127,7 @@ describe('origin runner: one task at a time, agent proposals and budget watch', 
     write({ ...base, tasks: [approvedTask('t2')] });
     await runner.runOnce('manual', { fetch: async () => reply(result({ memory: 'm', stopTaskIds: ['t2'], stopReason: 'costs rising, little value', summary: 's' }), { input_tokens: 100, output_tokens: 10 }), file, key: 'test' } as any);
     s = read();
-    expect(s.tasks[0]).toMatchObject({ status: 'stopped', stopReason: 'ORIGIN stopped it: costs rising, little value' });
+    expect(s.tasks[0]).toMatchObject({ status: 'stopped', stopReason: 'JARVIS stopped it: costs rising, little value' });
   });
 });
 

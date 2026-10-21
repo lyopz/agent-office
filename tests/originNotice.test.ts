@@ -13,7 +13,7 @@ describe('ORIGIN notifications', () => {
     expect(originNotice(base, { ...base, spentUsd: 2 })).toBeNull();
   });
   test('a flagged run, a proposed task and the cap each notify once', () => {
-    expect(originNotice(base, { ...base, runs: [run('r3', 'Found a lead')] })?.text).toBe('ORIGIN: Found a lead');
+    expect(originNotice(base, { ...base, runs: [run('r3', 'Found a lead')] })?.text).toBe('JARVIS: Found a lead');
     const withTask = { ...base, tasks: [{ id: 't1', title: 'Buy a domain', detail: '', status: 'proposed' as const, by: 'origin' as const, createdAt: 'x' }] };
     expect(originNotice(base, withTask)?.text).toMatch(/approval: Buy a domain/);
     expect(originNotice(withTask, withTask)).toBeNull();

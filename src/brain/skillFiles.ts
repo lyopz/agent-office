@@ -1,5 +1,5 @@
 // Every agent gets its own SKILL.md: a full, detailed, specific playbook for
-// its job. Files from before the detailed format (version 1) are rewritten. ORIGIN writes it as a task in its live runs
+// its job. Files from before the detailed format (version 1) are rewritten. JARVIS writes it as a task in its live runs
 // (one at a time, like any task); the app saves each finished file to the skill
 // bank and gives it to the agent.
 import { useEffect, useRef } from 'react';
@@ -16,7 +16,7 @@ export const skillFileId = (agentId: string) => `skill_file_${agentId}`;
 export const SKILL_FILE_VERSION = 2;
 const versionTag = `skill-file-v${SKILL_FILE_VERSION}`;
 
-/** The agents that still need a current SKILL.md: every agent but ORIGIN, whose rules are its prompt. */
+/** The agents that still need a current SKILL.md: every agent but JARVIS, whose rules are its prompt. */
 export function agentsNeedingSkillFile(doc: OfficeDoc, status: Pick<RunnerStatus, 'tasks'> & { skillFiles?: { agentId: string; agentIds?: string[]; version?: number }[] }): string[] {
   // requests and files from the runner are written in the current format (older runners didn't record it)
   const current = (v?: number) => (v ?? SKILL_FILE_VERSION) >= SKILL_FILE_VERSION;
@@ -29,7 +29,7 @@ export function agentsNeedingSkillFile(doc: OfficeDoc, status: Pick<RunnerStatus
     .map((a) => a.id);
 }
 
-/** The brief ORIGIN gets for an agent's SKILL.md: what its creator and the owner said about it. */
+/** The brief JARVIS gets for an agent's SKILL.md: what its creator and the owner said about it. */
 export function skillFileBrief(doc: OfficeDoc, agentId: string): string {
   const a = doc.agents[agentId];
   const parent = a.skills.supervisorId ? doc.agents[a.skills.supervisorId]?.identity.name : null;
@@ -61,21 +61,21 @@ export function skillFileOps(doc: OfficeDoc, agentId: string, file: { name: stri
   ];
 }
 
-/** Create an agent ORIGIN proposed (or created on its own), with its SKILL.md, and tell the runner. */
+/** Create an agent JARVIS proposed (or created on its own), with its SKILL.md, and tell the runner. */
 export async function createProposedAgent(p: AgentProposal): Promise<{ ok: boolean; message: string }> {
   const d = useStore.getState().doc;
   const id = `agent_${p.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'new'}_${Date.now().toString(36)}`;
   const bank = p.bankSkillIds.filter((k) => d.skillBank.some((x) => x.id === k));
-  const { ops, error } = branchAgentOps(d, p.parentId, { id, name: p.name, specialty: p.specialty || p.skill, purpose: p.purpose, skill: p.skill, window: { everyMinutes: p.everyMinutes, maxMinutes: p.maxMinutes, setBy: 'origin', reason: p.reason || 'Proposed by ORIGIN.' }, bankSkillIds: bank });
-  // its own SKILL.md, written by ORIGIN with the proposal, goes to the bank with it
+  const { ops, error } = branchAgentOps(d, p.parentId, { id, name: p.name, specialty: p.specialty || p.skill, purpose: p.purpose, skill: p.skill, window: { everyMinutes: p.everyMinutes, maxMinutes: p.maxMinutes, setBy: 'origin', reason: p.reason || 'Proposed by JARVIS.' }, bankSkillIds: bank });
+  // its own SKILL.md, written by JARVIS with the proposal, goes to the bank with it
   const own: DocOp[] = p.skillFile ? [skillFileUpsert(d, id, p.name, { ...p.skillFile, version: SKILL_FILE_VERSION }), { op: 'agent.setBankSkills', id, skillIds: [...bank, skillFileId(id)] }] : [];
-  const r = error ? null : useStore.getState().commit([...ops, ...own], `${p.auto ? 'ORIGIN created' : 'Approve'} agent: ${p.name}`, { silent: true });
+  const r = error ? null : useStore.getState().commit([...ops, ...own], `${p.auto ? 'JARVIS created' : 'Approve'} agent: ${p.name}`, { silent: true });
   if (!r?.ok) return { ok: false, message: `Couldn't add ${p.name}: ${error ?? r?.errors.join(' · ')}` };
   await agentProposalAction({ action: 'approve', id: p.id, agentId: id });
   return { ok: true, message: `${p.name} is now a branch of ${d.agents[p.parentId]?.identity.name}.` };
 }
 
-/** Keep every agent's SKILL.md flowing: ask ORIGIN for missing ones, and save finished ones. */
+/** Keep every agent's SKILL.md flowing: ask JARVIS for missing ones, and save finished ones. */
 export function useSkillFiles() {
   const status = useOrigin((s) => s.status);
   const asked = useRef(new Set<string>());
@@ -84,7 +84,7 @@ export function useSkillFiles() {
   useEffect(() => {
     if (!status?.configured) return;
     const st = useStore.getState();
-    // agents ORIGIN created on its own (the owner allowed it): add them to the brain
+    // agents JARVIS created on its own (the owner allowed it): add them to the brain
     for (const p of status.agentProposals ?? []) {
       if (p.status !== 'proposed' || !status.autoAgents || made.current.has(p.id)) continue;
       made.current.add(p.id);
