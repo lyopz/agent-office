@@ -29,9 +29,11 @@ A fresh brain holds ORIGIN alone. The app needs no account; ORIGIN only runs liv
 - **Brain.** The 3D brain, the Branches menu on the left and the Creator desk. See [The agent brain](#the-agent-brain).
 - **Brain picker.** The menu at the top left switches between the **Main Brain** (ORIGIN and every branch it grew), **specialist brains** and single-agent brains. Specialist brains, such as Engineering, stay empty until ORIGIN creates an agent with that skill; each new skill adds its own tab.
 - **Dashboard.** Agent activity, task queues, approvals, budgets, alerts and the knowledge library.
-- **Settings.** General (autosave, the task loop), theme and alerts.
+- **Settings.** General (autosave) and theme.
+- **Notifications are off.** No pop-ups, sounds, desktop notices or alert bell. Results show where the work is: ORIGIN runs, the agent's profile and the Dashboard.
+- **Nothing is simulated.** Tasks exist only when you give one. **Give a task** (in the Branches menu or an agent's profile) sends it to ORIGIN's runner; a task for another agent is done by ORIGIN as that agent, with its SKILL.md. Tasks made up by the old in-browser loop are cleared when a save loads.
 - **Console.** Press **/** to ask ORIGIN a question.
-- **Profiles.** Click an agent to open its profile: Identity, Personality, Skills, AI model, Memory, Schedule and tasks, Activity, and Permissions.
+- **Profiles.** Click an agent to open its profile: Identity, **SKILL.md** (the playbook ORIGIN wrote for it, with a download button), Personality, Skills, AI model, Memory, Schedule and tasks, Activity, and Permissions.
 - **History.** Undo and redo with Ctrl+Z and Ctrl+Shift+Z. The **Versions** menu saves named versions, restores one, or starts a fresh brain. Export and import use validated `.json` files.
 
 ## The agent brain
@@ -41,7 +43,7 @@ The main screen is a 3D brain built in three.js (`src/brain/BrainScene.tsx`). Th
 - **Growth.** On load the nerves grow outward from the core, one level at a time. A newly created agent grows its own branch while the rest stays in place.
 - **Ideas grow the brain.** Every open idea is a glowing bud on a short nerve off the main agent: gold for your ideas, cyan for ones the main agent suggests. Add one under **Ideas** in the **Branches** menu, or press **Ask** for a suggestion (simulated from starter patterns until a live model is connected, and labelled that way). Click a bud, or **Grow** in the menu, and after you confirm, the main agent creates an idea lead for it and the bud becomes a full branch (`src/brain/ideas.ts`).
 - **Look.** Thin, tight nerve bundles so new branches stay clean, a soft glow, faint neural dust, signal heads with trails, and a small flash when a signal reaches an agent.
-- **Live, not simulated.** Agents no longer get made-up demo work, so the brain only moves for real tasks and ORIGIN's live runs (demo tasks can still be switched on in Settings). The top bar shows ORIGIN's runner (live, working, no key or offline) with its spend. Brain notifications come only from the runner: a run that flags something for you, a task ORIGIN wants approved, and 80% or 100% of the monthly cap. **Ask** queues an idea request for ORIGIN's next run.
+- **Live, not simulated.** The brain only moves for ORIGIN's live runs. The top bar shows ORIGIN's runner (live, working, no key or offline) with its spend. **Ask** queues an idea request for ORIGIN's next run.
 - **Regions.** The brain is coloured like an anatomy atlas: frontal lobe blue, parietal yellow, temporal green, occipital orange, cerebellum purple and brainstem grey, with a legend. **Regions** turns the colours off.
 - **Branches menu.** On the left, the agent tree as a menu: the main agent at the top, each agent it made underneath, nested by who made whom, with team counts, work in progress and the ideas list. **Teams** switches back to the team grouping.
 - **Signals.** Pulses run from the core out to agents that are working, along the shortest path between two agents when one hands work to another, and back to the core when a task finishes.

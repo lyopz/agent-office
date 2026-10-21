@@ -43,7 +43,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   if (st === undefined) return <div className="creator-body"><p className="creator-privacy">Checking for ORIGIN's runner…</p></div>;
   if (st === null) return (
     <div className="creator-body">
-      <div className="creator-context"><ShieldCheck size={16} /><span><b>ORIGIN is simulated.</b> The live runner isn't running, so nothing runs for real and nothing is spent.</span></div>
+      <div className="creator-context"><ShieldCheck size={16} /><span><b>ORIGIN is offline.</b> The live runner isn't running, so nothing runs and nothing is spent.</span></div>
       <ol className="creator-steps">
         <li><b>Start the runner on your PC.</b><span>In the app folder, run <code>npm run origin</code> with your Anthropic API key set (see the README, "ORIGIN live runs"). It uses Claude Haiku 5.5 and stops at your $15 monthly cap.</span></li>
         <li><b>Keep the app open once.</b><span>It sends ORIGIN's current rules to the runner. After that, runs happen every 2 hours even with the app closed, while the runner is on.</span></li>

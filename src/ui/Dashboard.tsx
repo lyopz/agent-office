@@ -29,7 +29,7 @@ export function Dashboard() {
 
   return (
     <div className="dash" aria-label="System dashboard">
-      <div className="span-12 note">ORIGIN's live runs are listed under ORIGIN runs on the brain page. Tasks marked <b>sim</b> below did not call a model.</div>
+      <div className="span-12 note">Nothing here is simulated. ORIGIN's work, tasks and spend are under ORIGIN runs on the brain page; tasks you give an agent go to ORIGIN there.</div>
       {[
         ['Active agents', `${active}/${agents.length}`], ['Tasks completed', done.length], ['In progress', inProgress.length],
         ['Queued', queued.length], ['Agents in error', errorsAgents.length]
@@ -47,7 +47,6 @@ export function Dashboard() {
       <div className="card span-4">
         <h4>System health</h4>
         <div className="kv" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 4, fontSize: 'var(--fs-sm)' }}>
-          <span>Task loop</span><span style={{ color: prefs.simRunning ? 'var(--accent)' : 'var(--warn)' }}>{prefs.simRunning ? 'running' : 'paused'}</span>
           <span>Autosave</span><span>{prefs.autosave ? 'on' : 'off'}</span>
         </div>
       </div>

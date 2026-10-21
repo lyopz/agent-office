@@ -188,8 +188,6 @@ table.data tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transp
 .ev time { color: var(--muted); font-size: var(--fs-xs); }
 .ev.error .m { color: var(--danger); } .ev.warn .m { color: var(--warn); }
 
-.toast { position: fixed; bottom: 250px; left: 50%; transform: translateX(-50%); z-index: 50; background: var(--panel-2); border: 1px solid var(--border-strong); padding: 8px 14px; font-size: var(--fs-sm); box-shadow: 0 8px 30px rgba(0,0,0,.6); max-width: min(560px, 90vw); }
-.toast.error { border-color: var(--danger); color: var(--danger); } .toast.warn { border-color: var(--warn); color: var(--warn); }
 
 @media (max-width: 1180px) { .main { grid-template-columns: 250px 1fr 290px; } .kpi { grid-column: span 4; } .span-4 { grid-column: span 6; } }
 @media (max-width: 860px) {
@@ -305,3 +303,6 @@ fieldset.plain:disabled { opacity: 0.55; }
 @keyframes view-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .view-fade { animation: none; } }
 
+
+/* an agent's SKILL.md */
+.skill-file { max-height: 60vh; overflow: auto; margin: 8px 0 0; padding: 12px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font: 12px/1.55 var(--font-mono); white-space: pre-wrap; word-break: break-word; }

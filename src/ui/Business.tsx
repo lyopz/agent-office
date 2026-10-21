@@ -1,15 +1,15 @@
 // Business views: projects and budgets with their usage records, owner
-// approvals, the shared library, and structured handoffs between agents.
+// approvals and the shared library.
 import { useState } from 'react';
 import { useStore } from '../store/store';
-import type { Handoff, KnowledgeEntry, Project } from '../model/types';
+import type { KnowledgeEntry, Project } from '../model/types';
 import { projectSpend } from '../engine/governance';
 import { canRead, findDuplicate, searchLibrary } from '../engine/library';
 import { uid } from '../model/defaults';
 import { confirmAction } from './primitives';
 
 export function BusinessPanels() {
-  return (<><Projects /><Approvals /><Handoffs /><Library /></>);
+  return (<><Projects /><Approvals /><Library /></>);
 }
 
 function Projects() {
@@ -53,7 +53,7 @@ function Projects() {
         })}
         {!projects.length && <tr><td colSpan={6} className="muted">No projects yet.</td></tr>}
       </tbody></table>
-      <p className="note">Spending shown here is simulated unless a live integration records it. Budget alerts link straight to these usage records.</p>
+      <p className="note">ORIGIN's real spend is under ORIGIN runs on the brain page.</p>
     </div>
   );
 }
@@ -81,48 +81,6 @@ function Approvals() {
   );
 }
 
-function Handoffs() {
-  const doc = useStore((s) => s.doc);
-  const tasks = useStore((s) => s.runtime.tasks);
-  const { runRuntimeOps, notify } = useStore.getState();
-  const agents = Object.values(doc.agents);
-  const [from, setFrom] = useState(agents[0]?.id ?? '');
-  const [to, setTo] = useState(agents[1]?.id ?? '');
-  const [h, setH] = useState<Handoff>({ request: '', why: '', known: '', deliverable: '', acceptance: '', deadline: '', budget: undefined });
-  const [priority, setPriority] = useState<'normal' | 'high' | 'critical'>('high');
-  const prior = h.request ? searchLibrary(doc, `${h.request} ${h.deliverable}`, to, 3) : [];
-  const send = () => {
-    if (!h.request.trim() || !h.deliverable.trim() || !h.acceptance.trim()) { notify('A handoff needs the request, the deliverable and how it will be accepted', 'warn'); return; }
-    const out = runRuntimeOps([{ op: 'task.create', name: h.request.trim().slice(0, 80), description: `${h.why}\nKnown: ${h.known}\nDeliverable: ${h.deliverable}\nAccepted when: ${h.acceptance}`, agentId: to, priority, simulated: true, handoff: { ...h, fromAgentId: from }, deadline: h.deadline || undefined }]);
-    notify(out.slice(-1)[0] ?? 'Sent');
-    setH({ request: '', why: '', known: '', deliverable: '', acceptance: '', deadline: '', budget: undefined });
-  };
-  const recent = Object.values(tasks).filter((t) => t.handoff).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 6);
-  const field = (k: keyof Handoff, label: string, ph: string) => <label className="field"><span>{label}</span><input type="text" value={(h[k] as string) ?? ''} placeholder={ph} onChange={(e) => setH({ ...h, [k]: e.target.value })} /></label>;
-  return (
-    <div className="card span-6">
-      <h4>Structured handoff</h4>
-      <div className="field-row" style={{ ['--cols' as string]: 3 }}>
-        <label className="field"><span>From</span><select value={from} onChange={(e) => setFrom(e.target.value)}>{agents.map((a) => <option key={a.id} value={a.id}>{a.identity.name}</option>)}</select></label>
-        <label className="field"><span>To</span><select value={to} onChange={(e) => setTo(e.target.value)}>{agents.map((a) => <option key={a.id} value={a.id}>{a.identity.name}</option>)}</select></label>
-        <label className="field"><span>Priority</span><select value={priority} onChange={(e) => setPriority(e.target.value as typeof priority)}><option>normal</option><option>high</option><option>critical</option></select></label>
-      </div>
-      {field('request', 'What is requested', 'Compare packaging suppliers')}
-      {field('why', 'Why it matters', 'Launch packaging decision due Friday')}
-      {field('known', 'Already known', 'Recycled board quote from Q3')}
-      {field('deliverable', 'Deliverable', 'One-page comparison table')}
-      {field('acceptance', 'Accepted when', 'Three suppliers, unit price and lead time')}
-      <div className="field-row">{field('deadline', 'Deadline', '2026-10-24')}<label className="field"><span>Budget (credits)</span><input type="number" min={0} value={h.budget ?? ''} onChange={(e) => setH({ ...h, budget: e.target.value ? Number(e.target.value) : undefined })} /></label></div>
-      {prior.length > 0 && <p className="note">Already in the library: {prior.map((p) => `“${p.entry.title}”`).join(', ')}. The receiving agent will start from these.</p>}
-      <button className="btn sm primary" onClick={send}>Send handoff</button>
-      <div style={{ marginTop: 8 }}>
-        {recent.map((t) => { return (
-          <div key={t.id} className="row small"><span className="grow">{t.name} → {doc.agents[t.agentId ?? '']?.identity.name}</span><span style={{ color: t.acknowledgedBy ? 'var(--success)' : 'var(--warn)' }}>{t.acknowledgedBy ? `acknowledged ${new Date(t.acknowledgedAt!).toLocaleTimeString()}` : t.status}</span></div>
-        ); })}
-      </div>
-    </div>
-  );
-}
 
 function Library() {
   const doc = useStore((s) => s.doc);

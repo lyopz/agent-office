@@ -9,6 +9,7 @@ import { decideApproval, recordUsage, requestAction, type ActionRequest } from '
 import { applyOps, type DocOp } from '../engine/ops';
 import { createTask, emptyRuntime, log, step, syncRuntime } from '../engine/simulation';
 import { creatorBrain } from '../model/sample';
+import { ORIGIN_ID } from '../brain/opportunity';
 import { createRepository, type LoadResult, type OfficeRepository, type Preferences, type SaveResult } from '../persistence/repository';
 import { exportOffice, parseOffice } from '../model/schema';
 
@@ -42,7 +43,6 @@ interface State {
   profileAgentId: string | null;
   profileTab: string;
   page: 'office' | 'dashboard' | 'settings';
-  toast: { id: number; text: string; level: 'info' | 'warn' | 'error' } | null;
 
   commit(ops: DocOp[], label: string, opts?: { silent?: boolean }): CommitResult;
   dryRun(ops: DocOp[]): CommitResult;
@@ -79,10 +79,10 @@ function initial() {
   // a damaged save is reported (recovery dialog), never replaced: the sample below is only a placeholder
   const recovery = loaded.status === 'corrupt' ? loaded : null;
   const saved = loaded.status === 'ok' ? loaded : null;
-  const doc = saved?.doc ?? creatorBrain(); // first run opens the user-led agent brain
+  const doc = withOrigin(saved?.doc ?? creatorBrain()); // first run opens the user-led agent brain
   const runtime: RuntimeState = { ...emptyRuntime(), ...(saved?.runtime ?? {}) } as RuntimeState;
   runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {}; runtime.usage ??= []; runtime.approvals ??= {}; runtime.alerts ??= {};
-  cleanRuntime(runtime);
+  cleanRuntime(runtime, doc);
   syncRuntime(doc, runtime);
   if (!saved) log(runtime, { kind: 'system', agentId: null, simulated: false, message: 'Started a new brain with ORIGIN.' });
   let lastSaved = saved ? { doc, at: saved.savedAt } : null;
@@ -90,8 +90,14 @@ function initial() {
   return { doc, runtime, lastSaved, recovery };
 }
 
-/** Older saves carried office state (positions, tubes, the arcade, production); keep only the work itself. */
-function cleanRuntime(rt: RuntimeState) {
+/** The brain always has ORIGIN at its core; a save without it gets a fresh ORIGIN. */
+function withOrigin(doc: OfficeDoc): OfficeDoc {
+  if (doc.agents[ORIGIN_ID]) return doc;
+  return { ...doc, agents: { ...doc.agents, [ORIGIN_ID]: creatorBrain().agents[ORIGIN_ID] } };
+}
+
+/** Older saves carried office state (positions, tubes, the arcade, production) and simulated work; drop both. */
+function cleanRuntime(rt: RuntimeState, doc: OfficeDoc) {
   const old = rt as unknown as Record<string, unknown>;
   for (const k of ['capsules', 'policyHeld', 'arcadeSessions', 'assets']) delete old[k];
   for (const [id, a] of Object.entries(rt.agents)) rt.agents[id] = { status: a.status === ('walking' as string) ? 'idle' : a.status, currentTaskId: a.currentTaskId, statusMessage: a.statusMessage, waitTicks: a.waitTicks ?? 0 };
@@ -101,6 +107,14 @@ function cleanRuntime(rt: RuntimeState) {
     if (t.status === ('in-transit' as string)) t.status = 'queued';
     if (t.heldBy && t.heldBy !== 'emergency') t.heldBy = null;
   }
+  // nothing is simulated: real work is ORIGIN's, kept by its runner. Tasks made up in the browser,
+  // and the usage, approvals and log lines they produced, are cleared.
+  rt.tasks = {};
+  rt.approvals = {};
+  rt.alerts = {};
+  rt.usage = rt.usage.filter((u) => !u.simulated);
+  rt.events = rt.events.filter((e) => !e.simulated);
+  for (const [id, a] of Object.entries(rt.agents)) if (doc.agents[id]) rt.agents[id] = { ...a, status: doc.agents[id].enabled ? 'idle' : 'paused', currentTaskId: null, statusMessage: undefined, waitTicks: 0 };
 }
 
 function cloneRuntime(rt: RuntimeState): RuntimeState {
@@ -134,7 +148,7 @@ export const useStore = create<State>((set, get) => {
     ...init,
     past: [], future: [], dirty: false, saveError: null,
     prefs,
-    selection: { kind: 'none' }, profileAgentId: null, profileTab: 'identity', page: 'office', toast: null,
+    selection: { kind: 'none' }, profileAgentId: null, profileTab: 'identity', page: 'office',
 
     dryRun(ops) {
       const r = applyOps(get().doc, ops);
@@ -219,7 +233,8 @@ export const useStore = create<State>((set, get) => {
 
     setUi(p) { set(p as Partial<State>); },
     setPrefs(p) { const prefs = { ...get().prefs, ...p }; repo.savePrefs(prefs); set({ prefs }); },
-    notify(text, level = 'info') { set({ toast: { id: Date.now(), text, level } }); },
+    // notifications are off: ed asked for no pop-ups, sounds or desktop notices. Results show where the work is.
+    notify() {},
 
     tick() {
       const rt = cloneRuntime(get().runtime);
@@ -273,11 +288,12 @@ export const useStore = create<State>((set, get) => {
       if (!s) { get().notify('No saved version yet', 'warn'); return; }
       get().loadDoc(s.doc, 'Reset to last save');
     },
-    loadDoc(doc, label, runtime) {
+    loadDoc(loaded, label, runtime) {
+      const doc = withOrigin(loaded);
       const prev = get().doc;
       if (runtime) {
         const rt = { ...emptyRuntime(), ...runtime } as RuntimeState;
-        cleanRuntime(rt); syncRuntime(doc, rt);
+        cleanRuntime(rt, doc); syncRuntime(doc, rt);
         set({ runtime: rt });
       }
       setDoc(doc, { past: [...get().past, { doc: prev, label }].slice(-100), future: [], selection: { kind: 'none' } });
@@ -287,6 +303,7 @@ export const useStore = create<State>((set, get) => {
       try { data = JSON.parse(text); } catch { return { ok: false, errors: ['Not valid JSON'], warnings: [] }; }
       const r = parseOffice(data);
       if (!r.ok) return { ok: false, errors: r.errors, warnings: [] };
+      r.doc = withOrigin(r.doc);
       // an imported brain gets fresh runtime
       const prev = get().doc;
       const rt = emptyRuntime(); syncRuntime(r.doc, rt);

@@ -1,18 +1,16 @@
 import { saveFile } from '../persistence/saveFile';
 import { useRef, useState } from 'react';
 import { useOrigin, useOriginPoll } from '../brain/useOrigin';
-import { Download, History, OctagonX, Pause, Play, Redo2, Undo2, Upload } from 'lucide-react';
+import { Download, History, OctagonX, Redo2, Undo2, Upload } from 'lucide-react';
 import { useStore } from '../store/store';
 import { repo } from '../store/store';
 import { confirmAction } from './primitives';
-import { AlertBell } from './AlertCenter';
 import { SaveStatus } from './SaveStatus';
 import { LogoLockup } from '../brand/Logo';
 
 export function TopBar() {
   const name = useStore((s) => s.doc.name);
   const page = useStore((s) => s.page);
-  const prefs = useStore((s) => s.prefs);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
   const s = useStore.getState();
@@ -44,8 +42,6 @@ export function TopBar() {
         {(['office', 'dashboard', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'office' ? 'Brain' : p[0].toUpperCase() + p.slice(1)}</button>)}
       </nav>
       <span className="spacer" />
-      <AlertBell />
-      <button className="btn icon sm" aria-label={prefs.simRunning ? 'Pause queued tasks' : 'Run queued tasks'} title={prefs.simRunning ? 'Pause queued tasks' : 'Run queued tasks'} onClick={() => s.setPrefs({ simRunning: !prefs.simRunning })}>{prefs.simRunning ? <Pause size={14} /> : <Play size={14} />}</button>
       <EmergencyButton />
       <span className={`badge ${prov.kind} hide-sm`} title={prov.detail}>{prov.label}</span>
       <button className="btn icon sm" disabled={!canUndo} aria-label="Undo" title="Undo (Ctrl+Z)" onClick={s.undo}><Undo2 size={14} /></button>

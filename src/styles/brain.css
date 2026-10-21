@@ -541,3 +541,4 @@
 .bank-chip input { margin: 0; accent-color: #7cc4ff; }
 .bank-chip.on { background: rgba(124, 196, 255, 0.16); border-color: rgba(124, 196, 255, 0.7); }
 .bank-meta { opacity: 0.65; font-size: 12px; }
+.am-given { margin: 6px 0 0; color: #b9a8ae; font: 400 10px/1.45 var(--font-sans, system-ui, sans-serif); }

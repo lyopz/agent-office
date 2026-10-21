@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { useStore } from '../store/store';
-import { Section, SelectField, Toggle } from './primitives';
+import { Section, Toggle } from './primitives';
 import { ThemeEditor } from './ThemeEditor';
-import { AlertSettingsPanel } from './AlertSettingsPanel';
 
-const TABS = [['general', 'General'], ['theme', 'Theme & colours'], ['alerts', 'Alerts & sounds']] as const;
+const TABS = [['general', 'General'], ['theme', 'Theme & colours']] as const;
 
 export function Settings() {
   const [tab, setTab] = useState<(typeof TABS)[number][0]>('general');
@@ -16,7 +15,6 @@ export function Settings() {
       <p className="note" style={{ padding: '4px 16px 0' }}>Every settings change is part of the undo history and of saved versions, so you can always step back.</p>
       {tab === 'general' && <General />}
       {tab === 'theme' && <ThemeEditor />}
-      {tab === 'alerts' && <AlertSettingsPanel />}
     </div>
   );
 }
@@ -26,11 +24,6 @@ function General() {
   const { setPrefs } = useStore.getState();
   return (
     <div className="dash">
-      <div className="card span-6">
-        <h4>Task loop</h4>
-        <Toggle label="Run agents' queued tasks" checked={prefs.simRunning} onChange={(simRunning) => setPrefs({ simRunning })} />
-        <SelectField label="Speed" value={String(prefs.simSpeed)} options={['0.5', '1', '2', '4'] as const} onChange={(v) => setPrefs({ simSpeed: Number(v) })} />
-      </div>
       <div className="card span-6">
         <h4>Persistence</h4>
         <Toggle label="Autosave agents, knowledge and tasks" checked={prefs.autosave} onChange={(autosave) => setPrefs({ autosave })} />

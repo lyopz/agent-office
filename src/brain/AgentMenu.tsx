@@ -13,6 +13,7 @@ import { teamsOf } from './connectome';
 import { useBrainFocus } from './ConnectomeView';
 import { BranchMenu } from './BranchMenu';
 import { brainAgents } from './BrainScene';
+import { giveTask } from './agentWork';
 
 const BUSY: AgentStatus[] = ['working', 'researching', 'thinking', 'communicating'];
 
@@ -48,13 +49,13 @@ export function AgentMenu() {
   const focus = (teamId: string | null, agentId: string | null = null) => useBrainFocus.setState({ teamId: teamId ?? selectedTeamId, agentId });
   const selectTeam = (teamId: string | null) => useBrainFocus.setState({ teamId, agentId: null, selectedTeamId: teamId, brainAgentId: null });
 
-  const give = () => {
-    const a = agents[to];
-    if (!a || !task.trim()) return;
-    const s = useStore.getState();
-    s.runRuntimeOps([{ op: 'task.create', agentId: a.id, name: task.trim(), simulated: true }]);
-    s.notify(`Gave “${task.trim()}” to ${a.identity.name}`);
-    setTask('');
+  const [given, setGiven] = useState('');
+  // a task goes to ORIGIN's runner, the only thing that does real work
+  const give = async () => {
+    if (!agents[to] || !task.trim()) return;
+    const r = await giveTask(useStore.getState().doc, to, task);
+    setGiven(r.message);
+    if (r.ok) setTask('');
   };
   const togglePause = (id: string) => {
     const a = agents[id];
@@ -119,7 +120,7 @@ export function AgentMenu() {
         {!shown.length && <p className="muted small am-none">{q ? `No agent matches “${q}”.` : 'No agents are assigned to this sector yet.'}</p>}
         </>}
       </div>
-      <form className="am-give" onSubmit={(e) => { e.preventDefault(); give(); }}>
+      <form className="am-give" onSubmit={(e) => { e.preventDefault(); void give(); }}>
         <span className="label">Give a task</span>
         <select aria-label="Agent to give the task to" value={to} onChange={(e) => setTarget(e.target.value)}>
           {shown.map((a) => <option key={a.id} value={a.id}>{a.identity.name}</option>)}
@@ -128,6 +129,7 @@ export function AgentMenu() {
           <input value={task} onChange={(e) => setTask(e.target.value)} placeholder="What should they do?" aria-label="Task to give" />
           <button className="btn sm primary" disabled={!task.trim() || !to} aria-label="Give task"><Send size={13} /></button>
         </div>
+        {given && <p className="am-given" role="status">{given}</p>}
       </form>
     </aside>
   );
