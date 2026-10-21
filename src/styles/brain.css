@@ -560,3 +560,8 @@
 .product-card:not(:has(.product-mockup)) { grid-template-columns: minmax(0, 1fr); }
 .product-mockup { width: 112px; height: 112px; object-fit: cover; border-radius: 8px; background: #fff; }
 @media (max-width: 520px) { .product-card { grid-template-columns: minmax(0, 1fr); } .product-mockup { width: 100%; height: auto; } }
+.money-table td:nth-child(n+2), .money-table th:nth-child(n+2) { text-align: right; white-space: nowrap; }
+.money-table td.pos { color: #7fd6a4; }
+.money-table td.neg { color: #ff9f9f; }
+.money-table .link-btn { padding: 0; font-size: 12px; }
+.money-detail { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid rgba(172,199,231,.14); border-radius: 10px; }

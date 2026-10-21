@@ -14,3 +14,4 @@ export function dailyAllowance(s: Record<string, unknown>, now?: Date): { allowa
 export function pickTasks(s: Record<string, unknown>, n?: number, only?: string[] | null): Record<string, unknown>[];
 export function itemCount(text: string): number | null;
 export function addFocusTask(s: Record<string, unknown>, t: { title: string; detail?: string; agentId?: string | null; budgetUsd?: number | null; count?: number | null }): Record<string, unknown> | null;
+export function syncSales(deps?: { file?: string; listOrders?: () => Promise<unknown[]> }): Promise<{ ok: boolean; error: string | null; orders: number }>;

@@ -19,7 +19,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readKey } from './key-file.mjs';
 import { ETSY_TOOLS, authUrl, etsyPublic, finishAuth, runEtsyTool } from './etsy.mjs';
-import { PRINTIFY_TOOLS, printifyConfig, printifyPublic, productPreview, publishProduct, runPrintifyTool, uploadImage } from './printify.mjs';
+import { PRINTIFY_TOOLS, printifyConfig, printifyPublic, listOrders, productPreview, publishProduct, runPrintifyTool, uploadImage } from './printify.mjs';
+import { moneyByAgent, salesFromOrders } from './money.mjs';
 import { IMAGE_TOOL, generateImage, imageWorstUsd, openaiPublic } from './openai-images.mjs';
 
 const PORT = Number(process.env.ORIGIN_PORT || 8788);
@@ -99,7 +100,17 @@ function rollMonth(s) { if (s.ledger.month !== month()) s.ledger = { month: mont
 const today = () => new Date().toISOString().slice(0, 10);
 const round6 = (n) => Math.round(n * 1e6) / 1e6;
 /** Add a cost to the month, the day and the agent it was for. */
-function charge(ledger, agentId, usd) {
+/** All-time spend per agent (the monthly ledger starts over each month); started from what the ledger already had. */
+function ensureTotals(s) {
+  if (s.totals) return s.totals;
+  const images = {};
+  for (const e of s.imageLog || []) images[e.agentId] = round6((images[e.agentId] || 0) + e.usd);
+  return (s.totals = { claude: { ...(s.ledger?.byAgent || {}) }, images });
+}
+function charge(s, agentId, usd) {
+  const t = ensureTotals(s);
+  t.claude[agentId] = round6((t.claude[agentId] || 0) + usd);
+  const ledger = s.ledger;
   ledger.spentUsd = round6(ledger.spentUsd + usd);
   ledger.byAgent[agentId] = round6((ledger.byAgent[agentId] || 0) + usd);
   ledger.byDay ??= {};
@@ -634,14 +645,16 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   for (const r of s.publishRequests || []) if (!(now.publishRequests || []).some((x) => x.id === r.id)) now.publishRequests = [...(now.publishRequests || []), r].slice(-100);
   for (const e of s.progressLog || []) if (!(now.progressLog || []).some((x) => x.id === e.id)) now.progressLog = [...(now.progressLog || []), e].slice(-PROGRESS_KEEP);
   // images made this run: their log lines and their cost on the image cap (never on the Anthropic ledger)
+  ensureTotals(now);
   for (const e of s.imageLog || []) {
     if ((now.imageLog || []).some((x) => x.id === e.id)) continue;
+    now.totals.images[e.agentId] = round6((now.totals.images[e.agentId] || 0) + e.usd);
     now.imageLog = [...(now.imageLog || []), e].slice(-IMAGE_LOG_KEEP);
     if (e.at.slice(0, 7) === month()) { const m = rollImages(now); m.spentUsd = round6(m.spentUsd + e.usd); }
   }
   // spend goes to the agent each worker was; SKILL.md writing is JARVIS's
-  for (const w of ws) charge(now.ledger, w.agentId, w.costUsd);
-  if (record.skillCostUsd) charge(now.ledger, AGENT_ID, record.skillCostUsd);
+  for (const w of ws) charge(now, w.agentId, w.costUsd);
+  if (record.skillCostUsd) charge(now, AGENT_ID, record.skillCostUsd);
   if (!record.costKnown) now.ledger.unknownCostRuns++;
   now.runs = [record, ...now.runs].slice(0, 50);
   if (trigger === 'schedule' || trigger === 'focus') now.lastScheduledAt = record.startedAt;
@@ -754,7 +767,7 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
   const now = loadState(deps.file);
   rollMonth(now);
   if (cost == null) now.ledger.unknownCostRuns++;
-  else charge(now.ledger, agent?.id ?? AGENT_ID, cost);
+  else charge(now, agent?.id ?? AGENT_ID, cost);
   const approved = consent ? applyConsent(now, consent) : null;
   now.asks = [{ at: new Date().toISOString(), q, a: answer.slice(0, 4000), costUsd: cost, approved, agentId: agent?.id ?? null, by: agent?.name ?? 'JARVIS' }, ...(now.asks || [])].slice(0, 20);
   saveState(now, deps.file);
@@ -766,7 +779,7 @@ function publicState() {
   return {
     configured: Boolean(KEY), model: MODEL, capUsd: CAP, everyMinutes: EVERY_MIN, maxMinutes: MAX_MIN, schedule: SCHEDULE,
     spentUsd: s.ledger.spentUsd, spentByAgent: s.ledger.byAgent, ...dailyAllowance(s), parallel: PARALLEL, rounds: MAX_ROUNDS, taskBudgetUsd: TASK_BUDGET_USD, unknownCostRuns: s.ledger.unknownCostRuns, month: s.ledger.month, running: running ? running.startedAt : null,
-    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, etsy: etsyPublic(), printify: printifyPublic(), openai: openaiPublic(), images: { month: rollImages(s).month, spentUsd: s.images.spentUsd, capUsd: imageCap(s), log: (s.imageLog || []).slice(-30).reverse() }, publishRequests: (s.publishRequests || []).slice(-30), skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
+    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, etsy: etsyPublic(), printify: printifyPublic(), openai: openaiPublic(), money: { byAgent: moneyByAgent({ ...s, totals: s.totals ?? { claude: { ...s.ledger.byAgent }, images: {} } }), entries: (s.moneyEntries || []).slice(-50).reverse(), sales: (s.sales || []).slice(0, 50), salesSync: s.salesSync ?? null }, images: { month: rollImages(s).month, spentUsd: s.images.spentUsd, capUsd: imageCap(s), log: (s.imageLog || []).slice(-30).reverse() }, publishRequests: (s.publishRequests || []).slice(-30), skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
     // with no scheduled run yet, the next one starts within a minute
     nextScheduledAt: SCHEDULE ? new Date(s.lastScheduledAt ? Math.max(Date.now(), Date.parse(s.lastScheduledAt) + (pickTasks(s).some((t) => t.focus) ? Math.min(FOCUS_EVERY_MIN, EVERY_MIN) : EVERY_MIN) * 60_000) : Date.now() + 60_000).toISOString() : null,
     focusEveryMinutes: Math.min(FOCUS_EVERY_MIN, EVERY_MIN),
@@ -914,6 +927,20 @@ async function handle(req, res) {
       return send(req, res, 200, { ok: true });
     } catch (e) { return send(req, res, 502, { ok: false, reason: e.message }); }
   }
+  if (url === '/api/origin/money') {
+    // the owner's own money lines for a branch (income the shop data doesn't show, or other costs), and a fresh sales pull
+    if (body.action === 'sync') { const r = await syncSales(); return send(req, res, r.ok ? 200 : 502, r); }
+    const s = loadState();
+    if (body.action === 'add') {
+      const usd = Number(body.usd);
+      if (!(usd > 0) || usd > 1_000_000 || !['income', 'expense'].includes(body.kind)) return send(req, res, 400, { error: 'amount and kind needed' });
+      s.moneyEntries = [...(s.moneyEntries || []), { id: newId('money'), agentId: typeof body.agentId === 'string' ? body.agentId.slice(0, 80) : AGENT_ID, kind: body.kind, usd: Math.round(usd * 100) / 100, note: String(body.note || '').slice(0, 200), at: new Date().toISOString() }].slice(-500);
+    } else if (body.action === 'remove') {
+      s.moneyEntries = (s.moneyEntries || []).filter((m) => m.id !== body.id);
+    } else return send(req, res, 400, { error: 'unknown action' });
+    saveState(s);
+    return send(req, res, 200, { ok: true });
+  }
   if (url === '/api/origin/settings') {
     // whether JARVIS and its ventures create agents without asking (the owner's choice)
     const s = loadState();
@@ -947,6 +974,25 @@ async function handle(req, res) {
   return send(req, res, 404, { error: 'not found' });
 }
 
+const SALES_EVERY_MIN = 60;
+let salesSyncing = null;
+/** Pull the shop's orders from Printify and file each sale under the agent that made the product. */
+export async function syncSales(deps = {}) {
+  if (salesSyncing) return salesSyncing;
+  salesSyncing = (async () => {
+    const before = loadState(deps.file);
+    let orders, error = null;
+    try { orders = await (deps.listOrders ?? listOrders)(); } catch (e) { error = String(e.message || e).slice(0, 300); }
+    // the owner may have changed things while the orders loaded: write into the current file
+    const now = loadState(deps.file);
+    if (orders) now.sales = salesFromOrders(orders, now.publishRequests || before.publishRequests || []);
+    now.salesSync = { at: new Date().toISOString(), error, orders: orders?.length ?? null };
+    saveState(now, deps.file);
+    return { ok: !error, error, orders: orders?.length ?? 0 };
+  })().finally(() => { salesSyncing = null; });
+  return salesSyncing;
+}
+
 /** Start a run in the background for the owner's focus task; false when one is already running (it is picked up next). */
 function startFocus() {
   if (running || !KEY) return false;
@@ -956,6 +1002,8 @@ function startFocus() {
 
 let lastSkip = '';
 function tick() {
+  const s0 = loadState();
+  if (printifyPublic().configured && (!s0.salesSync?.at || Date.now() - Date.parse(s0.salesSync.at) > SALES_EVERY_MIN * 60_000)) void syncSales().catch(() => {});
   if (!SCHEDULE || running) return;
   const s = loadState();
   const last = s.lastScheduledAt ? Date.parse(s.lastScheduledAt) : 0;

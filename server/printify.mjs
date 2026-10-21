@@ -134,3 +134,15 @@ export async function uploadImage(fileName, b64, deps) {
   const img = await pf('/uploads/images.json', { deps, method: 'POST', body: { file_name: name.endsWith('.png') ? name : `${name}.png`, contents: b64 } });
   return { image_id: img.id, width: img.width, height: img.height, preview: img.preview_url };
 }
+
+/** The shop's recent orders (newest first), for real sales numbers. Up to `pages` pages of 10. */
+export async function listOrders(deps, pages = 10) {
+  const shop = await shopId(deps);
+  const out = [];
+  for (let page = 1; page <= pages; page++) {
+    const r = await pf(`/shops/${shop}/orders.json?page=${page}&limit=10`, { deps });
+    out.push(...(r.data || []));
+    if (!r.last_page || page >= r.last_page) break;
+  }
+  return out;
+}

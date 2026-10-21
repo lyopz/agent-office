@@ -526,3 +526,18 @@ describe('origin runner: design images and branch runs', () => {
     expect(none).toMatchObject({ ok: false });
   });
 });
+
+describe('origin runner: money', () => {
+  test('spend is kept per agent for all time, and sales are pulled into the state', async () => {
+    write({ ...base, ledger: { month, spentUsd: 0.2, unknownCostRuns: 0, byAgent: { a1: 0.2 } }, agents: [{ id: 'a1', name: 'Store' }], publishRequests: [{ productId: 'p1', agentId: 'a1', status: 'published' }], tasks: [{ id: 't1', title: 'T', detail: '', status: 'approved', by: 'owner', agentId: 'a1', createdAt: '' }] });
+    await runner.runOnce('manual', { fetch: async () => reply(result({ memory: 'm', summary: 's' }), { input_tokens: 1000, output_tokens: 100 }), file, key: 'test', etsy: null } as any);
+    let s = read();
+    expect(s.totals.claude.a1).toBeGreaterThan(0.2);
+    expect(s.totals.claude.a1).toBeCloseTo(s.ledger.byAgent.a1, 6);
+    const r = await runner.syncSales({ file, listOrders: async () => [{ id: 'o1', status: 'fulfilled', total_price: 900, line_items: [{ product_id: 'p1', quantity: 1, metadata: { price: 2000 } }] }] });
+    expect(r).toMatchObject({ ok: true, orders: 1 });
+    s = read();
+    expect(s.sales[0]).toMatchObject({ agentId: 'a1', revenueUsd: 20, costUsd: 9 });
+    expect(s.salesSync.error).toBeNull();
+  });
+});

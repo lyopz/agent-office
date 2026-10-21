@@ -16,6 +16,7 @@ import { byOwner, openIdeas, ownerIdeaOps, suggestIdeaOps } from './ideas';
 import { subtree, type NerveTree } from './nerveTree';
 import { runOrigin, runnerStatus, taskAction } from './originLink';
 import { useOrigin } from './useOrigin';
+import { moneyByBranch } from './branchMoney';
 import { MANUAL_RUN_MINUTES, ORIGIN_ID, describeWindow, growKind } from './opportunity';
 
 const BUSY: AgentStatus[] = ['working', 'researching', 'thinking', 'communicating'];
@@ -37,6 +38,9 @@ export function BranchMenu({ agents, teams, live, match, selected }: Props) {
   const ideas = useMemo(() => openIdeas({ library }), [library]);
   const [idea, setIdea] = useState('');
   const originLive = useOrigin((o) => o.status?.configured);
+  // each main branch's money, all time: what it spent and what it earned
+  const moneyRows = useOrigin((o) => o.status?.money?.byAgent);
+  const money = useMemo(() => new Map(moneyRows ? moneyByBranch(agents, moneyRows).map((r) => [r.id, r]) : []), [moneyRows, agents]);
   if (!tree.rootId) return <p className="muted small am-none">No agents yet. Create one to start the first branch.</p>;
 
   const busyIn = (id: string) => [...subtree(tree, id)].filter((q) => BUSY.includes((live[q] ?? '').split('|')[0] as AgentStatus)).length;
@@ -77,7 +81,7 @@ export function BranchMenu({ agents, teams, live, match, selected }: Props) {
             <span className="bm-dot" style={{ background: STATUS_COLOR[status as AgentStatus] ?? n.color }} aria-hidden />
             <span className="bm-text">
               <span className="bm-name">{a.identity.name}<span className="muted"> · {a.identity.title}</span></span>
-              <span className="bm-meta">{n.depth === 0 ? `Main agent${a.schedule.runWindow ? ` · works ${describeWindow(a.schedule.runWindow)}` : ''}` : size ? `${size} agent${size === 1 ? '' : 's'} in this branch` : 'Single agent'}{busy ? ` · ${busy} working` : ''}</span>
+              <span className="bm-meta">{n.depth === 0 ? `Main agent${a.schedule.runWindow ? ` · works ${describeWindow(a.schedule.runWindow)}` : ''}` : size ? `${size} agent${size === 1 ? '' : 's'} in this branch` : 'Single agent'}{busy ? ` · ${busy} working` : ''}{n.depth === 1 && money.get(id) ? ` · spent $${money.get(id)!.spentUsd.toFixed(2)} · earned $${money.get(id)!.earnedUsd.toFixed(2)}` : ''}</span>
               {taskName && <span className="bm-task">{taskName}<span className="am-progress" aria-hidden><i style={{ width: `${progress}%` }} /></span></span>}
             </span>
           </button>

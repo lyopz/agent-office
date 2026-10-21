@@ -5,6 +5,7 @@ import { agentProposalAction, mockupUrl, publishDecision, runnerStatus, setAutoA
 import { branchKind, describeWindow } from './opportunity';
 import { createProposedAgent } from './skillFiles';
 import { ProgressBar, ProgressLog } from './Progress';
+import { BranchMoneyPanel } from './BranchMoneyPanel';
 
 const money = (n: number) => `$${n.toFixed(n < 1 ? 3 : 2)}`;
 
@@ -127,6 +128,8 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
       </div>
       {st.spentByAgent && Object.keys(st.spentByAgent).length > 0 && <table className="spend-table"><thead><tr><th>Agent</th><th>This month</th></tr></thead><tbody>{Object.entries(st.spentByAgent).sort((x, y) => y[1] - x[1]).map(([id, usd]) => <tr key={id}><td>{agentName(id)}</td><td>{money(usd)}</td></tr>)}</tbody></table>}
       {taskSpend.length > 0 && <table className="spend-table"><thead><tr><th>Task</th><th>Spent</th><th>Status</th></tr></thead><tbody>{taskSpend.map((t) => <tr key={t.id}><td>{t.title}</td><td>{money(t.spentUsd ?? 0)}</td><td>{t.status}{t.progress != null ? ` · ${t.progress}%` : ''}</td></tr>)}</tbody></table>}
+
+      <BranchMoneyPanel st={st} agents={doc.agents} onDone={(t) => { onNotice(t); void refresh(); }} />
 
       <label className="creator-privacy" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <input type="checkbox" checked={st.autoAgents !== false} onChange={(e) => void act(() => setAutoAgents(e.target.checked), e.target.checked ? 'JARVIS and its ventures now create the agents they need, up to 3 a run, each with its SKILL.md.' : 'JARVIS will ask you before creating agents.')} />
