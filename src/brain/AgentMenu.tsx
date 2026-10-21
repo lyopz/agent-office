@@ -12,6 +12,7 @@ import { STATUS_COLOR } from '../viewport/AgentsLayer';
 import { teamsOf } from './connectome';
 import { useBrainFocus } from './ConnectomeView';
 import { BranchMenu } from './BranchMenu';
+import { brainAgents } from './BrainScene';
 
 const BUSY: AgentStatus[] = ['working', 'researching', 'thinking', 'communicating'];
 
@@ -38,8 +39,10 @@ export function AgentMenu() {
   const [task, setTask] = useState('');
   const [target, setTarget] = useState('');
   const match = (id: string) => { const a = agents[id]; return !q.trim() || `${a.identity.name} ${a.identity.title} ${a.identity.department}`.toLowerCase().includes(q.trim().toLowerCase()); };
-  const busy = Object.values(live).filter((v) => BUSY.includes(v.split('|')[0] as AgentStatus)).length;
-  const sorted = Object.values(agents).sort((a, b) => a.identity.name.localeCompare(b.identity.name));
+  // Branches shows ORIGIN and the branches it grew; Teams still lists every agent
+  const inBrain = useMemo(() => new Set(brainAgents(agents).map((a) => a.id)), [agents]);
+  const sorted = Object.values(agents).filter((a) => view === 'teams' || inBrain.has(a.id)).sort((a, b) => a.identity.name.localeCompare(b.identity.name));
+  const busy = sorted.filter((a) => BUSY.includes((live[a.id] ?? '').split('|')[0] as AgentStatus)).length;
   const activeTeam = teams.find((t) => t.id === selectedTeamId);
   const shown = sorted.filter((a) => (view === 'branches' || !activeTeam || activeTeam.agentIds.includes(a.id)) && match(a.id));
   const to = target && shown.some((a) => a.id === target) ? target : shown.some((a) => a.id === selected) ? selected! : shown[0]?.id || '';

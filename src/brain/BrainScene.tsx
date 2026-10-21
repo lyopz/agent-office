@@ -25,16 +25,27 @@ import { growIdeaOps, openIdeas, treeIdeas } from './ideas';
 import { confirmAction } from '../ui/primitives';
 import { useBrainFocus } from './ConnectomeView';
 import { useOrigin } from './useOrigin';
+import { ORIGIN_ID, branchKind } from './opportunity';
 
 const BUSY = new Set(['working', 'researching', 'thinking', 'communicating']);
 const reduceMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** The tree's shape only depends on who reports to whom, names, teams and colours. */
 function treeKey(agents: Record<string, Agent>, teams: Team[]) {
-  return JSON.stringify([Object.values(agents).map((a) => [a.id, a.identity.name, a.skills.supervisorId, a.identity.department]).sort(), teams.map((t) => [t.id, t.color])]);
+  return JSON.stringify([Object.values(agents).map((a) => [a.id, a.identity.name, a.skills.supervisorId, a.identity.department, a.branch?.kind ?? '']).sort(), teams.map((t) => [t.id, t.color])]);
+}
+/**
+ * The agents the brain shows: ORIGIN and the branches it grew (its ventures
+ * and their skill agents). The other agents still exist and work; they just
+ * aren't nerves. With no ORIGIN, every agent is shown.
+ */
+export function brainAgents(agents: Record<string, Agent>): Agent[] {
+  const all = Object.values(agents);
+  if (!agents[ORIGIN_ID]) return all;
+  return all.filter((a) => branchKind({ agents }, a.id) !== 'core');
 }
 export function treeOf(agents: Record<string, Agent>, teams: Team[]): NerveTree {
-  return buildNerveTree(Object.values(agents).map((a) => {
+  return buildNerveTree(brainAgents(agents).map((a) => {
     const teamId = teamOfAgent(teams, a.id);
     return { id: a.id, name: a.identity.name, supervisorId: a.skills.supervisorId ?? null, teamId, color: teams.find((t) => t.id === teamId)?.color ?? '#9fe6ff' };
   }));

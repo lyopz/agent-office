@@ -41,7 +41,7 @@ export default function BrainSwitcher({ teams, agents, totalAgents }: { teams: T
       <button className="brain-switch-trigger" aria-expanded={open} aria-haspopup="dialog" aria-controls="brain-switch-popover" onClick={() => setOpen((value) => !value)}>
         <span className="brain-switch-icon"><Brain size={17} /></span>
         <span className="brain-switch-copy"><span className="brain-switch-kicker">NEURAL NETWORK</span><b>{activeAgent ? `${activeAgent.identity.name} Brain` : active ? `${active.name} Brain` : 'Main Brain'}</b></span>
-        <span className="brain-switch-count">{activeAgent ? Object.values(agents).filter((agent) => agent.skills.supervisorId === activeAgent.id).length : active ? active.agentIds.length : totalAgents}<small> agents</small></span>
+        {(() => { const n = activeAgent ? Object.values(agents).filter((agent) => agent.skills.supervisorId === activeAgent.id).length : active ? active.agentIds.length : totalAgents; return <span className="brain-switch-count">{n}<small> agent{n === 1 ? '' : 's'}</small></span>; })()}
         <ChevronDown className={open ? 'brain-chevron is-open' : 'brain-chevron'} size={15} />
       </button>
 
