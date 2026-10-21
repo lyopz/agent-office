@@ -365,6 +365,24 @@ ORIGIN, the main agent at the core of the brain, is the owner's **Opportunity Re
 - **Work windows** (`agent.schedule.runWindow`): ORIGIN works 10 minutes every 2 hours (ed's choice), with a **Run 10 min** button on its row in the Branches menu for an extra run; each specialist gets a window sized to its team (research 10 min every 5 hours, design 5 min every hour, finance once a day…), editable on its profile. These are plans. The app does not wake agents by itself, and nothing runs or spends until a scheduler and an allowance are approved.
 - Older saves get a **Set up Opportunity agent** button that applies the prompt and memory to the existing ORIGIN without overwriting anything it already recorded.
 
+## ORIGIN live runs
+
+`server/origin-runner.mjs` runs ORIGIN on a live model. The defaults are ed's choices: **Claude Haiku 5.5**, a **$15 monthly cap**, and **10 minutes every 2 hours**. You can also start a run with **Run 10 min** on ORIGIN's row in the Branches menu.
+
+```powershell
+# Windows PowerShell, in the app folder
+$env:ANTHROPIC_API_KEY = "sk-ant-..."     # your key; it stays in this window only
+npm.cmd run origin                         # listens on 127.0.0.1:8788
+npm.cmd run dev                            # in a second window; /api/origin is forwarded
+```
+
+- **Approval is the spending limit.** ORIGIN works only on tasks you approve (Creator desk → ORIGIN runs). With none approved, a run only proposes tasks. It does no web searches and costs a fraction of a cent.
+- **The cap is hard.** Before every model call, the runner checks that a worst-case call ($0.20) still fits under both the run's $0.50 limit and what's left of the month. When it doesn't, the run stops. Costs come from each response's token usage and search count at list price; a model without a known price is recorded as unknown, never as $0.
+- **The window is enforced.** Every call has a deadline at the end of the window.
+- **Scheduled runs only happen while the runner is on.** Stop them by closing it, or set `ORIGIN_SCHEDULE=off` to allow manual runs only. Other settings: `ORIGIN_MODEL`, `ORIGIN_MONTHLY_CAP_USD`, `ORIGIN_EVERY_MIN`, `ORIGIN_MAX_MIN`, `ORIGIN_RUN_LIMIT_USD`.
+- **State** (ORIGIN's rules synced from the app, tasks, notes, runs, the ledger) is saved in `origin-data/state.json`, which is git-ignored. The key is never written to disk or logged.
+- Without the runner, ORIGIN and its Run button stay simulated.
+
 ## What is simulated and what is live
 
 | Area | Status |

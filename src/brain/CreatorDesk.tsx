@@ -4,8 +4,9 @@ import { useStore } from '../store/store';
 import type { KnowledgeEntry, RunWindow } from '../model/types';
 import { SKILL_LABELS, SKILL_TEAMS, VENTURE_TEAM, branchAgentOps, describeWindow, growKind, isOpportunityOrigin, opportunityOriginOps, originOutdated, suggestedWindow } from './opportunity';
 import SkillRequests from './SkillRequests';
+import OriginRuns from './OriginRuns';
 
-type DeskTab = 'ideas' | 'agent' | 'requests' | 'tutorial';
+type DeskTab = 'ideas' | 'agent' | 'requests' | 'runs' | 'tutorial';
 const EVERY = [[15, 'every 15 min'], [30, 'every 30 min'], [60, 'every hour'], [120, 'every 2 hours'], [180, 'every 3 hours'], [300, 'every 5 hours'], [480, 'every 8 hours'], [720, 'every 12 hours'], [1440, 'once a day']] as const;
 
 function saveTextFile(name: string, text: string) {
@@ -48,7 +49,7 @@ export default function CreatorDesk() {
     const onOpen = (event: Event) => {
       const detail = (event as CustomEvent<{ tab?: DeskTab; parentId?: string; fromId?: string }>).detail;
       const requested = detail?.tab;
-      if (requested !== 'ideas' && requested !== 'agent' && requested !== 'requests' && requested !== 'tutorial') return;
+      if (requested !== 'ideas' && requested !== 'agent' && requested !== 'requests' && requested !== 'runs' && requested !== 'tutorial') return;
       setNotice(''); setTab(requested); pickParent(detail?.parentId ?? null); setRequestFrom(detail?.fromId ?? null);
     };
     window.addEventListener('agent-office:open-creator', onOpen);
@@ -114,6 +115,7 @@ export default function CreatorDesk() {
         <span className="creator-live"><i /> {leaderName} · OWNER-LED</span>
         <button className="creator-action" onClick={() => { setTab('ideas'); setNotice(''); }}><Plus size={14} /> Add idea <span className="creator-count">{pending}</span></button>
         <button className="creator-action" onClick={() => { setTab('agent'); pickParent(null); setNotice(''); }}><GitBranch size={14} /> Start a venture</button>
+        <button className="creator-action" onClick={() => { setTab('runs'); setNotice(''); }}><Sparkles size={14} /> {leaderName} runs</button>
         <button className="creator-action" onClick={() => { setTab('requests'); setRequestFrom(null); setNotice(''); }}><Plus size={14} /> Skill requests <span className="creator-count">{openRequests}</span></button>
         {needsSetup && <button className="creator-action" onClick={setupOrigin} title="Give ORIGIN your Opportunity Research & Builder prompt and starting memory"><Sparkles size={14} /> {isOpportunityOrigin(doc) ? 'Update Opportunity agent rules' : 'Set up Opportunity agent'}</button>}
         <button className="creator-action creator-tutorial" onClick={() => { setTab('tutorial'); setNotice(''); }}><BookOpen size={14} /> Tutorial</button>
@@ -123,7 +125,7 @@ export default function CreatorDesk() {
       {tab && <div className="creator-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setTab(null); }}>
         <section className="creator-dialog" role="dialog" aria-modal="true" aria-labelledby="creator-title">
           <header className="creator-dialog-head">
-            <div><span className="creator-kicker"><Sparkles size={13} /> AGENT CREATOR / {leaderName}</span><h2 id="creator-title">{tab === 'ideas' ? 'Compare two ideas' : tab === 'agent' ? (kind === 'skill' ? 'Add a skill to a venture' : 'Start a venture branch') : tab === 'requests' ? 'Skill requests' : 'A quick tour'}</h2></div>
+            <div><span className="creator-kicker"><Sparkles size={13} /> AGENT CREATOR / {leaderName}</span><h2 id="creator-title">{tab === 'ideas' ? 'Compare two ideas' : tab === 'agent' ? (kind === 'skill' ? 'Add a skill to a venture' : 'Start a venture branch') : tab === 'requests' ? 'Skill requests' : tab === 'runs' ? `${leaderName}'s runs and budget` : 'A quick tour'}</h2></div>
             <button className="creator-close" aria-label="Close dialog" onClick={() => setTab(null)}><X size={17} /></button>
           </header>
 
@@ -161,6 +163,7 @@ export default function CreatorDesk() {
             <div className="creator-dialog-foot"><button className="creator-secondary" onClick={() => setTab(null)}>Cancel</button><button className="creator-primary" onClick={proposeAgent}><Check size={15} /> Approve & add agent</button></div>
           </div>}
 
+          {tab === 'runs' && <OriginRuns onNotice={setNotice} />}
           {tab === 'requests' && <SkillRequests fromId={requestFrom} onNotice={setNotice} />}
 
           {tab === 'tutorial' && <div className="creator-body">

@@ -13,6 +13,7 @@
     "test": "vitest run",
     "typecheck": "tsc -b --noEmit",
     "proxy": "node server/ai-proxy.mjs",
+    "origin": "node server/origin-runner.mjs",
     "blender-bridge": "node server/blender-bridge.mjs",
     "graph:pow": "node tools/graph-pow/build.mjs",
     "desktop": "npm run build && electron .",

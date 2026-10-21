@@ -8,6 +8,6 @@ export default defineConfig(({ mode }) => ({
   base: './',
   plugins: [react(), ...(mode === 'single' ? [viteSingleFile()] : [])],
   build: { outDir: mode === 'single' ? 'dist-single' : 'dist' },
-  server: { proxy: { '/api/ai': 'http://localhost:8787' } },
+  server: { proxy: { '/api/ai': 'http://localhost:8787', '/api/origin': 'http://127.0.0.1:8788' } },
   test: { globals: true, environment: 'node', include: ['tests/**/*.test.ts'] },
 }));

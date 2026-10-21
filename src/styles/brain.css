@@ -538,3 +538,8 @@
 @media (max-width: 760px) { .brain-regions { display: none; } }
 .bm-run { flex: none; align-self: center; display: inline-flex; align-items: center; gap: 4px; height: 24px; margin: 0 2px; padding: 0 8px; border: 1px solid color-mix(in srgb, var(--branch-color) 55%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--branch-color) 14%, transparent); color: var(--text); font-size: 10.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .bm-run:hover, .bm-run:focus-visible { background: color-mix(in srgb, var(--branch-color) 26%, transparent); }
+.origin-budget { position: relative; overflow: hidden; padding: 9px 11px; border: 1px solid rgba(172,199,231,.17); border-radius: 9px; color: #e9f1fc; font-size: 12px; }
+.origin-budget span { position: relative; z-index: 1; }
+.origin-budget i { position: absolute; inset: 0 auto 0 0; background: rgba(95,202,232,.18); }
+.origin-notes { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; padding: 10px 11px; border: 1px solid rgba(172,199,231,.17); border-radius: 9px; background: rgba(1,6,14,.6); color: #bdc9d9; font: 400 11.5px/1.5 var(--font-mono, monospace); }
+.creator-request-log .link-btn { border: 0; background: none; color: #8edcff; cursor: pointer; font-size: 11px; padding: 0 0 0 6px; }

@@ -14,6 +14,7 @@ import { useBrainFocus } from './ConnectomeView';
 import { askGrow, treeOf } from './BrainScene';
 import { byOwner, openIdeas, ownerIdeaOps, suggestIdeaOps } from './ideas';
 import { subtree, type NerveTree } from './nerveTree';
+import { runOrigin, runnerStatus } from './originLink';
 import { MANUAL_RUN_MINUTES, ORIGIN_ID, describeWindow, growKind } from './opportunity';
 
 const BUSY: AgentStatus[] = ['working', 'researching', 'thinking', 'communicating'];
@@ -43,11 +44,20 @@ export function BranchMenu({ agents, teams, live, match, selected }: Props) {
   const open = (id: string) => useStore.getState().setUi({ selection: { kind: 'agent', id }, profileAgentId: id, profileTab: 'identity' });
 
   // a manual work window: simulated until a model and an approved budget are connected
-  const runNow = (id: string) => {
+  // a live run when server/origin-runner.mjs is running (within the owner's cap), otherwise a simulated one
+  const runNow = async (id: string) => {
+    const { notify, runRuntimeOps, doc } = useStore.getState();
     const name = agents[id]?.identity.name ?? 'The main agent';
-    const live = agents[id]?.ai.provider && agents[id].ai.provider !== 'simulated';
-    useStore.getState().runRuntimeOps([{ op: 'task.create', agentId: id, name: `Manual run (${MANUAL_RUN_MINUTES} min)`, description: `Owner-started ${MANUAL_RUN_MINUTES}-minute work window: advance the highest-value approved task, save progress and record the next action.`, priority: 'high', simulated: !live }]);
-    useStore.getState().notify(live ? `${name} queued a ${MANUAL_RUN_MINUTES}-minute run. It still asks before anything that costs money.` : `${name} started a ${MANUAL_RUN_MINUTES}-minute run in simulation: no model is connected, so nothing ran for real and nothing was spent.`);
+    const status = await runnerStatus();
+    if (!status) {
+      runRuntimeOps([{ op: 'task.create', agentId: id, name: `Manual run (${MANUAL_RUN_MINUTES} min)`, description: `Owner-started ${MANUAL_RUN_MINUTES}-minute work window: advance the highest-value approved task, save progress and record the next action.`, priority: 'high', simulated: true }]);
+      notify(`${name} started a ${MANUAL_RUN_MINUTES}-minute run in simulation: the live runner isn't on, so nothing ran for real and nothing was spent.`);
+      return;
+    }
+    notify(`${name} started a live ${MANUAL_RUN_MINUTES}-minute run on ${status.model} ($${status.spentUsd.toFixed(2)} of $${status.capUsd} spent this month).`);
+    const r = await runOrigin(doc, MANUAL_RUN_MINUTES);
+    const run = r?.data.run;
+    useStore.getState().notify(run ? `${name}'s run ended (${run.status}, ${run.costKnown ? `$${run.costUsd.toFixed(3)}` : 'cost unknown'})${run.summary ? `: ${run.summary}` : '.'}` : r?.data.reason ?? 'The runner did not answer.');
   };
 
   const row = (id: string): JSX.Element | null => {
@@ -70,7 +80,7 @@ export function BranchMenu({ agents, teams, live, match, selected }: Props) {
             </span>
           </button>
           <button className="bm-open" aria-label={`Open ${a.identity.name}'s profile`} title="Open profile" onClick={() => open(id)}><UserRound size={12} /></button>
-          {id === ORIGIN_ID && <button className="bm-run" title={`Start an extra ${MANUAL_RUN_MINUTES}-minute run now`} onClick={() => runNow(id)}><Play size={11} /> Run {MANUAL_RUN_MINUTES} min</button>}
+          {id === ORIGIN_ID && <button className="bm-run" title={`Start an extra ${MANUAL_RUN_MINUTES}-minute run now`} onClick={() => void runNow(id)}><Play size={11} /> Run {MANUAL_RUN_MINUTES} min</button>}
           {growKind({ agents }, id) && <button className="bm-open" aria-label={n.depth === 0 ? 'Start a venture branch' : `Add a skill to ${a.identity.name}`} title={n.depth === 0 ? 'Start a venture branch' : 'Add a skill to this venture'} onClick={() => window.dispatchEvent(new CustomEvent('agent-office:open-creator', { detail: { tab: 'agent', parentId: id } }))}><GitBranch size={12} /></button>}
           {a.branch?.kind === 'skill' && <button className="bm-open" aria-label={`Ask ${a.identity.name}'s venture for a new skill`} title="Ask this agent's venture for a new skill agent" onClick={() => window.dispatchEvent(new CustomEvent('agent-office:open-creator', { detail: { tab: 'requests', fromId: id } }))}><MessageSquarePlus size={12} /></button>}
         </div>
