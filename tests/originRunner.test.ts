@@ -701,3 +701,41 @@ describe('origin runner: approvals, repeats and budgets', () => {
     expect(r.reason).toMatch(/\$0\.1 monthly cap is reached/);
   });
 });
+
+describe('origin runner: the owner\'s Yes and No reach Printify', () => {
+  const d = (extra: any = {}) => ({ id: 'design_9', kind: 'svg', fileName: 'x.svg', title: 'Mom Fuel', agentId: 'd1', agentName: 'Mockup & Design', taskId: 't1', taskTitle: 'Mom shirts', imageId: 'img9', status: 'waiting', at: '2026-10-21T08:00:00.000Z', ...extra });
+  const agents = [{ id: 'd1', name: 'Mockup & Design', kind: 'skill', ventureId: 'v1' }];
+
+  test('No deletes the product and archives the upload in Printify, and says so', async () => {
+    const gone: string[] = [], archived: string[] = [];
+    const s: any = { ...base, agents, designs: [d({ productId: 'prod1' })], publishRequests: [{ id: 'pub1', productId: 'prod1', designId: 'design_9', status: 'waiting', title: 'Mom Fuel Tee', agentId: 'd1' }], tasks: [{ id: 't1', title: 'Mom shirts', status: 'approved', by: 'owner', agentId: 'd1', focus: true, waitingOnOwner: true, createdAt: '' }] };
+    const r = await runner.decideDesign(s, 'design_9', 'reject', { deleteProduct: async (_shop: any, id: string) => { gone.push(id); }, archiveUpload: async (id: string) => { archived.push(id); } });
+    expect(r.body).toMatchObject({ ok: true, printify: 'product deleted from Printify; upload archived in Printify' });
+    expect(gone).toEqual(['prod1']); expect(archived).toEqual(['img9']);
+    expect(s.designs[0].status).toBe('rejected');
+    expect(s.publishRequests[0].status).toBe('deleted');
+    expect(s.tasks[0].waitingOnOwner).toBeUndefined();
+    expect(s.progressLog.at(-1).note).toMatch(/said No to "Mom Fuel"/);
+  });
+
+  test('Yes sends the design to Printify and gives the agent that made it the publish task', async () => {
+    const s: any = { ...base, agents, designs: [d({ imageId: null })], tasks: [{ id: 't1', title: 'Mom shirts', detail: 'tees for moms', status: 'approved', by: 'owner', agentId: 'd1', focus: true, createdAt: '' }] };
+    fs.mkdirSync(path.join(path.dirname(file), 'designs'), { recursive: true });
+    fs.writeFileSync(path.join(path.dirname(file), 'designs', 'design_9.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+    const r = await runner.decideDesign(s, 'design_9', 'approve', { upload: async () => ({ image_id: 'img_new' }) });
+    expect(r.body.ok).toBe(true);
+    expect(s.designs[0]).toMatchObject({ status: 'approved', imageId: 'img_new', printify: 'in Printify; the product is being made' });
+    const t = s.tasks.find((x: any) => x.designId === 'design_9');
+    expect(t).toMatchObject({ status: 'approved', focus: true, agentId: 'd1', via: 'approval' });
+    expect(t.detail).toMatch(/image_id img_new/);
+  });
+
+  test('No on a waiting product deletes it from Printify', async () => {
+    const gone: string[] = [];
+    const s: any = { ...base, agents, designs: [], tasks: [] };
+    const r: any = { id: 'pub2', productId: 'prod2', shopId: 7, status: 'waiting', title: 'Dad Tee', agentId: 'd1' };
+    await runner.discardProduct(s, r, { deleteProduct: async (shop: any, id: string) => { gone.push(`${shop}:${id}`); } });
+    expect(gone).toEqual(['7:prod2']);
+    expect(r).toMatchObject({ status: 'deleted', printify: 'product deleted from Printify' });
+  });
+});

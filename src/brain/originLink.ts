@@ -14,7 +14,7 @@ export interface RunnerTask { everyMinutes?: number; repeats?: number; designId?
   skillName?: string; agentIds?: string[]; agentNames?: string[]; requested?: boolean;
 }
 /** A product an agent made in Printify and asked the owner to publish. */
-export interface PublishRequest { id: string; productId: string; title: string; why: string; agentName: string; taskId?: string | null; taskTitle?: string | null; image?: string; priceUsd?: number; status: 'waiting' | 'published' | 'rejected'; at: string }
+export interface PublishRequest { printify?: string; designId?: string; id: string; productId: string; title: string; why: string; agentName: string; taskId?: string | null; taskTitle?: string | null; image?: string; priceUsd?: number; status: 'waiting' | 'published' | 'rejected' | 'deleted'; decidedAt?: string; publishedAt?: string; at: string }
 /** Spent and earned for one agent (all time). Revenue is only real sales or the owner's own entries; sale fees are estimates. */
 export interface MoneyRow { claudeUsd: number; imageUsd: number; listingFeesUsd: number; productionUsd: number; saleFeesEstUsd: number; revenueUsd: number; manualIncomeUsd: number; manualExpenseUsd: number; orders: number; itemsSold: number; unpricedItems: number; listed: number }
 export interface MoneyEntry { id: string; agentId: string; kind: 'income' | 'expense'; usd: number; note: string; at: string }
@@ -25,7 +25,7 @@ export type DesignStatus = 'waiting' | 'approved' | 'rejected' | 'published';
 export interface BranchBudget { id: string; budgetUsd: number | null; spentUsd: number }
 export interface BudgetChange { id: string; at: string; what: string; from: number | null; to: number | null }
 export interface Budgets { capUsd: number; defaultCapUsd: number; imageCapUsd: number; canvaAiLimit: number; voiceCapUsd: number | null; listingFeeUsd: number; branches: BranchBudget[]; log: BudgetChange[] }
-export interface DesignEntry { id: string; kind: 'svg' | 'png' | 'jpg'; source?: 'canva'; status?: DesignStatus; productId?: string; decidedAt?: string; publishedAt?: string; fileName: string; title: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string | null; at: string }
+export interface DesignEntry { id: string; kind: 'svg' | 'png' | 'jpg'; source?: 'canva'; status?: DesignStatus; productId?: string; decidedAt?: string; publishedAt?: string; printify?: string; fileName: string; title: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string | null; at: string }
 /** One design image an agent made with the owner's OpenAI key, and what it cost. */
 export interface ImageEntry { id: string; at: string; model: string; quality: string; size: string; usd: number; estimated?: boolean; prompt: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string }
 /** One line of progress, filed under the agent the work was for. */
@@ -166,7 +166,7 @@ export async function connectCanva(action: 'connect' | 'forget' = 'connect') {
 
 /** The owner's Yes or No on a design in Approvals. Yes makes the agent build the Printify product and publishes it. */
 export async function designDecision(id: string, action: 'approve' | 'reject') {
-  const r = await call<{ ok: boolean; reason?: string; note?: string; taskId?: string }>('/designs', { id, action }, 90_000);
+  const r = await call<{ ok: boolean; reason?: string; note?: string; taskId?: string; printify?: string }>('/designs', { id, action }, 90_000);
   return r ? r.data : null;
 }
 
@@ -178,6 +178,6 @@ export async function setBudgets(b: { capUsd?: number; addFundsUsd?: number; ima
 
 /** The owner's decision on a product: publish sends it live to their store through Printify. */
 export async function publishDecision(id: string, action: 'publish' | 'reject') {
-  const r = await call<{ ok: boolean; reason?: string }>('/printify/publish', { id, action }, 60_000);
+  const r = await call<{ ok: boolean; reason?: string; printify?: string }>('/printify/publish', { id, action }, 60_000);
   return r ? r.data : null;
 }

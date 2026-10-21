@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readKey } from './key-file.mjs';
 import { ETSY_TOOLS, authUrl, etsyPublic, finishAuth, runEtsyTool } from './etsy.mjs';
-import { PRINTIFY_TOOLS, printifyConfig, printifyPublic, listOrders, productPreview, publishProduct, runPrintifyTool, uploadImage } from './printify.mjs';
+import { PRINTIFY_TOOLS, archiveUpload, deleteProduct, printifyConfig, printifyPublic, listOrders, productPreview, publishProduct, runPrintifyTool, uploadImage } from './printify.mjs';
 import { moneyByAgent, salesFromOrders } from './money.mjs';
 import { IMAGE_TOOL, generateImage, imageWorstUsd, openaiPublic } from './openai-images.mjs';
 import { CANVA_AI, callCanva, canvaFiles, canvaName, canvaPublic, canvaText, canvaTools, connectInProgress, forgetCanva, startConnect } from './canva.mjs';
@@ -359,6 +359,63 @@ async function makeImage(s, task, input, w, tools) {
   }
 }
 
+/**
+ * The owner's Yes or No on a design in Approvals. Yes is also the approval to list: the design goes to
+ * Printify, the agent that made it gets a task to make the product, and the runner publishes it when
+ * the product is ready. No discards it: its product (if one exists) is deleted from Printify and its
+ * upload archived there, so nothing the owner declined stays in the shop. Both are logged.
+ */
+export async function decideDesign(s, id, action, deps = {}) {
+  const d = (s.designs || []).find((x) => x.id === id);
+  if (!d) return { ok: false, status: 404, body: { error: 'no design' } };
+  const save = deps.save ?? (() => {});
+  const at = new Date().toISOString();
+  for (const t of s.tasks) delete t.waitingOnOwner; // the owner decided: the ask can go on (replacements, the rest of the count)
+  if (action === 'reject') {
+    const notes = [];
+    if (printifyPublic().configured || deps.deleteProduct) {
+      const product = d.productId || (s.publishRequests || []).find((r) => r.designId === d.id && r.status === 'waiting')?.productId;
+      if (product) { try { await (deps.deleteProduct ?? deleteProduct)(printifyConfig()?.shopId ?? null, product); notes.push('product deleted from Printify'); for (const r of s.publishRequests || []) if (r.productId === product && r.status === 'waiting') Object.assign(r, { status: 'deleted', decidedAt: at }); } catch (e) { notes.push(`product not deleted: ${String(e.message || e).slice(0, 120)}`); } }
+      if (d.imageId) { try { await (deps.archiveUpload ?? archiveUpload)(d.imageId); notes.push('upload archived in Printify'); } catch (e) { notes.push(`upload not archived: ${String(e.message || e).slice(0, 120)}`); } }
+    }
+    Object.assign(d, { status: 'rejected', decidedAt: at, printify: notes.join('; ') || 'nothing in Printify' });
+    logProgress(s, s.tasks.find((t) => t.id === d.taskId) ?? null, { at, agentId: d.agentId, note: `The owner said No to "${d.title}" (${d.printify}).` });
+    save(s);
+    return { ok: true, status: 200, body: { ok: true, printify: d.printify }, start: pickTasks(s).some((t) => t.focus) };
+  }
+  if (action !== 'approve') return { ok: false, status: 400, body: { error: 'unknown action' } };
+  if (d.status === 'approved' || d.status === 'published') return { ok: true, status: 200, body: { ok: true, already: true } };
+  Object.assign(d, { status: 'approved', decidedAt: at });
+  if (!printifyPublic().configured && !deps.upload) { save(s); return { ok: true, status: 200, body: { ok: true, note: 'Approved and kept. Run npm.cmd run set-printify once so agents can make it into a product.' } }; }
+  // the design goes to Printify now if it is not there yet
+  if (!d.imageId) {
+    try {
+      const bytes = fs.readFileSync(path.join(designDir(), `${d.id}.${d.kind}`));
+      const up = deps.upload ? await deps.upload(d, bytes) : d.kind === 'svg' ? JSON.parse((await runPrintifyTool('printify_upload_design', { file_name: d.fileName, svg: bytes.toString('utf8') })).content) : await uploadImage(d.fileName, bytes.toString('base64'));
+      if (up?.image_id) d.imageId = up.image_id;
+    } catch (e) { d.printify = `not in Printify yet: ${String(e.message || e).slice(0, 160)}`; save(s); return { ok: false, status: 502, body: { ok: false, reason: `Approved, but Printify did not take the design: ${String(e.message || e).slice(0, 200)}` } }; }
+  }
+  const src = s.tasks.find((t) => t.id === d.taskId);
+  const agentId = d.agentId && (s.agents || []).some((a) => a.id === d.agentId) ? d.agentId : src?.agentId ?? null;
+  const task = { id: newId('task'), title: `Publish "${d.title}"`.slice(0, 160), detail: `The owner pressed Yes on the design "${d.title}" (design ${d.id}; it is in Printify as image_id ${d.imageId}). ${src ? `It was made for their ask "${src.title}"${src.detail ? `: ${src.detail.slice(0, 600)}` : ''}. ` : ''}Make that one product in Printify with this image and publish it through printify_request_publish; the Yes already approved it.`, status: 'approved', by: 'owner', via: 'approval', focus: true, designId: d.id, createdAt: at, ...(agentId ? { agentId } : {}) };
+  s.tasks.push(task);
+  d.printify = 'in Printify; the product is being made';
+  logProgress(s, task, { at, agentId: agentId || AGENT_ID, note: `The owner said Yes to "${d.title}": making the product and listing it.` });
+  save(s);
+  return { ok: true, status: 200, body: { ok: true, taskId: task.id }, start: true };
+}
+
+/** The owner's No on a product that waits for Publish: it is deleted from Printify, not just hidden here. */
+export async function discardProduct(s, r, deps = {}) {
+  const at = new Date().toISOString();
+  try { await (deps.deleteProduct ?? deleteProduct)(r.shopId ?? printifyConfig()?.shopId ?? null, r.productId); Object.assign(r, { status: 'deleted', decidedAt: at, printify: 'product deleted from Printify' }); }
+  catch (e) { Object.assign(r, { status: 'rejected', decidedAt: at, printify: `product not deleted: ${String(e.message || e).slice(0, 160)}` }); }
+  const d = r.designId ? (s.designs || []).find((x) => x.id === r.designId) : null;
+  if (d && d.status !== 'published') Object.assign(d, { status: 'rejected', decidedAt: at, printify: r.printify });
+  logProgress(s, s.tasks.find((t) => t.id === r.taskId) ?? null, { at, agentId: r.agentId, note: `The owner said No to "${r.title}" (${r.printify}).` });
+  return r;
+}
+
 /** This month's Canva AI use; a new month starts at zero. */
 function rollCanva(s) { const m = month(); if (s.canva?.month !== m) s.canva = { month: m, aiCalls: 0, exports: 0 }; return s.canva; }
 const canvaLimit = (s) => (Number.isFinite(s.canvaAiLimit) ? s.canvaAiLimit : CANVA_AI_LIMIT);
@@ -413,7 +470,7 @@ async function requestPublish(s, task, input, record, tools = null) {
     try {
       await (tools?.publish ?? publishProduct)(req.shopId, productId);
       Object.assign(req, { status: 'published', publishedAt: new Date().toISOString(), designId: design.id });
-      Object.assign(design, { status: 'published', productId, publishedAt: req.publishedAt });
+      Object.assign(design, { status: 'published', productId, publishedAt: req.publishedAt, printify: 'listed on the store' });
       s.publishRequests.push(req);
       logProgress(s, task, { at: req.publishedAt, agentId: req.agentId, note: `Published "${req.title}" to the owner's store (their Yes on the design was the approval; $${LISTING_FEE_USD.toFixed(2)} listing fee).` });
       record.published = (record.published || 0) + 1;
@@ -1263,7 +1320,7 @@ async function handle(req, res) {
     const s = loadState();
     const r = (s.publishRequests || []).find((x) => x.id === body.id && x.status === 'waiting');
     if (!r) return send(req, res, 404, { error: 'not waiting' });
-    if (body.action === 'reject') { r.status = 'rejected'; saveState(s); return send(req, res, 200, { ok: true }); }
+    if (body.action === 'reject') { await discardProduct(s, r); saveState(s); return send(req, res, 200, { ok: true, printify: r.printify }); }
     if (body.action !== 'publish') return send(req, res, 400, { error: 'unknown action' });
     try {
       await publishProduct(r.shopId ?? printifyConfig()?.shopId, r.productId);
@@ -1285,34 +1342,9 @@ async function handle(req, res) {
     } catch (e) { return send(req, res, 502, { ok: false, reason: e.message }); }
   }
   if (url === '/api/origin/designs') {
-    // the owner's Yes or No on a design in Approvals. Yes is also the approval to list: the agent that made it
-    // gets a task to make the Printify product, and the runner publishes it to the store when the product is ready.
-    const s = loadState();
-    const d = (s.designs || []).find((x) => x.id === body.id);
-    if (!d) return send(req, res, 404, { error: 'no design' });
-    const at = new Date().toISOString();
-    for (const t of s.tasks) delete t.waitingOnOwner; // the owner decided: the ask can go on (replacements, the rest of the count)
-    if (body.action === 'reject') { Object.assign(d, { status: 'rejected', decidedAt: at }); saveState(s); if (pickTasks(s).some((t) => t.focus)) setTimeout(startFocus, 500); return send(req, res, 200, { ok: true }); }
-    if (body.action !== 'approve') return send(req, res, 400, { error: 'unknown action' });
-    if (d.status === 'approved' || d.status === 'published') return send(req, res, 200, { ok: true, already: true });
-    Object.assign(d, { status: 'approved', decidedAt: at });
-    if (!printifyPublic().configured) { saveState(s); return send(req, res, 200, { ok: true, note: 'Approved and kept. Run npm.cmd run set-printify once so agents can make it into a product.' }); }
-    // the design goes to Printify now if it is not there yet
-    if (!d.imageId) {
-      try {
-        const bytes = fs.readFileSync(path.join(designDir(), `${d.id}.${d.kind}`));
-        const up = d.kind === 'svg' ? JSON.parse((await runPrintifyTool('printify_upload_design', { file_name: d.fileName, svg: bytes.toString('utf8') })).content) : await uploadImage(d.fileName, bytes.toString('base64'));
-        if (up?.image_id) d.imageId = up.image_id;
-      } catch (e) { saveState(s); return send(req, res, 502, { ok: false, reason: `Approved, but Printify did not take the design: ${String(e.message || e).slice(0, 200)}` }); }
-    }
-    const src = s.tasks.find((t) => t.id === d.taskId);
-    const agentId = d.agentId && (s.agents || []).some((a) => a.id === d.agentId) ? d.agentId : src?.agentId ?? null;
-    const task = { id: newId('task'), title: `Publish "${d.title}"`.slice(0, 160), detail: `The owner pressed Yes on the design "${d.title}" (design ${d.id}; it is in Printify as image_id ${d.imageId}). ${src ? `It was made for their ask "${src.title}"${src.detail ? `: ${src.detail.slice(0, 600)}` : ''}. ` : ''}Make that one product in Printify with this image and publish it through printify_request_publish; the Yes already approved it.`, status: 'approved', by: 'owner', via: 'approval', focus: true, designId: d.id, createdAt: at, ...(agentId ? { agentId } : {}) };
-    s.tasks.push(task);
-    logProgress(s, task, { at, agentId: agentId || AGENT_ID, note: `The owner approved the design "${d.title}": making the product and publishing it.` });
-    saveState(s);
-    setTimeout(startFocus, 500);
-    return send(req, res, 200, { ok: true, taskId: task.id });
+    const r = await decideDesign(loadState(), body.id, body.action, { save: saveState });
+    if (r.ok && r.start) setTimeout(startFocus, 500);
+    return send(req, res, r.status, r.body);
   }
   if (url === '/api/origin/money') {
     // the owner's own money lines for a branch (income the shop data doesn't show, or other costs), and a fresh sales pull

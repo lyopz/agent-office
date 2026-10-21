@@ -34,14 +34,14 @@ export function Approvals() {
     setBusy(null);
     if (!r) notify('The runner did not answer.', 'warn');
     else if (!r.ok) notify(r.reason ?? 'That did not work.', 'warn');
-    else notify(action === 'approve' ? (r.note ?? `Yes to "${d.title}": ${d.agentName} is making the product and will list it on your store.`) : `No to "${d.title}".`);
+    else notify(action === 'approve' ? (r.note ?? `Yes to "${d.title}": ${d.agentName} is making the product and will list it on your store.`) : `No to "${d.title}"${r.printify ? ` (${r.printify})` : ''}.`);
     void refresh();
   };
   const product = async (r: PublishRequest, action: 'publish' | 'reject') => {
     setBusy(r.id);
     const x = await publishDecision(r.id, action);
     setBusy(null);
-    notify(!x ? 'The runner did not answer.' : !x.ok ? (x.reason ?? 'Printify did not publish it.') : action === 'publish' ? `Published "${r.title}".` : 'Not published.', x?.ok ? undefined : 'warn');
+    notify(!x ? 'The runner did not answer.' : !x.ok ? (x.reason ?? 'Printify did not publish it.') : action === 'publish' ? `Published "${r.title}" to your store.` : `"${r.title}" ${x.printify ?? 'removed'}.`, x?.ok ? undefined : 'warn');
     void refresh();
   };
   if (st === undefined && !checked) return <div className="dash"><div className="dash-head"><div><span className="kicker"><i />APPROVALS</span><h2>Checking for JARVIS's runner…</h2></div></div></div>;
@@ -49,7 +49,7 @@ export function Approvals() {
 
   const designs = st.designs ?? [];
   const waiting = designs.filter((d) => d.status === 'waiting');
-  const decided = designs.filter((d) => d.status && d.status !== 'waiting').slice(0, 12);
+  const decided = [...designs.filter((d) => d.status && d.status !== 'waiting'), ...(st.publishRequests ?? []).filter((r) => r.status !== 'waiting' && !designs.some((d) => d.id === r.designId)).map((r) => ({ id: r.id, title: r.title, agentName: r.agentName, status: r.status === 'published' ? 'published' as const : 'rejected' as const, at: r.at, decidedAt: r.decidedAt, publishedAt: r.publishedAt, printify: r.printify ?? (r.status === 'published' ? 'listed on the store' : undefined), product: true }))].sort((a, b) => (b.publishedAt ?? b.decidedAt ?? b.at).localeCompare(a.publishedAt ?? a.decidedAt ?? a.at)).slice(0, 12);
   const products = (st.publishRequests ?? []).filter((r) => r.status === 'waiting');
   const taskOf = (id: string | null) => st.tasks.find((t) => t.id === id);
   const groups = [...new Map(waiting.map((d) => [d.taskId ?? '', d])).keys()];
@@ -60,7 +60,7 @@ export function Approvals() {
         <div>
           <span className="kicker"><i />APPROVALS</span>
           <h2>{waiting.length + products.length ? `${waiting.length + products.length} waiting for your Yes or No` : 'Nothing waiting right now'}</h2>
-          <p>Yes on a design: the agent that made it builds the Printify product and lists it on your store (that Yes is the approval; Etsy charges {usd(st.budgets?.listingFeeUsd ?? 0.2)} a listing). No discards it. Each ask shows at most 5 designs at a time; the agent makes more when you decide.</p>
+          <p>Yes on a design: the agent that made it builds the Printify product and lists it on your store (that Yes is the approval; Etsy charges {usd(st.budgets?.listingFeeUsd ?? 0.2)} a listing). No deletes it from Printify too. Each ask shows at most 5 designs at a time; the agent makes more when you decide.</p>
         </div>
       </div>
 
@@ -95,7 +95,7 @@ export function Approvals() {
               <span>{r.agentName}{r.priceUsd ? ` · ${usd(r.priceUsd)}` : ''} · {when(r.at)}</span>
               {r.why && <small>{r.why}</small>}
               <div className="approval-actions">
-                <button className="btn sm danger" disabled={busy === r.id} onClick={() => void product(r, 'reject')}><X size={13} /> No</button>
+                <button className="btn sm danger" disabled={busy === r.id} onClick={() => void product(r, 'reject')}><X size={13} /> No, delete it</button>
                 <button className="btn sm primary" disabled={busy === r.id} onClick={() => void product(r, 'publish')}><Check size={13} /> Publish</button>
               </div>
             </figcaption>
@@ -106,7 +106,7 @@ export function Approvals() {
       {decided.length > 0 && <section className="card approval-group">
         <h4><Repeat size={13} /> Decided lately <span className="count">{decided.length}</span></h4>
         <ul className="approval-log">
-          {decided.map((d) => <li key={d.id}><span className={`approval-state ${d.status}`}>{d.status === 'published' ? 'listed' : d.status === 'approved' ? 'making it' : 'no'}</span> <b>{d.title}</b> · {d.agentName} · {when(d.publishedAt ?? d.decidedAt ?? d.at)}{d.status === 'approved' && <> · {taskOf(st.tasks.find((t) => t.designId === d.id)?.id ?? null)?.status === 'done' ? 'product made; waiting to publish' : 'the agent is making the product now'}</>}</li>)}
+          {decided.map((d) => <li key={d.id}><span className={`approval-state ${d.status}`}>{d.status === 'published' ? 'listed' : d.status === 'approved' ? 'making it' : 'no'}</span> <b>{d.title}</b> · {d.agentName} · {when(d.publishedAt ?? d.decidedAt ?? d.at)}{d.printify ? <> · {d.printify}</> : d.status === 'approved' ? <> · {taskOf(st.tasks.find((t) => t.designId === d.id)?.id ?? null)?.status === 'done' ? 'product made; waiting to publish' : 'the agent is making the product now'}</> : null}</li>)}
         </ul>
       </section>}
 

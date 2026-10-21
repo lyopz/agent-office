@@ -142,6 +142,17 @@ export async function publishProduct(shop, productId, deps) {
   return true;
 }
 
+/** Remove a product from the owner's shop in Printify (the owner said No to it). */
+export async function deleteProduct(shop, productId, deps) {
+  await pf(`/shops/${shop ?? await shopId(deps)}/products/${encodeURIComponent(productId)}.json`, { deps, method: 'DELETE' });
+  return true;
+}
+/** Put an uploaded design out of the way in Printify's library (uploads can't be deleted, only archived). */
+export async function archiveUpload(imageId, deps) {
+  await pf(`/uploads/${encodeURIComponent(imageId)}/archive.json`, { deps, method: 'POST' });
+  return true;
+}
+
 /** A product's default mockup and its lowest price, for the owner's approval list. */
 export async function productPreview(productId, deps) {
   const shop = await shopId(deps);

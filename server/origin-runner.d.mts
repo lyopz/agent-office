@@ -23,3 +23,5 @@ export function branchOf(s: Record<string, unknown>, agentId: string): string;
 export function branchSpentUsd(s: Record<string, unknown>, branchId: string): number;
 export function repeatMinutes(text: string): number | null;
 export function reopenRepeats(s: Record<string, unknown>, now?: number): Record<string, unknown>[];
+export function decideDesign(s: Record<string, unknown>, id: string, action: string, deps?: Record<string, unknown>): Promise<{ ok: boolean; status: number; body: Record<string, unknown>; start?: boolean }>;
+export function discardProduct(s: Record<string, unknown>, r: Record<string, unknown>, deps?: Record<string, unknown>): Promise<Record<string, unknown>>;
