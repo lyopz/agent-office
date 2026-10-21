@@ -1,5 +1,5 @@
-// JARVIS's voice. Speaking: Piper's free offline natural voices in the desktop app (after
-// npm.cmd run get-voices), or OpenAI's human voices when the owner's OpenAI key is set (via the
+// JARVIS's voice. Speaking: free offline natural voices in the desktop app, Kokoro (best) and
+// Piper (after npm.cmd run get-voices), or OpenAI's human voices when the owner's OpenAI key is set (via the
 // runner on this PC; the key never reaches the app), else the computer's own voices. Hearing:
 // OpenAI transcription when the key is set, else Windows' offline speech recognition
 // (desktop/listen.ps1) in the desktop app, or the Web Speech API in a browser.
@@ -17,7 +17,7 @@ const WAKE_PREF = 'jarvis:wake';
 export const voiceStatus = (): VoiceStatus | null => ((useOrigin.getState().status as unknown as { voice?: VoiceStatus } | null)?.voice ?? null);
 const openaiVoice = () => !!voiceStatus()?.configured;
 
-/** The owner's pick in Settings: `piper:<voice>`, `openai:<voice>` or `system:<name>`; empty is automatic. Kept on this device. */
+/** The owner's pick in Settings: `kokoro:<id>`, `piper:<id>`, `openai:<voice>` or `system:<name>`; empty is automatic. Kept on this device. */
 export function voicePref(): string { try { return localStorage.getItem(PREF) || ''; } catch { return ''; } }
 export function setVoicePref(v: string) { try { localStorage.setItem(PREF, v); } catch { /* storage unavailable */ } }
 
@@ -116,21 +116,22 @@ export function systemVoices(): SpeechSynthesisVoice[] {
 
 let playing: HTMLAudioElement | null = null;
 
-/** Piper's natural offline voices on this PC (desktop app, after npm.cmd run get-voices). */
-export async function piperVoices(): Promise<string[]> {
+/** Offline natural voices on this PC as "kokoro:<id>" or "piper:<id>" (desktop app, after npm.cmd run get-voices). */
+export async function localVoices(): Promise<string[]> {
   try { return (await getDesktopBridge()?.voice?.voices?.()) ?? []; } catch { return []; }
 }
-const PIPER_DEFAULT = 'en_GB-alan-medium';
+export const KOKORO_DEFAULT = 'kokoro:am_michael';
+const PIPER_DEFAULT = 'piper:en_GB-alan-medium';
 
-/** Which voice JARVIS uses: the owner's pick, else Piper (free), else OpenAI (if set up), else this computer's best voice. */
-async function chosenVoice(): Promise<{ kind: 'piper' | 'openai' | 'system'; name: string }> {
+/** Which voice JARVIS uses: the owner's pick, else Kokoro, else Piper (both free), else OpenAI (if set up), else this computer's best voice. */
+async function chosenVoice(): Promise<{ kind: 'local' | 'openai' | 'system'; name: string }> {
   const pref = voicePref();
   const [kind, ...rest] = pref.split(':'); const name = rest.join(':');
-  const piper = await piperVoices();
-  if (kind === 'piper' && piper.includes(name)) return { kind, name };
+  const local = await localVoices();
+  if ((kind === 'kokoro' || kind === 'piper') && local.includes(pref)) return { kind: 'local', name: pref };
   if (kind === 'openai' && openaiVoice()) return { kind, name };
   if (kind === 'system') return { kind, name };
-  if (piper.length) return { kind: 'piper', name: piper.includes(PIPER_DEFAULT) ? PIPER_DEFAULT : piper[0] };
+  if (local.length) return { kind: 'local', name: local.includes(KOKORO_DEFAULT) ? KOKORO_DEFAULT : local.includes(PIPER_DEFAULT) ? PIPER_DEFAULT : local[0] };
   if (openaiVoice()) return { kind: 'openai', name: voiceStatus()?.defaultVoice ?? '' };
   return { kind: 'system', name: '' };
 }
@@ -145,7 +146,7 @@ export async function say(text: string): Promise<void> {
   stopSpeaking();
   const v = await chosenVoice();
   try {
-    if (v.kind === 'piper') {
+    if (v.kind === 'local') {
       const out = await getDesktopBridge()?.voice?.say?.(text, v.name);
       if (out?.ok) return await play(out.audio, out.mime);
     } else if (v.kind === 'openai') {

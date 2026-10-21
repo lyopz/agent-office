@@ -340,13 +340,48 @@ function registerVoiceIpc() {
   const piperDir = path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'the-brain', 'piper');
   const piperExe = path.join(piperDir, 'piper', process.platform === 'win32' ? 'piper.exe' : 'piper');
   const voiceDir = path.join(piperDir, 'voices');
+  // Kokoro: a much more natural free offline voice, run with the PC's own Node (kokoro-js needs
+  // Node's native onnxruntime, which Electron's Node can't load). One long-lived child, JSON lines.
+  const kokoroScript = path.join(ROOT, 'server', 'kokoro-say.mjs');
+  const kokoroCache = path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'the-brain', 'kokoro');
+  const KOKORO_VOICES = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'af_sky', 'af_nova', 'af_jessica', 'af_kore', 'af_aoede', 'af_river', 'af_alloy', 'am_michael', 'am_adam', 'am_eric', 'am_liam', 'am_onyx', 'am_echo', 'am_fenrir', 'am_puck', 'am_santa', 'bm_george', 'bm_daniel', 'bm_lewis', 'bm_fable', 'bf_emma', 'bf_isabella', 'bf_alice', 'bf_lily'];
+  const kokoroReady = () => { try { return fs.existsSync(path.join(ROOT, 'node_modules', 'kokoro-js')) && fs.readdirSync(kokoroCache).length > 0; } catch { return false; } };
+  let kokoro = null, kokoroPending = new Map(), kokoroId = 0, kokoroBuf = '';
+  const stopKokoro = () => { if (kokoro) { try { kokoro.kill(); } catch { /* gone */ } kokoro = null; } for (const p of kokoroPending.values()) p({ ok: false, error: 'Kokoro stopped.' }); kokoroPending.clear(); };
+  const startKokoro = () => {
+    if (kokoro) return kokoro;
+    const ps = spawn(process.platform === 'win32' ? 'node.exe' : 'node', [kokoroScript], { windowsHide: true, cwd: ROOT, env: { ...process.env, ORIGIN_KOKORO_DIR: kokoroCache } });
+    kokoro = ps; kokoroBuf = '';
+    ps.stdout.on('data', (d) => {
+      kokoroBuf += d.toString('utf8');
+      const lines = kokoroBuf.split(/\r?\n/); kokoroBuf = lines.pop() || '';
+      for (const line of lines) { let m; try { m = JSON.parse(line); } catch { continue; } const p = kokoroPending.get(m.id); if (p) { kokoroPending.delete(m.id); p(m); } }
+    });
+    ps.stderr.on('data', (d) => { const t = d.toString('utf8'); if (/error|failed/i.test(t)) console.warn(`kokoro: ${t.trim().slice(0, 300)}`); });
+    ps.on('error', (e) => { console.warn(`Kokoro didn't start: ${e.message}`); if (kokoro === ps) stopKokoro(); });
+    ps.on('close', () => { if (kokoro === ps) stopKokoro(); });
+    return ps;
+  };
+  const kokoroSay = (text, voice) => new Promise((resolve) => {
+    if (!kokoroReady()) return resolve({ ok: false, error: 'Kokoro voices are not downloaded yet. Run npm.cmd run get-voices once.' });
+    const ps = startKokoro();
+    const id = ++kokoroId;
+    const timer = setTimeout(() => { if (kokoroPending.delete(id)) resolve({ ok: false, error: 'Kokoro took too long.' }); }, 120000);
+    kokoroPending.set(id, (m) => { clearTimeout(timer); resolve(m.ok ? { ok: true, audio: m.wav, mime: 'audio/wav' } : { ok: false, error: m.error || 'Kokoro failed.' }); });
+    try { ps.stdin.write(`${JSON.stringify({ id, text: String(text || ''), voice: KOKORO_VOICES.includes(voice) ? voice : 'am_michael' })}\n`); }
+    catch (e) { clearTimeout(timer); kokoroPending.delete(id); resolve({ ok: false, error: `Kokoro isn't answering: ${e.message}` }); }
+  });
+  app.on('before-quit', stopKokoro);
   const piperVoices = () => { try { return fs.existsSync(piperExe) ? fs.readdirSync(voiceDir).filter((f) => f.endsWith('.onnx') && fs.existsSync(path.join(voiceDir, `${f}.json`))).map((f) => f.slice(0, -5)).sort() : []; } catch { return []; } };
-  ipcMain.handle('voice:voices', (event) => (trusted(event) ? piperVoices() : []));
+  // voice names are namespaced: "kokoro:am_michael" or "piper:en_GB-alan-medium"
+  ipcMain.handle('voice:voices', (event) => (trusted(event) ? [...(kokoroReady() ? KOKORO_VOICES.map((v) => `kokoro:${v}`) : []), ...piperVoices().map((v) => `piper:${v}`)] : []));
   ipcMain.handle('voice:say', (event, text, name) => new Promise((resolve) => {
     if (!trusted(event)) return resolve({ ok: false, error: 'Not allowed.' });
+    const [engine, ...rest] = String(name || '').split(':'); const want = rest.join(':');
+    if (engine === 'kokoro' || (!want && kokoroReady())) return kokoroSay(text, want).then(resolve);
     const voices = piperVoices();
-    const pick = voices.includes(String(name)) ? String(name) : voices[0];
-    if (!pick) return resolve({ ok: false, error: 'No Piper voices yet. Run npm.cmd run get-voices once.' });
+    const pick = voices.includes(want) ? want : voices[0];
+    if (!pick) return resolve({ ok: false, error: 'No offline voices yet. Run npm.cmd run get-voices once.' });
     const out = path.join(app.getPath('temp'), `jarvis-${process.pid}-${Date.now()}.wav`);
     const ps = spawn(piperExe, ['--model', path.join(voiceDir, `${pick}.onnx`), '--output_file', out], { windowsHide: true, cwd: path.dirname(piperExe) });
     const timer = setTimeout(() => { try { ps.kill(); } catch { /* gone */ } }, 60000);

@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld('officeDesktop', {
   voice: {
     listen: () => ipcRenderer.invoke('voice:listen'),
     stop: () => ipcRenderer.invoke('voice:stop'),
-    // Piper's natural offline voices, once npm.cmd run get-voices has downloaded them
+    // Offline natural voices (Kokoro, Piper) once npm.cmd run get-voices has downloaded them; names are "engine:voice"
     voices: () => ipcRenderer.invoke('voice:voices'),
     say: (text, name) => ipcRenderer.invoke('voice:say', String(text), String(name || '')),
     // Hey JARVIS: turn the wake-phrase listener on or off, and hear when it fires

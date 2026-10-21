@@ -20,7 +20,7 @@ export interface OfficeDesktopBridge {
   readonly voice?: {
     listen(): Promise<{ ok: true; text: string } | { ok: false; error: string }>;
     stop(): Promise<boolean>;
-    /** Piper voice names installed on this PC (missing in builds from before Piper). */
+    /** Offline voices installed on this PC as "kokoro:<id>" or "piper:<id>" (missing in older builds). */
     voices?(): Promise<string[]>;
     say?(text: string, name?: string): Promise<{ ok: true; audio: string; mime: string } | { ok: false; error: string }>;
     /** Hey JARVIS wake phrase (missing in older builds). */

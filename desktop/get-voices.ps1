@@ -1,7 +1,16 @@
-# Downloads Piper, a free offline voice engine, and a few natural-sounding voices for JARVIS.
-# They go in %LOCALAPPDATA%\the-brain\piper, outside the app folder. Run it with: npm.cmd run get-voices
+# Downloads JARVIS's free offline voices: Kokoro (28 natural voices, the default) and Piper (simpler
+# ones). Both live under %LOCALAPPDATA%\the-brain, outside the app folder. Run it with: npm.cmd run get-voices
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+
+# Kokoro runs with Node and needs its package plus a one-time model download (about 330 MB).
+Write-Host 'Installing the Kokoro voice package...'
+& npm.cmd install --no-audit --no-fund
+if ($LASTEXITCODE -ne 0) { Write-Host 'npm install failed; fix that and run this again.'; exit 1 }
+& node server/kokoro-say.mjs --warm
+if ($LASTEXITCODE -ne 0) { Write-Host 'The Kokoro download did not finish. Run this again when you are online.' }
+Write-Host ''
+Write-Host 'Getting the Piper voices too (simpler, as a spare)...'
 $root = Join-Path $env:LOCALAPPDATA 'the-brain\piper'
 $voices = Join-Path $root 'voices'
 New-Item -ItemType Directory -Force -Path $voices | Out-Null
@@ -33,4 +42,4 @@ foreach ($v in $list) {
 }
 Write-Host ''
 Write-Host "Done. Voices are in $voices"
-Write-Host 'Open Settings in The Brain and pick a voice under JARVIS voice.'
+Write-Host 'Open Settings in The Brain and pick a voice under JARVIS voice. Michael (Kokoro) is the default.'
