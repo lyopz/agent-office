@@ -84,3 +84,14 @@ describe('brain mesh', () => {
     for (let i = 0; i < fold.count; i += 97) expect(Number.isFinite(fold.getX(i))).toBe(true);
   });
 });
+
+describe('brain regions', () => {
+  test('every vertex carries a region colour from the atlas', async () => {
+    const { REGIONS } = await import('../src/brain/brainMesh');
+    const g = buildBrainGeometry(12);
+    const tint = g.getAttribute('tint');
+    expect(tint.count).toBe(g.getAttribute('position').count);
+    expect(REGIONS.map((r) => r.id)).toEqual(['frontal', 'parietal', 'temporal', 'occipital', 'cerebellum', 'brainstem']);
+    for (let i = 0; i < tint.count; i += 53) for (const v of [tint.getX(i), tint.getY(i), tint.getZ(i)]) { expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1); }
+  });
+});

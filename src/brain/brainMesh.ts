@@ -2,7 +2,9 @@
 // temporal and occipital shaping, winding gyri and sulci, the longitudinal
 // fissure between them, a folded cerebellum and the brainstem. Each vertex
 // carries a `fold` value (1 on a gyrus crown, 0 deep in a sulcus) so the
-// shader can shade the folds. Seeded, so it never changes between loads.
+// shader can shade the folds, and a `tint`, the colour of its region (frontal,
+// parietal, temporal and occipital lobes, cerebellum, brainstem), blended
+// softly across the sulci that divide them. Seeded, so it never changes between loads.
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -36,6 +38,22 @@ function makeNoise(seed: number) {
   };
 }
 
+/** Region colours, like an anatomy atlas. */
+export const REGIONS = [
+  { id: 'frontal', name: 'Frontal lobe', color: '#4f86e8' },
+  { id: 'parietal', name: 'Parietal lobe', color: '#e2b84a' },
+  { id: 'temporal', name: 'Temporal lobe', color: '#4fbf86' },
+  { id: 'occipital', name: 'Occipital lobe', color: '#e2704f' },
+  { id: 'cerebellum', name: 'Cerebellum', color: '#a874e0' },
+  { id: 'brainstem', name: 'Brainstem', color: '#8b95a6' },
+] as const;
+const RC = Object.fromEntries(REGIONS.map((r) => [r.id, new THREE.Color(r.color)])) as Record<(typeof REGIONS)[number]['id'], THREE.Color>;
+const tintOf = (geo: THREE.BufferGeometry, c: THREE.Color) => {
+  const n = geo.attributes.position.count, t = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) t.set([c.r, c.g, c.b], i * 3);
+  geo.setAttribute('tint', new THREE.BufferAttribute(t, 3));
+};
+
 const smooth = (e0: number, e1: number, x: number) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
 const gauss = (d2: number, w: number) => Math.exp(-d2 / (w * w));
 
@@ -57,6 +75,8 @@ function hemisphere(side: 1 | -1, detail: number): THREE.BufferGeometry {
   const geo = sphere(detail);
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const fold = new Float32Array(pos.count);
+  const tint = new Float32Array(pos.count * 3);
+  const col = new THREE.Color();
   const noise = makeNoise(side > 0 ? 71 : 113);
   const warp = makeNoise(side > 0 ? 7 : 19);
   const v = new THREE.Vector3();
@@ -95,12 +115,19 @@ function hemisphere(side: 1 | -1, detail: number): THREE.BufferGeometry {
     crown = crown * (1 - medial * 0.6) + medial * 0.6 * 0.8;
     crown *= 1 - 0.85 * syl; crown *= 1 - 0.6 * cen;
     fold[i] = crown;
+    // lobes: frontal in front of the central sulcus, temporal below the Sylvian fissure, occipital at the back
+    const wF = smooth(-0.04, 0.04, uz - (0.3 - 0.16 * uy));
+    const wO = smooth(-0.5, -0.72, uz) * (1 - wF);
+    const wT = smooth(-0.04, 0.06, (-0.18 - 0.26 * uz) - uy) * smooth(-0.25, 0.25, lateral) * smooth(-0.78, -0.55, uz);
+    col.copy(RC.parietal).lerp(RC.frontal, wF).lerp(RC.occipital, wO).lerp(RC.temporal, wT);
+    tint.set([col.r, col.g, col.b], i * 3);
     const depth = 0.045 * (crown - 0.8) - 0.05 * syl - 0.025 * cen;
     // push along the sphere's outward direction, scaled to the lobe shape
     const n = new THREE.Vector3(x / 0.42 ** 2, y / 0.56 ** 2, z / 0.84 ** 2).normalize();
     pos.setXYZ(i, x + side * 0.43 + n.x * depth, y + 0.1 + n.y * depth, z + n.z * depth);
   }
   geo.setAttribute('fold', new THREE.BufferAttribute(fold, 1));
+  geo.setAttribute('tint', new THREE.BufferAttribute(tint, 3));
   geo.computeVertexNormals();
   return geo;
 }
@@ -158,7 +185,9 @@ function brainstem(): THREE.BufferGeometry {
 
 /** The whole brain as one geometry with a `fold` attribute. `detail` is icosphere subdivisions: ~64 for the app, lower for tests. */
 export function buildBrainGeometry(detail = 64): THREE.BufferGeometry {
-  const parts = [hemisphere(-1, detail), hemisphere(1, detail), cerebellum(Math.round(detail * 0.7)), brainstem()];
+  const cb = cerebellum(Math.round(detail * 0.7)), bs = brainstem();
+  tintOf(cb, RC.cerebellum); tintOf(bs, RC.brainstem);
+  const parts = [hemisphere(-1, detail), hemisphere(1, detail), cb, bs];
   const merged = mergeGeometries(parts, false)!;
   parts.forEach((g) => g.dispose());
   return merged;
@@ -168,25 +197,26 @@ export function buildBrainGeometry(detail = 64): THREE.BufferGeometry {
 export function glassBrainMaterial() {
   return new THREE.ShaderMaterial({
     transparent: true, depthWrite: false,
-    uniforms: { uDeep: { value: new THREE.Color('#0b2547') }, uCrown: { value: new THREE.Color('#5fb8ff') }, uRim: { value: new THREE.Color('#9fe6ff') }, uLight: { value: new THREE.Vector3(-0.5, 0.8, 0.6).normalize() }, uOpacity: { value: 1 } },
-    vertexShader: `attribute float fold; varying float vFold; varying vec3 vN; varying vec3 vV; varying vec3 vWN;
-      void main(){ vFold=fold; vec4 mv=modelViewMatrix*vec4(position,1.); vN=normalize(normalMatrix*normal); vWN=normalize(mat3(modelMatrix)*normal); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`,
-    fragmentShader: `uniform vec3 uDeep; uniform vec3 uCrown; uniform vec3 uRim; uniform vec3 uLight; uniform float uOpacity; varying float vFold; varying vec3 vN; varying vec3 vV; varying vec3 vWN;
+    uniforms: { uDeep: { value: new THREE.Color('#0b2547') }, uCrown: { value: new THREE.Color('#5fb8ff') }, uRim: { value: new THREE.Color('#9fe6ff') }, uLight: { value: new THREE.Vector3(-0.5, 0.8, 0.6).normalize() }, uOpacity: { value: 1 }, uRegions: { value: 1 } },
+    vertexShader: `attribute float fold; attribute vec3 tint; varying float vFold; varying vec3 vTint; varying vec3 vN; varying vec3 vV; varying vec3 vWN;
+      void main(){ vFold=fold; vTint=tint; vec4 mv=modelViewMatrix*vec4(position,1.); vN=normalize(normalMatrix*normal); vWN=normalize(mat3(modelMatrix)*normal); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`,
+    fragmentShader: `uniform vec3 uDeep; uniform vec3 uCrown; uniform vec3 uRim; uniform vec3 uLight; uniform float uOpacity; uniform float uRegions; varying float vFold; varying vec3 vTint; varying vec3 vN; varying vec3 vV; varying vec3 vWN;
       void main(){ vec3 n=normalize(vN); float fres=pow(1.-abs(dot(n,normalize(vV))),2.4); float diff=max(dot(normalize(vWN),uLight),0.);
-        float f=smoothstep(.15,.95,vFold); vec3 col=mix(uDeep,uCrown,f*.8)*(.35+.75*diff)+uRim*fres*.9;
-        float a=(.05+.16*f*diff+.55*fres)*uOpacity; gl_FragColor=vec4(col,a); }`,
+        float f=smoothstep(.15,.95,vFold); vec3 crown=mix(uCrown,vTint,uRegions), rim=mix(uRim,vTint,uRegions*.75);
+        vec3 col=mix(uDeep*mix(vec3(1.),vTint*1.6,uRegions*.6),crown,f*.8)*(.34+.62*diff)+rim*fres*.55;
+        float a=(.06+.2*f*diff+.42*fres)*uOpacity; gl_FragColor=vec4(col,a); }`,
   });
 }
 
 /** Tissue as it looks: soft pinkish grey, darker in the sulci. Hides the nerves. */
 export function solidBrainMaterial() {
   return new THREE.ShaderMaterial({
-    uniforms: { uSulcus: { value: new THREE.Color('#6d4648') }, uGyrus: { value: new THREE.Color('#e3b9b2') }, uLight: { value: new THREE.Vector3(-0.5, 0.8, 0.6).normalize() }, uFill: { value: new THREE.Vector3(0.6, -0.2, -0.7).normalize() } },
-    vertexShader: `attribute float fold; varying float vFold; varying vec3 vWN; varying vec3 vN; varying vec3 vV;
-      void main(){ vFold=fold; vec4 mv=modelViewMatrix*vec4(position,1.); vWN=normalize(mat3(modelMatrix)*normal); vN=normalize(normalMatrix*normal); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`,
-    fragmentShader: `uniform vec3 uSulcus; uniform vec3 uGyrus; uniform vec3 uLight; uniform vec3 uFill; varying float vFold; varying vec3 vWN; varying vec3 vN; varying vec3 vV;
+    uniforms: { uSulcus: { value: new THREE.Color('#6d4648') }, uGyrus: { value: new THREE.Color('#e3b9b2') }, uLight: { value: new THREE.Vector3(-0.5, 0.8, 0.6).normalize() }, uFill: { value: new THREE.Vector3(0.6, -0.2, -0.7).normalize() }, uRegions: { value: 1 } },
+    vertexShader: `attribute float fold; attribute vec3 tint; varying float vFold; varying vec3 vTint; varying vec3 vWN; varying vec3 vN; varying vec3 vV;
+      void main(){ vFold=fold; vTint=tint; vec4 mv=modelViewMatrix*vec4(position,1.); vWN=normalize(mat3(modelMatrix)*normal); vN=normalize(normalMatrix*normal); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`,
+    fragmentShader: `uniform vec3 uSulcus; uniform vec3 uGyrus; uniform vec3 uLight; uniform vec3 uFill; uniform float uRegions; varying float vFold; varying vec3 vTint; varying vec3 vWN; varying vec3 vN; varying vec3 vV;
       void main(){ vec3 n=normalize(vWN); float key=max(dot(n,uLight),0.); float fill=max(dot(n,uFill),0.)*.35;
-        float f=smoothstep(.1,.9,vFold); vec3 base=mix(uSulcus,uGyrus,f);
+        float f=smoothstep(.1,.9,vFold); vec3 gyrus=mix(uGyrus,vTint*1.05,uRegions*.7), sulcus=mix(uSulcus,vTint*.42,uRegions*.7); vec3 base=mix(sulcus,gyrus,f);
         float spec=pow(max(dot(reflect(-normalize(vV),normalize(vN)),vec3(0.,0.,1.)),0.),24.)*.12*f;
         float fres=pow(1.-abs(dot(normalize(vN),normalize(vV))),3.)*.25;
         gl_FragColor=vec4(base*(.22+.85*key+fill)+spec+fres*vec3(.9,.7,.7),1.); }`,

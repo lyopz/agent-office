@@ -530,3 +530,9 @@
 .brain-node-tip.is-idea { border-color: rgba(255, 210, 122, .45); }
 /* fade the canvas edges so the glow never shows a box */
 .brain-webgl-canvas { -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, #000 62%, transparent 100%); mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, #000 62%, transparent 100%); }
+/* region legend */
+.brain-regions { position: absolute; left: 18px; bottom: 74px; list-style: none; margin: 0; padding: 8px 10px; display: grid; gap: 4px; font-size: 11px; color: var(--muted); background: rgba(6, 9, 18, .62); border: 1px solid rgba(255, 255, 255, .07); border-radius: 10px; pointer-events: none; }
+.brain-regions li { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.brain-regions i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+.brain-rotate-tools .brain-regions-toggle[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); }
+@media (max-width: 760px) { .brain-regions { display: none; } }

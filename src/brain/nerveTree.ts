@@ -83,12 +83,12 @@ function bundle(a: Vec3, b: Vec3, count: number, spread: number, rand: () => num
   const axis = norm(sub(b, a));
   const up: Vec3 = Math.abs(axis[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
   const u = norm(cross(axis, up)), v = cross(axis, u);
-  const bow = mul(norm(sub(lerp(a, b, 0.5), CORE)), len(sub(b, a)) * 0.12); // bundles arc outwards a little
+  const bow = mul(norm(sub(lerp(a, b, 0.5), CORE)), len(sub(b, a)) * 0.07); // bundles arc outwards a little
   const strands: Path3[] = [];
   for (let i = 0; i < count; i++) {
     const ang = rand() * Math.PI * 2, r = spread * Math.sqrt(rand());
     const off = (s: number): Vec3 => add(mul(u, Math.cos(ang + s) * r), mul(v, Math.sin(ang + s) * r));
-    const twist = (rand() - 0.5) * 1.6;
+    const twist = (rand() - 0.5) * 0.9;
     const ctrl: Vec3[] = [
       add(a, mul(off(0), 0.12)),
       add(add(lerp(a, b, 0.3), off(twist * 0.3)), mul(bow, 0.7)),
@@ -153,7 +153,7 @@ export function buildNerveTree(agents: TreeAgent[], rootHint = 'agent_origin'): 
 
   // the brainstem trunk carries everything into the main agent
   const trunkRand = rng(hash(`trunk:${rootId}`));
-  bundles.push({ id: 'trunk', from: null, to: rootId, color: root.color, depth: 0, strands: bundle(STEM_BASE, CORE, 16, 0.045, trunkRand), tufts: tufts(CORE, [0, 1, 0], 10, 0.16, trunkRand) });
+  bundles.push({ id: 'trunk', from: null, to: rootId, color: root.color, depth: 0, strands: bundle(STEM_BASE, CORE, 8, 0.024, trunkRand), tufts: tufts(CORE, [0, 1, 0], 5, 0.08, trunkRand) });
 
   // each agent gets a slice of directions (azimuth around the vertical axis) sized by the agents below it
   const place = (id: string, az0: number, az1: number, el: number, depth: number) => {
@@ -172,9 +172,9 @@ export function buildNerveTree(agents: TreeAgent[], rootHint = 'agent_origin'): 
       const pos = towardsCortex(az, elev, f);
       const from = nodes[id].pos;
       nodes[c] = { id: c, name: a.name, parentId: id, depth: d, pos, color: a.color, teamId: a.teamId, size: sizeOf(c), childIds: kids.get(c) ?? [] };
-      const count = Math.min(16, 3 + 2 * sizeOf(c));
-      const spread = 0.03 + 0.012 * Math.sqrt(sizeOf(c));
-      bundles.push({ id: c, from: id, to: c, color: a.color, depth: d, strands: bundle(from, pos, count, spread, rand), tufts: tufts(pos, norm(sub(pos, from)), isLeaf ? 9 : 5, isLeaf ? 0.17 : 0.1, rand) });
+      const count = Math.min(7, 2 + sizeOf(c));
+      const spread = 0.008 + 0.005 * Math.sqrt(sizeOf(c));
+      bundles.push({ id: c, from: id, to: c, color: a.color, depth: d, strands: bundle(from, pos, count, spread, rand), tufts: tufts(pos, norm(sub(pos, from)), isLeaf ? 4 : 2, isLeaf ? 0.07 : 0.045, rand) });
       place(c, at, at + share, elev, d);
       at += share;
     }
