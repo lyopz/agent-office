@@ -20,6 +20,7 @@ export async function giveTask(doc: OfficeDoc, agentId: string, text: string): P
   const own = doc.skillBank.find((k) => k.id === skillFileId(agentId));
   const r = await taskAction({
     action: 'add',
+    ...(forOrigin ? {} : { agentId }),
     title: (forOrigin ? task : `${a.identity.name}: ${task}`).slice(0, 160),
     detail: forOrigin ? '' : `Do this as ${a.identity.name} (${a.identity.title}). ${own ? `Follow its SKILL.md, "${own.name}", in the skill bank.` : 'It has no SKILL.md yet, so work from its role.'}`,
   });

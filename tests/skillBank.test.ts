@@ -62,14 +62,19 @@ describe('skill bank', () => {
 
 describe('each agent gets its own SKILL.md', () => {
   test('ventures and skill agents without one are queued once; a finished file goes to the bank and the agent', async () => {
-    const { agentsNeedingSkillFile, skillFileBrief, skillFileOps, skillFileId } = await import('../src/brain/skillFiles');
+    const { agentsNeedingSkillFile, skillFileBrief, skillFileOps, skillFileId, SKILL_FILE_VERSION } = await import('../src/brain/skillFiles');
     const { skillFileText } = await import('../src/brain/SkillBank');
     let doc = creatorBrain();
     doc = applyOps(doc, branchAgentOps(doc, ORIGIN_ID, { id: 'agent_etsy', name: 'ETSY', specialty: 'Etsy store', purpose: 'Sell prints', skill: 'Ventures', window: window_ }).ops).doc;
-    expect(agentsNeedingSkillFile(doc, { tasks: [] })).toEqual(['agent_etsy']); // ORIGIN and core staff are not queued
+    expect(agentsNeedingSkillFile(doc, { tasks: [] })).toEqual(['agent_etsy']); // every agent but ORIGIN
     expect(skillFileBrief(doc, 'agent_etsy')).toMatch(/Venture: ETSY, Etsy store, created by ORIGIN/);
-    expect(agentsNeedingSkillFile(doc, { tasks: [{ id: 't', title: '', detail: '', status: 'stopped', by: 'owner', createdAt: '', kind: 'skill-file', agentId: 'agent_etsy' }] })).toEqual([]);
-    const r = applyOps(doc, skillFileOps(doc, 'agent_etsy', { name: 'Etsy store playbook', description: 'Running the store', body: '# Steps\n1. List.' }));
+    const req = { id: 't', title: '', detail: '', status: 'stopped' as const, by: 'owner' as const, createdAt: '', kind: 'skill-file' as const, agentId: 'agent_etsy' };
+    expect(agentsNeedingSkillFile(doc, { tasks: [{ ...req, version: SKILL_FILE_VERSION }] })).toEqual([]);
+    expect(agentsNeedingSkillFile(doc, { tasks: [req] })).toEqual(['agent_etsy']); // an old-format request doesn't count
+    // a thin first-version file is rewritten in the detailed format
+    const old = applyOps(doc, skillFileOps(doc, 'agent_etsy', { name: 'Etsy store playbook', description: 'Running the store', body: 'Thin.' })).doc;
+    expect(agentsNeedingSkillFile(old, { tasks: [] })).toEqual(['agent_etsy']);
+    const r = applyOps(old, skillFileOps(old, 'agent_etsy', { name: 'Etsy store playbook', description: 'Running the store', body: '# Steps\n1. List.', version: SKILL_FILE_VERSION }));
     expect(r.errors).toEqual([]);
     expect(r.doc.agents.agent_etsy.bankSkills).toContain(skillFileId('agent_etsy'));
     expect(agentPrompt(r.doc, 'agent_etsy')).toMatch(/## Etsy store playbook\n# Steps/);

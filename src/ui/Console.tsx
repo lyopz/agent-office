@@ -24,7 +24,7 @@ export function Console() {
   const logRef = useRef<HTMLDivElement>(null);
   const status = useOrigin((s) => s.status);
   const checked = useOrigin((s) => s.checked);
-  const task = status?.tasks.find((t) => t.status === 'approved');
+  const task = status?.tasks.find((t) => t.status === 'approved' && t.kind !== 'skill-file') ?? status?.tasks.find((t) => t.status === 'approved');
   const add = (e: Omit<Entry, 'id'>) => setEntries((xs) => [...xs, { ...e, id: nextId++ }]);
   useEffect(() => { logRef.current?.scrollTo({ top: 1e6 }); }, [entries, busy]);
 

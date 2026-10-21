@@ -54,7 +54,8 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   );
 
   const proposed = st.tasks.filter((t) => t.status === 'proposed');
-  const approved = st.tasks.filter((t) => t.status === 'approved');
+  // the runner's order: your tasks first, oldest first, then SKILL.md writing
+  const approved = st.tasks.filter((t) => t.status === 'approved').sort((a, b) => Number(a.kind === 'skill-file') - Number(b.kind === 'skill-file'));
   const stopped = st.tasks.filter((t) => t.status === 'stopped').slice(-5);
   const agentAsks = (st.agentProposals ?? []).filter((p) => p.status === 'proposed');
   const pct = Math.min(100, (st.spentUsd / st.capUsd) * 100);
@@ -86,9 +87,9 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         </div>
       ))}
 
-      <span className="creator-kicker">APPROVED · ONE AT A TIME, OLDEST FIRST</span>
+      <span className="creator-kicker">APPROVED · ONE AT A TIME, YOUR TASKS FIRST</span>
       {approved.length === 0 ? <p className="creator-privacy">No approved tasks. ORIGIN will only propose tasks until you approve one.</p>
-        : <ul className="creator-request-log">{approved.map((t, i) => <li key={t.id}><b>{i === 0 ? 'Working on: ' : 'Queued: '}{t.title}</b>{t.detail ? `: ${t.detail}` : ''} · {spent(t)} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button> <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></li>)}</ul>}
+        : <ul className="creator-request-log">{approved.map((t, i) => <li key={t.id}><b>{i === 0 ? 'Working on: ' : 'Queued: '}{t.title}</b>{t.detail && t.kind !== 'skill-file' ? `: ${t.detail.slice(0, 300)}` : ''} · {spent(t)} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button> <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></li>)}</ul>}
       {stopped.length > 0 && <><span className="creator-kicker">STOPPED BY BUDGET WATCH</span>
         <ul className="creator-request-log">{stopped.map((t) => <li key={t.id}><b>{t.title}</b> · {spent(t)}{t.stopReason ? `. ${t.stopReason}` : ''} <button className="link-btn" onClick={() => void act({ action: 'approve', id: t.id }, 'Restarted with a fresh budget.')}>restart</button></li>)}</ul></>}
       <div className="creator-agent-grid">

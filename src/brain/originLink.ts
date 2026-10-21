@@ -7,10 +7,10 @@ import { ORIGIN_ID, agentPrompt, branchKind } from './opportunity';
 export interface RunnerTask {
   id: string; title: string; detail: string; status: 'proposed' | 'approved' | 'rejected' | 'done' | 'stopped'; by: 'owner' | 'origin'; createdAt: string;
   spentUsd?: number; runCosts?: number[]; budgetUsd?: number; stopReason?: string;
-  kind?: 'skill-file'; agentId?: string; agentName?: string;
+  kind?: 'skill-file'; agentId?: string; agentName?: string; version?: number;
 }
 /** A SKILL.md ORIGIN wrote for one agent, waiting for the app to save it to the bank. */
-export interface SkillFile { id: string; agentId: string; agentName: string; name: string; description: string; body: string; status: 'new' | 'imported'; createdAt: string }
+export interface SkillFile { id: string; agentId: string; agentName: string; version?: number; name: string; description: string; body: string; status: 'new' | 'imported'; createdAt: string }
 export interface AgentProposal {
   id: string; parentId: string; name: string; specialty: string; purpose: string; skill: string; bankSkillIds: string[];
   everyMinutes: number; maxMinutes: number; reason: string; skillFile?: { name: string; description: string; body: string } | null; status: 'proposed' | 'approved' | 'rejected'; createdAt: string; agentId?: string | null;
@@ -48,7 +48,9 @@ export function brainMap(doc: OfficeDoc): string {
 /** Send ORIGIN's current instructions, bank skills and brain map so scheduled runs use them. */
 export async function syncOrigin(doc: OfficeDoc) {
   if (!doc.agents[ORIGIN_ID]?.ai.systemInstructions) return false;
-  return !!(await call('/sync', { instructions: `${agentPrompt(doc, ORIGIN_ID)}\n\n${brainMap(doc)}` }));
+  // every other agent's instructions and SKILL.md, so ORIGIN can work a task as that agent
+  const agents = Object.values(doc.agents).filter((a) => a.id !== ORIGIN_ID).map((a) => ({ id: a.id, name: a.identity.name, prompt: agentPrompt(doc, a.id) }));
+  return !!(await call('/sync', { instructions: `${agentPrompt(doc, ORIGIN_ID)}\n\n${brainMap(doc)}`, agents }, 10_000));
 }
 
 /** Start a manual work window; resolves when it ends (up to the window length). */
@@ -76,6 +78,6 @@ export async function skillFileImported(id: string) {
   return !!(await call('/skillfiles', { action: 'imported', id }));
 }
 
-export async function taskAction(body: { action: 'add'; title: string; detail?: string; kind?: 'skill-file'; agentId?: string; agentName?: string } | { action: 'approve' | 'reject' | 'done' | 'stop'; id: string }) {
+export async function taskAction(body: { action: 'add'; title: string; detail?: string; kind?: 'skill-file'; version?: number; agentId?: string; agentName?: string } | { action: 'approve' | 'reject' | 'done' | 'stop'; id: string }) {
   return (await call<{ ok: boolean; tasks: RunnerTask[] }>('/tasks', body))?.data ?? null;
 }

@@ -172,11 +172,33 @@ describe('origin runner: SKILL.md tasks', () => {
   test('a SKILL.md task gets the writing rules and its file is kept for the app', async () => {
     write({ ...base, tasks: [{ id: 't1', title: "Write ETSY's SKILL.md", detail: 'Venture: ETSY', status: 'approved', by: 'owner', createdAt: '', kind: 'skill-file', agentId: 'agent_etsy', agentName: 'ETSY' }] });
     let brief = '';
-    const fetch = async (_u: string, init: any) => { brief = JSON.parse(init.body).messages[0].content; return reply(result({ memory: 'm', skillFile: { name: 'Etsy playbook', description: 'store', body: '# Run the store' }, completedTaskIds: ['t1'], summary: 's' }), { input_tokens: 1000, output_tokens: 1000 }); };
+    const fetch = async (_u: string, init: any) => { brief = JSON.parse(init.body).messages[0].content; return reply(result({ memory: 'm', skillFile: { name: 'Etsy playbook', description: 'store', body: `# Run the store\n${'Step. '.repeat(50)}` }, completedTaskIds: ['t1'], summary: 's' }), { input_tokens: 1000, output_tokens: 1000 }); };
     await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
     expect(brief).toMatch(/write the SKILL\.md for the agent "ETSY"/);
     const s = read();
     expect(s.tasks[0].status).toBe('done');
-    expect(s.skillFiles[0]).toMatchObject({ agentId: 'agent_etsy', name: 'Etsy playbook', body: '# Run the store', status: 'new' });
+    expect(brief).toMatch(/Recurring workflows/);
+    expect(s.skillFiles[0]).toMatchObject({ agentId: 'agent_etsy', name: 'Etsy playbook', status: 'new', version: 1 });
   });
+
+  test('a task given to an agent is worked as that agent, with its synced SKILL.md', async () => {
+    const agents = [{ id: 'agent_etsy', name: 'ETSY', prompt: 'You are ETSY.\n## Etsy playbook\nList weekly.' }];
+    for (const task of [{ id: 't1', title: 'ETSY: plan the next listings', agentId: 'agent_etsy' }, { id: 't2', title: 'ETSY: plan the next listings' }]) {
+      write({ ...base, agents, tasks: [{ detail: '', status: 'approved', by: 'owner', createdAt: '', ...task }] });
+      let brief = '';
+      await runner.runOnce('manual', { fetch: async (_u: string, init: any) => { brief = JSON.parse(init.body).messages[0].content; return reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 10 }); }, file, key: 'test' } as any);
+      expect(brief).toMatch(/WORK THIS TASK AS ETSY/);
+      expect(brief).toMatch(/List weekly\./);
+    }
+    write({ ...base, agents, tasks: [{ id: 't3', title: 'Research Etsy fees', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
+    let brief = '';
+    await runner.runOnce('manual', { fetch: async (_u: string, init: any) => { brief = JSON.parse(init.body).messages[0].content; return reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 10 }); }, file, key: 'test' } as any);
+    expect(brief).not.toMatch(/WORK THIS TASK AS/);
+  });
+});
+
+test("the owner's tasks go before SKILL.md writing", () => {
+  const t = (id: string, kind?: string) => ({ id, status: 'approved', kind });
+  expect(runner.nextTask({ tasks: [t('s1', 'skill-file'), t('o1')] })).toMatchObject({ id: 'o1' });
+  expect(runner.nextTask({ tasks: [t('s1', 'skill-file')] })).toMatchObject({ id: 's1' });
 });

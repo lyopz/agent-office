@@ -6,3 +6,4 @@ export function runOnce(trigger: 'manual' | 'schedule', deps?: { fetch: typeof f
 export function budgetWatch(task: { spentUsd?: number; runCosts?: number[]; budgetUsd?: number }, now?: Date): string | null;
 export function ask(question: string, deps?: { fetch: typeof fetch; file: string; key?: string }):
   Promise<{ ok: false; reason: string } | { ok: true; answer: string; costUsd: number | null; taskTitle: string | null }>;
+export function nextTask(s: { tasks: { status: string; kind?: string }[] }): { status: string; kind?: string } | null;

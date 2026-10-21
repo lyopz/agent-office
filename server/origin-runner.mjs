@@ -26,7 +26,7 @@ const MAX_MIN = Number(process.env.ORIGIN_MAX_MIN || 10);
 const SCHEDULE = (process.env.ORIGIN_SCHEDULE || 'on') !== 'off';
 const DIR = path.resolve(process.env.ORIGIN_DATA_DIR || 'origin-data');
 const FILE = path.join(DIR, 'state.json');
-const MAX_BODY = 512 * 1024;
+const MAX_BODY = 2 * 1024 * 1024;
 const MAX_INSTRUCTIONS = 200_000;
 
 /** Most a single run may spend, and what must be left in the month before a run starts. */
@@ -107,10 +107,36 @@ const newId = (p) => `${p}_${Date.now().toString(36)}_${Math.random().toString(3
 const pendingCount = (s) => s.tasks.filter((t) => t.status === 'proposed').length + s.agentProposals.filter((a) => a.status === 'proposed').length;
 
 /** What a SKILL.md for one agent must contain. ORIGIN writes one for every agent it or the owner creates. */
-const SKILL_FILE_RULES = 'A SKILL.md is the detailed, specific playbook for one agent\'s job, not a generic description. Include: the outcome it owns and what "done" looks like; step-by-step how it does its recurring work; the inputs and sources it uses (with how to judge them); the deliverable format; quality checks before handing work back; costs and limits; what needs the owner\'s approval; and what it escalates to its venture or to you. Write it for that agent and that business specifically, in Markdown, under 12,000 characters.';
-const cleanSkillFile = (f) => (f && typeof f === 'object' && String(f.body || '').trim()
+const SKILL_FILE_RULES = `A SKILL.md is the full, detailed playbook for one agent's job: specific to that agent and its business, never generic, and complete enough that the agent can do excellent work from it alone. Write it in Markdown, between 6,000 and 18,000 characters, with these sections:
+1. Mission: the outcome it owns, who it serves, and what "done" and "excellent" look like, with measurable targets.
+2. Scope: what it does and explicitly does not do; who it hands work to and receives work from.
+3. Recurring workflows: each one as numbered steps with decision points (if X then Y), the order of work, and how long each step should take within its work window.
+4. Methods and techniques: the specific frameworks, formulas, checklists or tactics an expert in this role uses, with short worked examples for this business.
+5. Inputs and sources: where it gets information, how to judge each source's reliability and freshness, and what to do when sources disagree.
+6. Deliverables: the exact format of each output (headings, fields, length), with a filled-in example.
+7. Quality bar: a checklist it runs before handing work back, and common mistakes to avoid.
+8. Costs and limits: what each kind of work costs in tokens, searches or money, its budget habits, and when to stop.
+9. Approvals and escalation: what needs the owner's approval, what goes to its venture or to ORIGIN, and how to write that request.
+10. Improving: what it records after each task so the next run is better.`;
+const cleanSkillFile = (f) => (f && typeof f === 'object' && String(f.body || '').trim().length >= 200
   ? { name: String(f.name || '').slice(0, 80), description: String(f.description || '').slice(0, 1000), body: String(f.body).slice(0, 20_000) }
   : null);
+
+/** One task at a time: the owner's oldest approved task, and SKILL.md writing only when none is waiting. */
+export function nextTask(s) {
+  return s.tasks.find((t) => t.status === 'approved' && t.kind !== 'skill-file') || s.tasks.find((t) => t.status === 'approved') || null;
+}
+
+/** An agent's instructions and SKILL.md, as the app last synced them. */
+function agentBrief(s, agentId) { return (s.agents || []).find((a) => a.id === agentId)?.prompt || ''; }
+/** The agent a task was given to: by id, or by a title that starts with its name. */
+function taskAgent(s, task) {
+  return (s.agents || []).find((a) => a.id === task.agentId) || (s.agents || []).find((a) => task.title.startsWith(`${a.name}: `)) || null;
+}
+function workAs(s, task) {
+  const a = taskAgent(s, task);
+  return a ? `\n\nWORK THIS TASK AS ${a.name}. Follow its instructions and SKILL.md below exactly: its workflow, methods, deliverable format and quality bar. Hand back what its SKILL.md says to hand back.\n--- ${a.name} ---\n${a.prompt}\n--- end of ${a.name} ---` : '';
+}
 
 function briefFor(s, task, deadline) {
   return [
@@ -119,9 +145,9 @@ function briefFor(s, task, deadline) {
     `Your notes from earlier runs:\n${s.memory || '(none yet: this is your first real run)'}`,
     `Next action you recorded: ${s.nextAction || '(none)'}`,
     task?.kind === 'skill-file'
-      ? `Your one task this run (the owner approved it): [${task.id}] write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId}). What the owner and the agent's creator said about it:\n${task.detail}\n${SKILL_FILE_RULES}\nResearch only if you need to. Return it as "skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"} and list the task id in completedTaskIds.`
+      ? `Your one task this run (the owner approved it): [${task.id}] write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId}). What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions${task.version > 1 ? ' and its earlier, thinner SKILL.md (replace it with a much more detailed one)' : ''}:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}\nResearch only if it makes the playbook more specific (for example current platform rules or prices). Return it as "skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"} and list the task id in completedTaskIds.`
       : task
-      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}\nIf you finish it, list its id in completedTaskIds. If not, record in your notes exactly where you stopped; the next run continues it.\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
+      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}\nIf you finish it, list its id in completedTaskIds. If not, record in your notes exactly where you stopped; the next run continues it.\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
       : 'The owner has not approved any task yet. Do not research. Review your notes and propose the single most valuable, cheap task for the owner to approve.',
     `Waiting for the owner's approval already: ${[...s.tasks.filter((t) => t.status === 'proposed').map((t) => `task "${t.title}"`), ...s.agentProposals.filter((a) => a.status === 'proposed').map((a) => `agent "${a.name}"`)].join('; ') || 'nothing'}`,
     pendingCount(s)
@@ -149,8 +175,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   if (remaining(s) < CALL_WORST_USD) {
     return { ok: false, reason: `The $${CAP} monthly cap is reached ($${s.ledger.spentUsd.toFixed(2)} spent). Runs stop until next month or a new approved cap.` };
   }
-  // one task at a time: the oldest approved task
-  const task = s.tasks.find((t) => t.status === 'approved') || null;
+  const task = nextTask(s);
   const start = new Date(), deadline = new Date(start.getTime() + MAX_MIN * 60_000);
   const runLimit = Math.min(RUN_LIMIT_USD, remaining(s));
   const record = { id: `run_${start.getTime().toString(36)}`, trigger, model: MODEL, startedAt: start.toISOString(), endedAt: null, costUsd: 0, costKnown: true, calls: 0, searches: 0, status: 'running', summary: '' };
@@ -165,7 +190,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
       const r = await deps.fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': deps.key || KEY, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: MODEL, max_tokens: 8000, system: s.instructions, messages, ...(tools.length ? { tools } : {}) }),
+        body: JSON.stringify({ model: MODEL, max_tokens: task?.kind === 'skill-file' ? 16000 : 8000, system: s.instructions, messages, ...(tools.length ? { tools } : {}) }),
         signal: AbortSignal.timeout(Math.max(5_000, deadline.getTime() - Date.now())),
       });
       record.calls++;
@@ -208,7 +233,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
     }
     const file = task?.kind === 'skill-file' ? cleanSkillFile(out.skillFile) : null;
     if (file) {
-      s.skillFiles.push({ id: newId('skillfile'), agentId: task.agentId, agentName: task.agentName, ...file, status: 'new', createdAt: record.endedAt });
+      s.skillFiles.push({ id: newId('skillfile'), agentId: task.agentId, agentName: task.agentName, version: task.version || 1, ...file, status: 'new', createdAt: record.endedAt });
       task.status = 'done';
     }
     // only the task this run worked on can be completed or stopped by it
@@ -270,7 +295,7 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
   rollMonth(s);
   if (!s.instructions) return { ok: false, reason: 'Open the app once with the runner on so it can send ORIGIN\'s instructions.' };
   if (remaining(s) < ASK_WORST_USD) return { ok: false, reason: `The $${CAP} monthly cap is reached, so ORIGIN can't answer until next month.` };
-  const task = s.tasks.find((t) => t.status === 'approved');
+  const task = nextTask(s);
   const recent = (s.asks || []).slice(0, 4).reverse().flatMap((a) => [{ role: 'user', content: a.q }, { role: 'assistant', content: a.a }]);
   const context = [
     'The owner is asking you a question in the console, outside your work window. Answer directly and briefly from what you know; you have no tools here and this does not count as a run. Do not propose tasks or agents here.',
@@ -342,7 +367,13 @@ async function handle(req, res) {
   try { body = await readBody(req); } catch { return send(req, res, 400, { error: 'invalid request body' }); }
   if (url === '/api/origin/sync') {
     if (typeof body.instructions !== 'string' || body.instructions.length < 100 || body.instructions.length > MAX_INSTRUCTIONS) return send(req, res, 400, { error: 'instructions required' });
-    const s = loadState(); s.instructions = body.instructions; saveState(s);
+    const s = loadState(); s.instructions = body.instructions;
+    // the other agents' instructions and SKILL.md, so ORIGIN can work a task as one of them
+    if (Array.isArray(body.agents)) {
+      s.agents = body.agents.filter((a) => a && typeof a.id === 'string' && typeof a.name === 'string').slice(0, 100)
+        .map((a) => ({ id: a.id.slice(0, 80), name: a.name.slice(0, 80), prompt: String(a.prompt || '').slice(0, 40_000) }));
+    }
+    saveState(s);
     return send(req, res, 200, { ok: true });
   }
   if (url === '/api/origin/run') {
@@ -357,8 +388,8 @@ async function handle(req, res) {
       // a SKILL.md request for one agent; only one open request per agent
       if (body.kind === 'skill-file' && typeof body.agentId === 'string') {
         if (s.tasks.some((t) => t.kind === 'skill-file' && t.agentId === body.agentId && t.status === 'approved')) return send(req, res, 200, { ok: true, tasks: s.tasks });
-        Object.assign(task, { kind: 'skill-file', agentId: body.agentId.slice(0, 80), agentName: String(body.agentName || body.agentId).slice(0, 80) });
-      }
+        Object.assign(task, { kind: 'skill-file', agentId: body.agentId.slice(0, 80), agentName: String(body.agentName || body.agentId).slice(0, 80), version: Number(body.version) || 1 });
+      } else if (typeof body.agentId === 'string') task.agentId = body.agentId.slice(0, 80);
       s.tasks.push(task);
     } else {
       const t = s.tasks.find((x) => x.id === body.id);

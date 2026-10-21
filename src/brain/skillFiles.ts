@@ -1,5 +1,5 @@
-// Every agent ORIGIN or the owner creates gets its own SKILL.md: a detailed,
-// specific playbook for its job. ORIGIN writes it as a task in its live runs
+// Every agent gets its own SKILL.md: a full, detailed, specific playbook for
+// its job. Files from before the detailed format (version 1) are rewritten. ORIGIN writes it as a task in its live runs
 // (one at a time, like any task); the app saves each finished file to the skill
 // bank and gives it to the agent.
 import { useEffect, useRef } from 'react';
@@ -7,20 +7,24 @@ import type { DocOp } from '../engine/ops';
 import type { OfficeDoc } from '../model/types';
 import { useStore } from '../store/store';
 import { useOrigin } from './useOrigin';
-import { branchKind } from './opportunity';
+import { ORIGIN_ID, branchKind } from './opportunity';
 import { skillFileImported, taskAction, type RunnerStatus } from './originLink';
 
 /** The bank id of an agent's own SKILL.md. */
 export const skillFileId = (agentId: string) => `skill_file_${agentId}`;
+/** The current SKILL.md format: the full ten-section playbook. Older files are rewritten in it. */
+export const SKILL_FILE_VERSION = 2;
+const versionTag = `skill-file-v${SKILL_FILE_VERSION}`;
 
-/** The agents that still need their own SKILL.md: every venture and skill agent ORIGIN's tree grew. */
-export function agentsNeedingSkillFile(doc: OfficeDoc, status: Pick<RunnerStatus, 'tasks'> & { skillFiles?: { agentId: string }[] }): string[] {
+/** The agents that still need a current SKILL.md: every agent but ORIGIN, whose rules are its prompt. */
+export function agentsNeedingSkillFile(doc: OfficeDoc, status: Pick<RunnerStatus, 'tasks'> & { skillFiles?: { agentId: string; version?: number }[] }): string[] {
+  const current = (v?: number) => (v ?? 1) >= SKILL_FILE_VERSION;
   return Object.values(doc.agents)
-    .filter((a) => { const k = branchKind(doc, a.id); return k === 'venture' || k === 'skill'; })
-    .filter((a) => !doc.skillBank.some((k) => k.id === skillFileId(a.id)))
-    // already asked for once (a stopped or rejected request is not repeated), or written and waiting to be saved
-    .filter((a) => !status.tasks.some((t) => t.kind === 'skill-file' && t.agentId === a.id))
-    .filter((a) => !status.skillFiles?.some((f) => f.agentId === a.id))
+    .filter((a) => a.id !== ORIGIN_ID)
+    .filter((a) => !doc.skillBank.find((k) => k.id === skillFileId(a.id))?.tags.includes(versionTag))
+    // already asked for in this format (a stopped or rejected request is not repeated), or written and waiting to be saved
+    .filter((a) => !status.tasks.some((t) => t.kind === 'skill-file' && t.agentId === a.id && current(t.version)))
+    .filter((a) => !status.skillFiles?.some((f) => f.agentId === a.id && current(f.version)))
     .map((a) => a.id);
 }
 
@@ -29,24 +33,25 @@ export function skillFileBrief(doc: OfficeDoc, agentId: string): string {
   const a = doc.agents[agentId];
   const parent = a.skills.supervisorId ? doc.agents[a.skills.supervisorId]?.identity.name : null;
   return [
-    `${branchKind(doc, agentId) === 'venture' ? 'Venture' : 'Skill agent'}: ${a.identity.name}, ${a.identity.title}${parent ? `, created by ${parent}` : ''}.`,
+    `${({ venture: 'Venture', skill: 'Skill agent' } as Record<string, string>)[branchKind(doc, agentId) ?? ''] ?? 'Agent'}: ${a.identity.name}, ${a.identity.title}${parent ? `, created by ${parent}` : ''}.`,
     a.identity.bio && `Purpose: ${a.identity.bio}`,
+    a.identity.roleDescription && a.identity.roleDescription !== a.identity.bio && `Role: ${a.identity.roleDescription}`,
     `Skills: ${a.skills.skills.join(', ')}.`,
     a.schedule.runWindow && `Works ${a.schedule.runWindow.maxMinutes} min every ${a.schedule.runWindow.everyMinutes} min.`,
   ].filter(Boolean).join('\n').slice(0, 3500);
 }
 
 /** The bank entry for an agent's own SKILL.md. Bank names are unique, so it is named after the agent when they'd clash. */
-export function skillFileUpsert(doc: OfficeDoc, agentId: string, agentName: string, file: { name: string; description: string; body: string }): DocOp {
+export function skillFileUpsert(doc: OfficeDoc, agentId: string, agentName: string, file: { name: string; description: string; body: string; version?: number }): DocOp {
   const id = skillFileId(agentId);
   const base = file.name.trim() || `${agentName} playbook`;
   const taken = (n: string) => doc.skillBank.some((k) => k.id !== id && k.name.toLowerCase() === n.toLowerCase());
   const name = (taken(base) ? `${agentName}: ${base}` : base).slice(0, 80);
-  return { op: 'skillBank.upsert', skill: { id, name, description: file.description || `${agentName}'s own playbook`, instructions: file.body, tags: ['skill-file'] } };
+  return { op: 'skillBank.upsert', skill: { id, name, description: file.description || `${agentName}'s own playbook`, instructions: file.body, tags: ['skill-file', `skill-file-v${file.version ?? 1}`] } };
 }
 
 /** The ops that save a written SKILL.md to the bank and give it to its agent. */
-export function skillFileOps(doc: OfficeDoc, agentId: string, file: { name: string; description: string; body: string }): DocOp[] {
+export function skillFileOps(doc: OfficeDoc, agentId: string, file: { name: string; description: string; body: string; version?: number }): DocOp[] {
   const a = doc.agents[agentId];
   if (!a) return [];
   return [
@@ -75,7 +80,8 @@ export function useSkillFiles() {
       if (asked.current.has(id)) continue;
       asked.current.add(id);
       const d = useStore.getState().doc;
-      void taskAction({ action: 'add', kind: 'skill-file', agentId: id, agentName: d.agents[id].identity.name, title: `Write ${d.agents[id].identity.name}'s SKILL.md`, detail: skillFileBrief(d, id) });
+      const again = d.skillBank.some((k) => k.id === skillFileId(id));
+      void taskAction({ action: 'add', kind: 'skill-file', version: SKILL_FILE_VERSION, agentId: id, agentName: d.agents[id].identity.name, title: `${again ? 'Rewrite' : 'Write'} ${d.agents[id].identity.name}'s SKILL.md in full detail`, detail: skillFileBrief(d, id) });
     }
   }, [status]);
 }

@@ -48,7 +48,7 @@ export default function CreatorDesk() {
     if (isOpportunityOrigin(d) && originOutdated(d)) useStore.getState().commit(opportunityOriginOps(d), "Update ORIGIN's rules", { silent: true });
   }, []);
   // keep the live runner on ORIGIN's current rules, bank skills and branches
-  const originPrompt = useMemo(() => (doc.agents[ORIGIN_ID] ? `${agentPrompt(doc, ORIGIN_ID)}\n${brainMap(doc)}` : ''), [doc]);
+  const originPrompt = useMemo(() => (doc.agents[ORIGIN_ID] ? [agentPrompt(doc, ORIGIN_ID), brainMap(doc), ...Object.keys(doc.agents).map((id) => agentPrompt(doc, id))].join('\n') : ''), [doc]);
   useEffect(() => {
     if (!originPrompt) return;
     const t = setTimeout(() => void syncOrigin(useStore.getState().doc), 1500);
