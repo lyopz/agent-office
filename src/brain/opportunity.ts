@@ -231,14 +231,14 @@ When one of your skill agents files a skill request, judge only whether it helps
 export type BranchKind = 'root' | 'core' | 'venture' | 'skill';
 
 /** ORIGIN is the root; agents with no branch record are ORIGIN's core staff, who don't grow branches. */
-export function branchKind(doc: OfficeDoc, id: string): BranchKind | null {
+export function branchKind(doc: Pick<OfficeDoc, 'agents'>, id: string): BranchKind | null {
   const a = doc.agents[id];
   if (!a) return null;
   return id === ORIGIN_ID ? 'root' : a.branch?.kind ?? 'core';
 }
 
 /** What may grow off `parentId`: ORIGIN starts ventures, a venture adds skills, nobody else adds anything. */
-export function growKind(doc: OfficeDoc, parentId: string): 'venture' | 'skill' | null {
+export function growKind(doc: Pick<OfficeDoc, 'agents'>, parentId: string): 'venture' | 'skill' | null {
   const k = branchKind(doc, parentId);
   return k === 'root' ? 'venture' : k === 'venture' ? 'skill' : null;
 }

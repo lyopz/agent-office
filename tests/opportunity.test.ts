@@ -4,6 +4,7 @@ import { creatorBrain } from '../src/model/sample';
 import { applyOps } from '../src/engine/ops';
 import { buildNerveTree } from '../src/brain/nerveTree';
 import { AGENT_BLUEPRINT, OPPORTUNITY_PROMPT, branchAgentOps, branchKind, describeWindow, growKind, isOpportunityOrigin, opportunityOriginOps, ventureOf } from '../src/brain/opportunity';
+import { growIdeaOps, ownerIdeaOps } from '../src/brain/ideas';
 import { exportOffice, parseOffice } from '../src/model/schema';
 import type { OfficeDoc } from '../src/model/types';
 
@@ -107,5 +108,16 @@ describe('opportunity agent', () => {
     // requests survive save and load
     const loaded = parseOffice(JSON.parse(exportOffice(r.doc)));
     expect(loaded.ok && loaded.doc.skillRequests[0].status).toBe('approved');
+  });
+
+  test('an idea grown from ORIGIN becomes a venture that can add skills', () => {
+    let doc = creatorBrain();
+    doc = applyOps(doc, ownerIdeaOps('Roblox tycoon game for kids', 'agent_origin')).doc;
+    const idea = Object.values(doc.library).find((e) => e.tags.includes('owner-submitted') && e.summary.startsWith('Roblox'))!;
+    const { agentId, ops } = growIdeaOps(doc, idea, 'agent_origin');
+    doc = applyOps(doc, ops).doc;
+    expect(doc.agents[agentId].branch).toEqual({ kind: 'venture', ventureId: agentId });
+    expect(growKind(doc, agentId)).toBe('skill');
+    expect(doc.agents[agentId].ai.agentInstructions).toContain(AGENT_BLUEPRINT);
   });
 });
