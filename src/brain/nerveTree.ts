@@ -205,3 +205,27 @@ export function route(tree: NerveTree, a: string, b: string): string[] {
   if (!meet) return [];
   return [...up.slice(0, up.indexOf(meet) + 1), ...down.slice(0, down.indexOf(meet)).reverse()];
 }
+
+/** An idea waiting to become a branch: who it came from and what it says. */
+export interface TreeIdea { id: string; title: string; authorId: string | null; byOwner: boolean }
+/** A short nerve sprouting from the agent an idea belongs to, ending in a bud. */
+export interface IdeaSprout { id: string; title: string; from: string; byOwner: boolean; pos: Vec3; strands: Path3[]; tufts: Path3[] }
+
+/**
+ * Ideas sprout as short nerves off their agent (the main agent for the
+ * owner's ideas), each ending in a bud. Building an agent from an idea turns
+ * the bud into a full branch. Seeded per idea, so a bud keeps its place.
+ */
+export function ideaSprouts(tree: NerveTree, ideas: TreeIdea[]): IdeaSprout[] {
+  if (!tree.rootId) return [];
+  return ideas.map((idea) => {
+    const from = idea.authorId && tree.nodes[idea.authorId] ? idea.authorId : tree.rootId!;
+    const start = tree.nodes[from].pos, rand = rng(hash(`idea:${idea.id}`));
+    const outward = from === tree.rootId ? norm([rand() - 0.5, rand() * 0.9 - 0.2, rand() - 0.5]) : norm(sub(start, CORE));
+    const dir = norm(add(outward, [(rand() - 0.5) * 1.1, (rand() - 0.5) * 1.1, (rand() - 0.5) * 1.1]));
+    let reach = from === tree.rootId ? 0.34 + rand() * 0.18 : 0.16 + rand() * 0.1;
+    let pos = add(start, mul(dir, reach));
+    while (insideCerebrum(pos) > 0.9 && reach > 0.05) { reach *= 0.8; pos = add(start, mul(dir, reach)); }
+    return { id: idea.id, title: idea.title, from, byOwner: idea.byOwner, pos, strands: bundle(start, pos, 4, 0.012, rand), tufts: tufts(pos, dir, 5, 0.06, rand) };
+  });
+}

@@ -1,7 +1,6 @@
 import { saveFile } from '../persistence/saveFile';
 import { useRef, useState } from 'react';
-import { BrainCircuit, Download, FolderOpen, History, OctagonX, Pause, Play, Redo2, Undo2, Upload } from 'lucide-react';
-import { openAgentGraphPow } from '../brain/agentGraph';
+import { Download, FolderOpen, History, OctagonX, Pause, Play, Redo2, Undo2, Upload } from 'lucide-react';
 import { useStore } from '../store/store';
 import { repo } from '../store/store';
 import { confirmAction } from './primitives';
@@ -39,7 +38,6 @@ export function TopBar() {
       <nav className="seg" aria-label="Pages">
         {(['dashboard', 'control', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'control' ? 'Control' : p[0].toUpperCase() + p.slice(1)}</button>)}
       </nav>
-      <GraphPowButton />
       <span className="spacer" />
       <AlertBell />
       <button className="btn icon sm" aria-label={prefs.simRunning ? 'Pause simulation' : 'Run simulation'} title={prefs.simRunning ? 'Pause simulation' : 'Run simulation'} onClick={() => s.setPrefs({ simRunning: !prefs.simRunning })}>{prefs.simRunning ? <Pause size={14} /> : <Play size={14} />}</button>
@@ -97,10 +95,6 @@ function VersionsMenu({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Opens the expanded agent, work, and knowledge brain map. */
-function GraphPowButton() {
-  return <button className="btn sm" title="Open the brain map of agents, work and knowledge" onClick={() => openAgentGraphPow()}><BrainCircuit size={14} /><span className="hide-sm">Brain</span></button>;
-}
 
 function EmergencyButton() {
   const on = useStore((st) => st.doc.control.emergencyStop);
