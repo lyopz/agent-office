@@ -6,6 +6,7 @@ import { Console } from './ui/Console';
 import { ProfileDrawer } from './ui/ProfileDrawer';
 import { Dashboard } from './ui/Dashboard';
 import { Settings } from './ui/Settings';
+import { Approvals } from './ui/Approvals';
 import { ConfirmDialog } from './ui/primitives';
 import { useShortcuts } from './ui/actions';
 import { useApplyTheme } from './ui/ThemeEditor';
@@ -40,6 +41,7 @@ export function App() {
         </main>
       )}
       {page === 'dashboard' && <main className="page view-fade" key="dashboard"><Dashboard /></main>}
+      {page === 'approvals' && <main className="page view-fade" key="approvals"><Approvals /></main>}
       {page === 'settings' && <main className="page view-fade" key="settings"><Settings /></main>}
       <div>
         <Console />

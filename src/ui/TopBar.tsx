@@ -11,6 +11,8 @@ import { LogoLockup } from '../brand/Logo';
 export function TopBar() {
   const name = useStore((s) => s.doc.name);
   const page = useStore((s) => s.page);
+  // designs and products waiting for the owner's Yes or No
+  const waiting = useOrigin((o) => (o.status?.designs ?? []).filter((d) => d.status === 'waiting').length + (o.status?.publishRequests ?? []).filter((r) => r.status === 'waiting').length);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
   const s = useStore.getState();
@@ -39,7 +41,7 @@ export function TopBar() {
       <span className="brand"><LogoLockup /></span>
       <input className="office-name" aria-label="Brain name" defaultValue={name} key={name} onBlur={(e) => e.target.value.trim() && e.target.value !== name && s.commit([{ op: 'office.rename', name: e.target.value.trim() }], 'Rename brain')} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
       <nav className="seg" aria-label="Pages">
-        {(['office', 'dashboard', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'office' ? 'Brain' : p[0].toUpperCase() + p.slice(1)}</button>)}
+        {(['office', 'dashboard', 'approvals', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'office' ? 'Brain' : p[0].toUpperCase() + p.slice(1)}{p === 'approvals' && waiting > 0 && <span className="nav-count" aria-label={`${waiting} waiting`}>{waiting}</span>}</button>)}
       </nav>
       <span className="spacer" />
       <EmergencyButton />

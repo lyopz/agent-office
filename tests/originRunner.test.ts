@@ -631,3 +631,73 @@ describe('origin runner: Canva', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe('origin runner: approvals, repeats and budgets', () => {
+  const agents = [{ id: 'v1', name: 'STORE', kind: 'venture' }, { id: 'd1', name: 'Mockup & Design', kind: 'skill', ventureId: 'v1' }];
+  const saveTool = (file_name: string) => ({ content: [{ type: 'tool_use', id: `u_${file_name}`, name: 'design_save', input: { file_name, svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><text>x</text></svg>', title: file_name } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' });
+  const design = (i: number, status = 'waiting', extra: any = {}) => ({ id: `design_${i}`, kind: 'svg', fileName: `d${i}.svg`, title: `Design ${i}`, agentId: 'd1', agentName: 'Mockup & Design', taskId: 't1', taskTitle: 'Mom shirts', imageId: null, status, at: '2026-10-21T08:00:00.000Z', ...extra });
+
+  test('"every hour" in the owner\'s words makes a repeating task, which comes back after it finishes', () => {
+    expect(runner.repeatMinutes('make mom shirt designs every hour')).toBe(60);
+    expect(runner.repeatMinutes('check prices every 2 days')).toBe(2880);
+    expect(runner.repeatMinutes('make 5 shirts')).toBeNull();
+    const s: any = { ...base, tasks: [] };
+    const t: any = runner.addFocusTask(s, { title: 'Mom shirt designs from sales research', everyMinutes: 60 });
+    expect(t.everyMinutes).toBe(60);
+    Object.assign(t, { status: 'done', doneAt: '2026-10-21T08:00:00.000Z', steps: [{ text: 'a', done: true }], progress: 100 });
+    expect(runner.reopenRepeats(s, Date.parse('2026-10-21T08:30:00Z'))).toHaveLength(0);
+    const back = runner.reopenRepeats(s, Date.parse('2026-10-21T09:01:00Z'));
+    expect(back).toHaveLength(1);
+    expect(t).toMatchObject({ status: 'approved', focus: true, steps: [], progress: 0, repeats: 1 });
+  });
+
+  test('an ask may have five designs waiting at most; the sixth is refused and the task waits for the owner', async () => {
+    write({ ...base, agents, designs: [1, 2, 3, 4, 5].map((i) => design(i)), tasks: [{ id: 't1', title: 'Mom shirts', detail: '', status: 'approved', by: 'owner', agentId: 'd1', focus: true, createdAt: '' }] });
+    const tools = { tools: [{ name: 'design_save', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }) };
+    const sent: any[] = [];
+    let n = 0;
+    const fetch = async (_u: string, o: any) => { sent.push(JSON.parse(o.body)); n++; return n === 1 ? { ok: true, status: 200, json: async () => saveTool('six') } : reply(result({ memory: 'm', summary: 's', waitingOnOwner: true }), { input_tokens: 10, output_tokens: 5 }); };
+    await runner.runOnce('focus', { fetch, file, key: 'test', etsy: tools } as any);
+    const res = sent[1].messages.at(-1).content[0];
+    expect(res.is_error).toBe(true);
+    expect(res.content).toMatch(/waiting for their Yes or No/);
+    const s = read();
+    expect(s.designs).toHaveLength(5);
+    expect(s.tasks[0].waitingOnOwner).toBe(true);
+    // five designs waiting count as pending, so the task steps aside until the owner decides
+    expect(runner.pickTasks(s)).toHaveLength(0);
+  });
+
+  test("a product made for a design the owner said Yes to is published at once: the Yes was the approval", async () => {
+    write({ ...base, agents, designs: [design(1, 'approved', { imageId: 'img1' })], tasks: [{ id: 'p1', title: 'Publish "Design 1"', detail: '', status: 'approved', by: 'owner', via: 'approval', focus: true, designId: 'design_1', agentId: 'd1', createdAt: '' }] });
+    const published: any[] = [];
+    const tools = { tools: [{ name: 'printify_request_publish', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }), preview: async () => ({ priceUsd: 24.99 }), publish: async (_shop: any, id: string) => { published.push(id); } };
+    let n = 0;
+    const fetch = async () => { n++; return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'u1', name: 'printify_request_publish', input: { product_id: 'prod9', title: 'Mom Fuel Tee', why: 'fits' } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's', completedTaskIds: ['p1'] }), { input_tokens: 10, output_tokens: 5 }); };
+    await runner.runOnce('focus', { fetch, file, key: 'test', etsy: tools } as any);
+    expect(published).toEqual(['prod9']);
+    const s = read();
+    expect(s.designs[0]).toMatchObject({ status: 'published', productId: 'prod9' });
+    expect(s.publishRequests[0]).toMatchObject({ productId: 'prod9', status: 'published', designId: 'design_1' });
+    expect(s.tasks[0].status).toBe('done');
+  });
+
+  test('spend is filed by branch, and a branch whose monthly budget is used up waits', () => {
+    const s: any = { ...base, agents, ledger: { ...base.ledger, byAgent: { d1: 0.4, v1: 0.1, agent_origin: 0.2 } }, imageLog: [{ id: 'i1', at: new Date().toISOString(), agentId: 'd1', usd: 0.05 }], publishRequests: [{ id: 'pub1', agentId: 'd1', status: 'published', publishedAt: new Date().toISOString() }], tasks: [{ id: 't1', title: 'x', status: 'approved', by: 'owner', agentId: 'd1', createdAt: '' }] };
+    expect(runner.branchOf(s, 'd1')).toBe('v1');
+    expect(runner.branchOf(s, 'agent_origin')).toBe('agent_origin');
+    expect(runner.branchSpentUsd(s, 'v1')).toBeCloseTo(0.75, 6);
+    expect(runner.pickTasks(s)).toHaveLength(1);
+    s.branchBudgets = { v1: 0.5 };
+    expect(runner.pickTasks(s)).toHaveLength(0);
+    s.branchBudgets = { v1: 2 };
+    expect(runner.pickTasks(s)).toHaveLength(1);
+  });
+
+  test('the cap the owner set in the app is the one in force', async () => {
+    write({ ...base, capUsd: 0.1, ledger: { ...base.ledger, spentUsd: 0.1 }, tasks: [{ id: 't1', title: 'x', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
+    const r: any = await runner.runOnce('manual', { fetch: async () => { throw new Error('no call expected'); }, file, key: 'test' } as any);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/\$0\.1 monthly cap is reached/);
+  });
+});

@@ -43,7 +43,7 @@ interface State {
   selection: Selection;
   profileAgentId: string | null;
   profileTab: string;
-  page: 'office' | 'dashboard' | 'settings';
+  page: 'office' | 'dashboard' | 'approvals' | 'settings';
 
   commit(ops: DocOp[], label: string, opts?: { silent?: boolean }): CommitResult;
   dryRun(ops: DocOp[]): CommitResult;

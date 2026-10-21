@@ -4,7 +4,7 @@
 import type { OfficeDoc } from '../model/types';
 import { ORIGIN_ID, agentPrompt, branchKind } from './opportunity';
 
-export interface RunnerTask {
+export interface RunnerTask { everyMinutes?: number; repeats?: number; designId?: string; doneAt?: string;
   id: string; title: string; detail: string; status: 'proposed' | 'approved' | 'rejected' | 'done' | 'stopped'; by: 'owner' | 'origin'; createdAt: string;
   spentUsd?: number; runCosts?: number[]; budgetUsd?: number; stopReason?: string; progress?: number; steps?: { text: string; done: boolean }[]; notes?: string; waitingOnOwner?: boolean;
   /** Typed in the command center: worked first and alone until done. count is how many items the owner asked for. */
@@ -21,7 +21,11 @@ export interface MoneyEntry { id: string; agentId: string; kind: 'income' | 'exp
 export interface SaleLine { id: string; orderId: string; at: string; status: string; productId: string; title: string; quantity: number; revenueUsd: number | null; costUsd: number; agentId: string | null; agentName: string | null }
 /** A design an agent made, kept on the owner's PC: SVG it wrote or a PNG from the image model. */
 export interface CanvaEntry { id: string; at: string; tool: string; agentId: string; agentName: string; taskId: string; taskTitle: string; ok: boolean; ai: boolean; files?: number; error?: string }
-export interface DesignEntry { id: string; kind: 'svg' | 'png' | 'jpg'; source?: 'canva'; fileName: string; title: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string | null; at: string }
+export type DesignStatus = 'waiting' | 'approved' | 'rejected' | 'published';
+export interface BranchBudget { id: string; budgetUsd: number | null; spentUsd: number }
+export interface BudgetChange { id: string; at: string; what: string; from: number | null; to: number | null }
+export interface Budgets { capUsd: number; defaultCapUsd: number; imageCapUsd: number; canvaAiLimit: number; voiceCapUsd: number | null; listingFeeUsd: number; branches: BranchBudget[]; log: BudgetChange[] }
+export interface DesignEntry { id: string; kind: 'svg' | 'png' | 'jpg'; source?: 'canva'; status?: DesignStatus; productId?: string; decidedAt?: string; publishedAt?: string; fileName: string; title: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string | null; at: string }
 /** One design image an agent made with the owner's OpenAI key, and what it cost. */
 export interface ImageEntry { id: string; at: string; model: string; quality: string; size: string; usd: number; estimated?: boolean; prompt: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string }
 /** One line of progress, filed under the agent the work was for. */
@@ -37,7 +41,7 @@ export interface RunnerRun { workers?: RunnerWorker[]; id: string; agentId?: str
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
   spentUsd: number; spentByAgent?: Record<string, number>; allowanceUsd?: number; spentTodayUsd?: number; parallel?: number; rounds?: number; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
-  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; canva?: { configured: boolean; connectedAt: string | null; month: string; aiCalls: number; exports: number; limit: number; log: CanvaEntry[] }; designs?: DesignEntry[]; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; money?: { byAgent: Record<string, MoneyRow>; entries: MoneyEntry[]; sales: SaleLine[]; salesSync: { at: string; error: string | null; orders: number | null } | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
+  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; budgets?: Budgets; canva?: { configured: boolean; connectedAt: string | null; connecting?: { url: string; startedAt: number } | null; month: string; aiCalls: number; exports: number; limit: number; log: CanvaEntry[] }; designs?: DesignEntry[]; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; money?: { byAgent: Record<string, MoneyRow>; entries: MoneyEntry[]; sales: SaleLine[]; salesSync: { at: string; error: string | null; orders: number | null } | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
 }
 
 // in the browser the dev server forwards /api/origin; the desktop app talks to the runner directly
@@ -150,8 +154,26 @@ export async function skillFileImported(id: string) {
   return !!(await call('/skillfiles', { action: 'imported', id }));
 }
 
-export async function taskAction(body: { action: 'add'; title: string; detail?: string; kind?: 'skill-file'; version?: number; requested?: boolean; agentId?: string; agentName?: string } | { action: 'approve' | 'reject' | 'done' | 'stop'; id: string }) {
+export async function taskAction(body: { action: 'add'; title: string; detail?: string; kind?: 'skill-file'; version?: number; requested?: boolean; agentId?: string; agentName?: string } | { action: 'approve' | 'reject' | 'done' | 'stop'; id: string } | { action: 'repeat'; id: string; everyMinutes: number | null }) {
   return (await call<{ ok: boolean; tasks: RunnerTask[] }>('/tasks', body))?.data ?? null;
+}
+
+/** Connect (or disconnect) the owner's Canva from the app: the runner opens Canva's sign-in in their browser and keeps the answer. */
+export async function connectCanva(action: 'connect' | 'forget' = 'connect') {
+  const r = await call<{ ok: boolean; url?: string; reason?: string }>('/canva/connect', { action }, 40_000);
+  return r ? r.data : null;
+}
+
+/** The owner's Yes or No on a design in Approvals. Yes makes the agent build the Printify product and publishes it. */
+export async function designDecision(id: string, action: 'approve' | 'reject') {
+  const r = await call<{ ok: boolean; reason?: string; note?: string; taskId?: string }>('/designs', { id, action }, 90_000);
+  return r ? r.data : null;
+}
+
+/** The owner's budgets: the monthly cap (or funds added to it), the image, Canva and voice limits, and per-branch budgets. */
+export async function setBudgets(b: { capUsd?: number; addFundsUsd?: number; imageCapUsd?: number; canvaAiLimit?: number; voiceCapUsd?: number; branchBudgets?: Record<string, number | null> }) {
+  const r = await call<{ ok: boolean; budgets: Budgets }>('/settings', b);
+  return r ? r.data : null;
 }
 
 /** The owner's decision on a product: publish sends it live to their store through Printify. */

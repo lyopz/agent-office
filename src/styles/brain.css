@@ -471,3 +471,27 @@
 .creator-count { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 .creator-action:hover, .creator-action:focus-visible, .creator-voice:hover, .creator-voice:focus-visible { border-color: var(--border-strong); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .app :is(.panel, .agent-menu, .creator-dialog, .brain-switch-popover, .page, .console-log) { scrollbar-color: color-mix(in srgb, var(--accent) 35%, transparent) transparent; scrollbar-width: thin; scroll-behavior: smooth; }
+/* Approvals page: designs waiting for the owner's Yes or No, and the budgets */
+.nav-count { display: inline-grid; place-items: center; min-width: 16px; height: 16px; margin-left: 6px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: var(--bg, #0b0f16); font: 700 10px/1 var(--font-mono); }
+.approvals .approval-group { grid-column: span 12; }
+.approval-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-3); }
+.approval-card { margin: 0; display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: rgba(0,0,0,.18); }
+.approval-img { width: 100%; aspect-ratio: 5 / 6; object-fit: contain; border-radius: 8px; background: repeating-conic-gradient(rgba(255,255,255,.05) 0 25%, transparent 0 50%) 0 0 / 20px 20px; }
+.approval-img.is-empty { background: rgba(255,255,255,.04); }
+.approval-card figcaption { display: grid; gap: 4px; font-size: var(--fs-sm); }
+.approval-card figcaption b { font-size: 13px; }
+.approval-card figcaption span, .approval-card figcaption small { color: var(--muted); }
+.approval-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; }
+.approval-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: var(--fs-sm); color: var(--text); }
+.approval-state { display: inline-block; min-width: 56px; text-align: center; font: 600 9px/1.6 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; border-radius: 999px; padding: 1px 7px; border: 1px solid var(--line); color: var(--muted); }
+.approval-state.published { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.approval-state.approved { color: var(--accent-orange, #f6b26b); }
+.approval-state.rejected { color: var(--danger); }
+.budget-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-2) var(--sp-3); }
+.budget-row { display: grid; grid-template-columns: 1fr 96px auto; gap: 8px; align-items: center; }
+.budget-row label { display: grid; font-size: var(--fs-sm); }
+.budget-row label small { color: var(--muted); font-size: 11px; }
+.budget-row input { min-width: 0; }
+.connections { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 12px; color: var(--text, #d5e0ee); }
+.connections li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.connections .badge { min-width: 34px; justify-content: center; }

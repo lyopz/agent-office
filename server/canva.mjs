@@ -5,7 +5,10 @@
 // request (so agents get Canva only in tasks the owner gave), retries are bounded with backoff on
 // 429, and Canva AI credit use is shown, never hidden.
 import fs from 'node:fs';
+import http from 'node:http';
+import crypto from 'node:crypto';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { secretsDir } from './key-file.mjs';
 
 export const CANVA_MCP = process.env.CANVA_MCP_URL || 'https://mcp.canva.com/mcp';
@@ -196,4 +199,64 @@ export async function canvaFiles(r, tool, deps = {}) {
 export function canvaText(r) {
   const parts = (r?.content || []).map((c) => (c.type === 'text' ? c.text : c.type === 'image' ? '[image]' : c.type === 'resource' ? `[resource ${c.resource?.uri || ''}]` : ''));
   return parts.join('\n').slice(0, 20_000) || JSON.stringify(r?.structuredContent ?? {}).slice(0, 20_000);
+}
+
+const b64url = (b) => b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+/** Open a link in the owner's browser on this PC; the caller shows the link too in case this fails. */
+export function openInBrowser(url) {
+  const cmd = process.platform === 'win32' ? ['rundll32', ['url.dll,FileProtocolHandler', url]] : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
+  try { spawn(cmd[0], cmd[1], { detached: true, stdio: 'ignore' }).unref(); return true; } catch { return false; }
+}
+
+let connecting = null; // { url, startedAt, done: Promise }
+export const connectInProgress = () => (connecting && Date.now() - connecting.startedAt < 10 * 60_000 ? { url: connecting.url, startedAt: connecting.startedAt } : null);
+
+/**
+ * Start Canva's sign-in for the owner: registers a one-time client with Canva, opens a page on this
+ * PC (127.0.0.1) that receives Canva's answer, and returns the link to open. `done` resolves when the
+ * sign-in is saved (or fails). One sign-in at a time; a second call while one is open returns the same link.
+ */
+export async function startConnect({ open = true, timeoutMs = 10 * 60_000, fetchFn = globalThis.fetch } = {}) {
+  if (connecting && Date.now() - connecting.startedAt < timeoutMs) { if (open) openInBrowser(connecting.url); return connecting; }
+  const meta = await discover(fetchFn);
+  const verifier = b64url(crypto.randomBytes(32));
+  const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
+  const state = b64url(crypto.randomBytes(16));
+  const server = http.createServer();
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const redirect = `http://127.0.0.1:${server.address().port}/callback`;
+  let reg;
+  try {
+    const r = await fetchFn(meta.registration_endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_name: 'The Brain (personal)', redirect_uris: [redirect], grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'], token_endpoint_auth_method: 'none' }), signal: AbortSignal.timeout(20_000) });
+    if (!r.ok) throw new Error(`Canva did not register this app (${r.status}). Canva may only allow approved apps right now.`);
+    reg = await r.json();
+  } catch (e) { server.close(); throw new Error(e.message.startsWith('Canva') ? e.message : `Could not reach Canva (${e.message}).`); }
+  const url = new URL(meta.authorization_endpoint);
+  for (const [k, v] of Object.entries({ response_type: 'code', client_id: reg.client_id, redirect_uri: redirect, code_challenge: challenge, code_challenge_method: 'S256', state, ...(meta.scopes.length ? { scope: meta.scopes.join(' ') } : {}) })) url.searchParams.set(k, v);
+  const done = new Promise((resolve) => {
+    const finish = (ok, error = null) => { server.close(); connecting = null; resolve({ ok, error }); };
+    const timer = setTimeout(() => finish(false, 'Canva did not sign in within 10 minutes.'), timeoutMs);
+    server.on('request', async (req, res) => {
+      const q = new URL(req.url, redirect);
+      if (q.pathname !== '/callback') { res.writeHead(404).end(); return; }
+      const code = q.searchParams.get('state') === state ? q.searchParams.get('code') : null;
+      let saved = false, why = '';
+      if (code) {
+        try {
+          const r = await fetchFn(meta.token_endpoint, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirect, client_id: reg.client_id, code_verifier: verifier, ...(reg.client_secret ? { client_secret: reg.client_secret } : {}) }).toString(), signal: AbortSignal.timeout(20_000) });
+          if (!r.ok) throw new Error(`Canva did not finish the sign-in (${r.status}).`);
+          const t = await r.json();
+          saveCanva({ clientId: reg.client_id, ...(reg.client_secret ? { clientSecret: reg.client_secret } : {}), tokenEndpoint: meta.token_endpoint, accessToken: t.access_token, refreshToken: t.refresh_token || null, expiresAt: Date.now() + (Number(t.expires_in) || 3600) * 1000, connectedAt: new Date().toISOString() });
+          resetCanvaSession(); listed = null;
+          saved = true;
+        } catch (e) { why = e.message; }
+      } else why = 'The answer did not match this sign-in (cancelled or stale).';
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(`<!doctype html><title>The Brain</title><body style="font:16px system-ui;padding:40px;background:#0b0f16;color:#e9f1fc">${saved ? 'Canva is connected to The Brain. You can close this tab and go back to the app.' : `Canva did not connect: ${why} Go back to the app and try again.`}</body>`);
+      clearTimeout(timer);
+      finish(saved, saved ? null : why);
+    });
+  });
+  connecting = { url: url.toString(), startedAt: Date.now(), done };
+  if (open) openInBrowser(connecting.url);
+  return connecting;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Play, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useStore } from '../store/store';
-import { agentProposalAction, designUrl, mockupUrl, publishDecision, runnerStatus, setAutoAgents, setAutoTasks, setCanvaLimit, setImageCap, syncOrigin, taskAction, type AgentProposal, type DesignEntry, type PublishRequest, type RunnerStatus, type RunnerTask } from './originLink';
+import { agentProposalAction, designUrl, mockupUrl, publishDecision, runnerStatus, setAutoAgents, connectCanva, setAutoTasks, setCanvaLimit, setImageCap, syncOrigin, taskAction, type AgentProposal, type DesignEntry, type PublishRequest, type RunnerStatus, type RunnerTask } from './originLink';
 import { branchKind, describeWindow } from './opportunity';
 import { createProposedAgent } from './skillFiles';
 import { ProgressBar, ProgressLog } from './Progress';
@@ -41,6 +41,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   const [logAgent, setLogAgent] = useState('');
   const [capDraft, setCapDraft] = useState('');
   const [canvaDraft, setCanvaDraft] = useState('');
+  const [canvaUrl, setCanvaUrl] = useState('');
   const refresh = async () => { const s = await runnerStatus(); setSt(s); if (s && !s.synced) await syncOrigin(doc); };
   useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 15_000); return () => clearInterval(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -122,7 +123,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
           return <div key={t.id} className="focus-task">
             <p><b>{t.title}</b>{t.status === 'approved' ? <span className="muted"> · {st.running ? 'working on it now' : `next run about ${st.nextScheduledAt ? new Date(st.nextScheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'soon'}`}</span> : <span className="muted"> · done</span>}</p>
             <ProgressBar pct={t.status === 'done' ? 100 : t.count ? Math.round((mine.length / t.count) * 100) : t.progress} label={`${t.title} progress`} />
-            <p className="creator-privacy">{t.count ? `${mine.length} of ${t.count} items made and sent to you` : `${t.progress ?? 0}% done`}{decided ? `, ${decided} decided` : ''} · {spent(t)} <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></p>
+            <p className="creator-privacy">{t.count ? `${mine.length} of ${t.count} items made and sent to you` : `${t.progress ?? 0}% done`}{decided ? `, ${decided} decided` : ''} · {spent(t)}{t.everyMinutes ? <> · repeats every {t.everyMinutes >= 1440 ? `${Math.round(t.everyMinutes / 1440)} day${t.everyMinutes >= 2880 ? 's' : ''}` : t.everyMinutes >= 60 ? `${Math.round(t.everyMinutes / 60)} hour${t.everyMinutes >= 120 ? 's' : ''}` : `${t.everyMinutes} min`}{t.repeats ? ` (${t.repeats} so far)` : ''} <button className="link-btn" onClick={() => void act({ action: 'repeat', id: t.id, everyMinutes: null }, 'It will not repeat again.')}>stop repeating</button></> : <> · <button className="link-btn" onClick={() => void act({ action: 'repeat', id: t.id, everyMinutes: 60 }, 'It now repeats every hour.')}>repeat hourly</button></>} <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></p>
             {t.steps?.length ? <ol className="task-steps">{t.steps.map((x, j) => <li key={j} className={x.done ? 'done' : ''}>{x.done ? '✓ ' : ''}{x.text}</li>)}</ol> : null}
             {(st.designs ?? []).some((d) => d.taskId === t.id) && <Designs list={(st.designs ?? []).filter((d) => d.taskId === t.id)} />}
             {waiting.length > 0 && <><span className="creator-kicker">YOUR APPROVAL LIST · {waiting.length} TO GO THROUGH</span>{waiting.map((r) => productCard(r, mine.indexOf(r) + 1))}</>}
@@ -168,9 +169,16 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         </form>
         {st.images.log.length > 0 && <table className="spend-table"><thead><tr><th>Image</th><th>Cost</th><th>By</th></tr></thead><tbody>{st.images.log.slice(0, 12).map((e) => <tr key={e.id}><td title={e.prompt}>{new Date(e.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · {e.quality} · {e.prompt.slice(0, 70)}{e.prompt.length > 70 ? '…' : ''}</td><td>{money(e.usd)}{e.estimated ? ' (est.)' : ''}</td><td>{e.agentName}</td></tr>)}</tbody></table>}
       </>}
-      <p className="creator-privacy"><b>Canva:</b> {st.canva?.configured
-        ? <>connected{st.canva.connectedAt ? ` since ${new Date(st.canva.connectedAt).toLocaleDateString()}` : ''}. In tasks you give, agents make designs and images in your Canva account and export them to the gallery{st.printify?.configured ? ' and into Printify as unpublished products' : ''}; nothing is listed until you approve it. AI designs use your Canva AI credits. To disconnect, run <code>npm.cmd run connect-canva -- --forget</code>.</>
-        : <>not connected. Run <code>npm.cmd run connect-canva</code> once and press Allow in your browser; agents can then make designs in your Canva account (in tasks you give) and export them for your approval.</>}</p>
+      <span className="creator-kicker">CONNECTIONS · WHAT THE AGENTS CAN USE</span>
+      <ul className="connections">
+        <li><span className={`badge ${st.configured ? 'live' : 'off'}`}>{st.configured ? 'on' : 'off'}</span> <b>Claude</b> · {st.configured ? `${st.model}, ${money(st.capUsd)} a month` : 'no key: run npm.cmd run set-key once'}</li>
+        <li><span className={`badge ${st.printify?.configured ? 'live' : 'off'}`}>{st.printify?.configured ? 'on' : 'off'}</span> <b>Printify</b> · {st.printify?.configured ? `${st.printify.shopTitle ?? 'your shop'}${st.printify.channel ? ` (${st.printify.channel})` : ''}; products you say Yes to are listed there` : 'not set up: run npm.cmd run set-printify once'}</li>
+        <li><span className={`badge ${st.openai?.configured ? 'live' : 'off'}`}>{st.openai?.configured ? 'on' : 'off'}</span> <b>ChatGPT images</b> · {st.openai?.configured ? `${st.openai.model}, billed to your OpenAI account` : 'not set up: run npm.cmd run set-openai once with an OpenAI API key'}</li>
+        <li><span className={`badge ${st.canva?.configured ? 'live' : 'off'}`}>{st.canva?.configured ? 'on' : 'off'}</span> <b>Canva</b> · {st.canva?.configured
+          ? <>connected{st.canva.connectedAt ? ` since ${new Date(st.canva.connectedAt).toLocaleDateString()}` : ''}; agents design in your Canva account in tasks you give, and exports come to your Approvals. <button className="link-btn" onClick={() => void act(async () => { const r = await connectCanva('forget'); return r?.ok ? r : null; }, 'Canva is disconnected.')}>Disconnect</button></>
+          : <>not connected. <button className="creator-secondary" style={{ display: 'inline-flex' }} onClick={() => void act(async () => { const r = await connectCanva(); if (r && !r.ok) onNotice(r.reason ?? 'Canva did not answer.'); if (r?.ok && r.url) setCanvaUrl(r.url); return r?.ok ? r : null; }, "Canva's sign-in opened in your browser: sign in and press Allow.")}>Connect Canva</button>{(canvaUrl || st.canva?.connecting?.url) && <> If the browser did not open, <a href={canvaUrl || st.canva?.connecting?.url} target="_blank" rel="noreferrer">open the sign-in here</a>.</>}</>}</li>
+        {st.etsy?.configured && <li><span className="badge live">on</span> <b>Etsy research</b> · read-only</li>}
+      </ul>
       {st.canva && (st.canva.configured || st.canva.log.length > 0) && <>
         <div className="spend-grid">
           <div><b>{st.canva.aiCalls}</b><span>Canva AI designs and images this month, of your limit of {st.canva.limit}</span></div>
@@ -184,7 +192,6 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         </form>
         {st.canva.log.length > 0 && <table className="spend-table"><thead><tr><th>Canva</th><th>Result</th><th>By</th></tr></thead><tbody>{st.canva.log.slice(0, 12).map((e) => <tr key={e.id}><td>{new Date(e.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · {e.tool}{e.ai ? ' (AI)' : ''} · {e.taskTitle}</td><td>{e.ok ? `${e.files ? `${e.files} file${e.files === 1 ? '' : 's'} saved` : 'done'}` : `failed: ${e.error ?? 'error'}`}</td><td>{e.agentName}</td></tr>)}</tbody></table>}
       </>}
-      {st.etsy?.configured && <p className="creator-privacy"><b>Etsy research:</b> on (read-only).</p>}
       {created.length > 0 && <p className="creator-privacy">Recently created by JARVIS: {created.map((p) => `${p.name} (for ${doc.agents[p.parentId]?.identity.name ?? p.parentId})`).join(', ')}.</p>}
 
       {ventures.length > 0 && <><span className="creator-kicker">VENTURES</span>
