@@ -21,9 +21,11 @@ export function VoiceSettings() {
   const [system, setSystem] = useState(() => systemVoices());
   useEffect(() => {
     void localVoices().then(setLocal);
+    // get-voices may still be downloading: keep checking until Kokoro shows up
+    const poll = setInterval(() => { void localVoices().then((v) => { setLocal(v); if (v.some((x) => x.startsWith('kokoro:'))) clearInterval(poll); }); }, 5000);
     const update = () => setSystem(systemVoices());
     if ('speechSynthesis' in globalThis) speechSynthesis.addEventListener('voiceschanged', update);
-    return () => { if ('speechSynthesis' in globalThis) speechSynthesis.removeEventListener('voiceschanged', update); };
+    return () => { clearInterval(poll); if ('speechSynthesis' in globalThis) speechSynthesis.removeEventListener('voiceschanged', update); };
   }, []);
   const openai = voiceStatus();
   const pick = (v: string) => { setPref(v); setVoicePref(v); void say(SAMPLE); };
