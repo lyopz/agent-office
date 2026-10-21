@@ -1,11 +1,10 @@
 // Business views: projects and budgets with their usage records, owner
-// approvals, the shared library, and structured handoffs sent by tube.
+// approvals, the shared library, and structured handoffs between agents.
 import { useState } from 'react';
 import { useStore } from '../store/store';
 import type { Handoff, KnowledgeEntry, Project } from '../model/types';
 import { projectSpend } from '../engine/governance';
 import { canRead, findDuplicate, searchLibrary } from '../engine/library';
-import { tubeStations } from '../engine/tubes';
 import { uid } from '../model/defaults';
 import { confirmAction } from './primitives';
 
@@ -84,7 +83,6 @@ function Approvals() {
 
 function Handoffs() {
   const doc = useStore((s) => s.doc);
-  const capsules = useStore((s) => s.runtime.capsules);
   const tasks = useStore((s) => s.runtime.tasks);
   const { runRuntimeOps, notify } = useStore.getState();
   const agents = Object.values(doc.agents);
@@ -92,15 +90,14 @@ function Handoffs() {
   const [to, setTo] = useState(agents[1]?.id ?? '');
   const [h, setH] = useState<Handoff>({ request: '', why: '', known: '', deliverable: '', acceptance: '', deadline: '', budget: undefined });
   const [priority, setPriority] = useState<'normal' | 'high' | 'critical'>('high');
-  const stations = tubeStations(doc).length;
   const prior = h.request ? searchLibrary(doc, `${h.request} ${h.deliverable}`, to, 3) : [];
   const send = () => {
     if (!h.request.trim() || !h.deliverable.trim() || !h.acceptance.trim()) { notify('A handoff needs the request, the deliverable and how it will be accepted', 'warn'); return; }
-    const out = runRuntimeOps([{ op: 'task.create', name: h.request.trim().slice(0, 80), description: `${h.why}\nKnown: ${h.known}\nDeliverable: ${h.deliverable}\nAccepted when: ${h.acceptance}`, agentId: to, priority, simulated: true, handoff: { ...h, fromAgentId: from }, viaTube: stations > 0, fromAgentId: from, deadline: h.deadline || undefined, roomId: doc.agents[to]?.schedule.assignedRoomId ?? null }]);
+    const out = runRuntimeOps([{ op: 'task.create', name: h.request.trim().slice(0, 80), description: `${h.why}\nKnown: ${h.known}\nDeliverable: ${h.deliverable}\nAccepted when: ${h.acceptance}`, agentId: to, priority, simulated: true, handoff: { ...h, fromAgentId: from }, deadline: h.deadline || undefined }]);
     notify(out.slice(-1)[0] ?? 'Sent');
     setH({ request: '', why: '', known: '', deliverable: '', acceptance: '', deadline: '', budget: undefined });
   };
-  const recent = Object.values(tasks).filter((t) => t.deliveredVia === 'tube').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 6);
+  const recent = Object.values(tasks).filter((t) => t.handoff).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 6);
   const field = (k: keyof Handoff, label: string, ph: string) => <label className="field"><span>{label}</span><input type="text" value={(h[k] as string) ?? ''} placeholder={ph} onChange={(e) => setH({ ...h, [k]: e.target.value })} /></label>;
   return (
     <div className="card span-6">
@@ -117,10 +114,10 @@ function Handoffs() {
       {field('acceptance', 'Accepted when', 'Three suppliers, unit price and lead time')}
       <div className="field-row">{field('deadline', 'Deadline', '2026-10-24')}<label className="field"><span>Budget (credits)</span><input type="number" min={0} value={h.budget ?? ''} onChange={(e) => setH({ ...h, budget: e.target.value ? Number(e.target.value) : undefined })} /></label></div>
       {prior.length > 0 && <p className="note">Already in the library: {prior.map((p) => `“${p.entry.title}”`).join(', ')}. The receiving agent will start from these.</p>}
-      <button className="btn sm primary" onClick={send}>{stations ? 'Send by tube' : 'Send directly (no tube stations)'}</button>
+      <button className="btn sm primary" onClick={send}>Send handoff</button>
       <div style={{ marginTop: 8 }}>
-        {recent.map((t) => { const cap = Object.values(capsules).find((c) => c.taskId === t.id); return (
-          <div key={t.id} className="row small"><span className="grow">{t.name} → {doc.agents[t.agentId ?? '']?.identity.name}</span><span style={{ color: t.acknowledgedBy ? 'var(--success)' : 'var(--warn)' }}>{t.acknowledgedBy ? `acknowledged ${new Date(t.acknowledgedAt!).toLocaleTimeString()}` : cap ? 'in the tube' : t.status}</span></div>
+        {recent.map((t) => { return (
+          <div key={t.id} className="row small"><span className="grow">{t.name} → {doc.agents[t.agentId ?? '']?.identity.name}</span><span style={{ color: t.acknowledgedBy ? 'var(--success)' : 'var(--warn)' }}>{t.acknowledgedBy ? `acknowledged ${new Date(t.acknowledgedAt!).toLocaleTimeString()}` : t.status}</span></div>
         ); })}
       </div>
     </div>

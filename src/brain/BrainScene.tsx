@@ -143,8 +143,7 @@ export default function BrainScene() {
   const [surface, setSurface] = useState<'glass' | 'solid'>(() => { try { return localStorage.getItem('brain:surface') === 'solid' ? 'solid' : 'glass'; } catch { return 'glass'; } });
   const [hover, setHover] = useState<{ id: string; x: number; y: number; idea?: boolean } | null>(null);
   const agents = useStore((s) => s.doc.agents);
-  const departments = useStore((s) => s.doc.departments);
-  const teams = teamsOf({ agents, departments });
+  const teams = teamsOf({ agents });
   const key = treeKey(agents, teams);
   const tree = useRef<NerveTree>(treeOf(agents, teams));
   const rebuild = useRef<((t: NerveTree) => void) | null>(null);
@@ -321,7 +320,7 @@ export default function BrainScene() {
         const was = prevTasks[t.id];
         if (was?.status === t.status || !t.agentId) continue;
         const color = tree.current.nodes[t.agentId]?.color ?? '#ffffff';
-        if (t.handoff?.fromAgentId && t.handoff.fromAgentId !== t.agentId && (!was || t.status === 'in-transit') && t.status !== 'done') handoff(t.handoff.fromAgentId, t.agentId, color);
+        if (t.handoff?.fromAgentId && t.handoff.fromAgentId !== t.agentId && !was && t.status !== 'done') handoff(t.handoff.fromAgentId, t.agentId, color);
         else if (t.status === 'done') backFrom(t.agentId);
         else if (!was) outTo(t.agentId, color);
       }

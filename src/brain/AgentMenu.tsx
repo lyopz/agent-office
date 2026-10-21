@@ -8,7 +8,7 @@ import { GitBranch, MessageSquarePlus, Pause, Play, Search, Send } from 'lucide-
 import { ORIGIN_ID } from './opportunity';
 import { useStore } from '../store/store';
 import type { AgentStatus } from '../model/types';
-import { STATUS_COLOR } from '../viewport/AgentsLayer';
+import { STATUS_COLOR } from './status';
 import { teamsOf } from './connectome';
 import { useBrainFocus } from './ConnectomeView';
 import { BranchMenu } from './BranchMenu';
@@ -18,7 +18,6 @@ const BUSY: AgentStatus[] = ['working', 'researching', 'thinking', 'communicatin
 
 export function AgentMenu() {
   const agents = useStore((s) => s.doc.agents);
-  const departments = useStore((s) => s.doc.departments);
   const selected = useStore((s) => (s.selection.kind === 'agent' ? s.selection.id : null));
   const selectedTeamId = useBrainFocus((s) => s.selectedTeamId);
   const live = useStore(useShallow((s) => {
@@ -32,7 +31,7 @@ export function AgentMenu() {
     }
     return out;
   }));
-  const teams = useMemo(() => teamsOf({ agents, departments }), [agents, departments]);
+  const teams = useMemo(() => teamsOf({ agents }), [agents]);
   const [view, setViewState] = useState<'branches' | 'teams'>(() => { try { return localStorage.getItem('brain:menu') === 'teams' ? 'teams' : 'branches'; } catch { return 'branches'; } });
   const setView = (v: 'branches' | 'teams') => { setViewState(v); try { localStorage.setItem('brain:menu', v); } catch { /* storage unavailable */ } };
   const [q, setQ] = useState('');
@@ -53,7 +52,7 @@ export function AgentMenu() {
     const a = agents[to];
     if (!a || !task.trim()) return;
     const s = useStore.getState();
-    s.runRuntimeOps([{ op: 'task.create', agentId: a.id, name: task.trim(), roomId: a.schedule.assignedRoomId, workstationId: a.schedule.preferredWorkstationId, simulated: true }]);
+    s.runRuntimeOps([{ op: 'task.create', agentId: a.id, name: task.trim(), simulated: true }]);
     s.notify(`Gave “${task.trim()}” to ${a.identity.name}`);
     setTask('');
   };

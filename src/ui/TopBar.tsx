@@ -1,11 +1,10 @@
 import { saveFile } from '../persistence/saveFile';
 import { useRef, useState } from 'react';
 import { useOrigin, useOriginPoll } from '../brain/useOrigin';
-import { Download, FolderOpen, History, OctagonX, Pause, Play, Redo2, Undo2, Upload } from 'lucide-react';
+import { Download, History, OctagonX, Pause, Play, Redo2, Undo2, Upload } from 'lucide-react';
 import { useStore } from '../store/store';
 import { repo } from '../store/store';
 import { confirmAction } from './primitives';
-import { providerStatus } from '../ai/providers';
 import { AlertBell } from './AlertCenter';
 import { SaveStatus } from './SaveStatus';
 import { LogoLockup } from '../brand/Logo';
@@ -25,33 +24,29 @@ export function TopBar() {
     ? { kind: 'live', label: origin.running ? 'ORIGIN: working' : 'ORIGIN: live', detail: `${origin.model} · $${origin.spentUsd.toFixed(2)} of $${origin.capUsd} this month${origin.nextScheduledAt ? ` · next run ${new Date(origin.nextScheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}` }
     : origin ? { kind: 'off', label: 'ORIGIN: no key', detail: 'The runner is up but has no API key. Set ANTHROPIC_API_KEY and restart it.' }
     : { kind: 'off', label: 'ORIGIN: offline', detail: 'The live runner is not running. On your PC run: npm.cmd run origin' };
-  void providerStatus;
 
   const exportFile = async () => {
-    const r = await saveFile(`${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.office.json`, s.exportText());
+    const r = await saveFile(`${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.brain.json`, s.exportText());
     if (r === 'failed') s.notify('Export is unavailable in this view', 'error');
   };
   const importFile = async (f: File) => {
     const text = await f.text();
     const r = useStore.getState().importText(text);
     if (r.ok) s.notify(`Imported ${f.name}${r.warnings.length ? ` (${r.warnings.join('; ')})` : ''}`);
-    else confirmAction({ title: 'Import rejected', confirmLabel: 'OK', body: <><p>The file was not applied; your current office is unchanged.</p><ul>{r.errors.map((e) => <li key={e}>{e}</li>)}</ul></>, onConfirm: () => {} });
+    else confirmAction({ title: 'Import rejected', confirmLabel: 'OK', body: <><p>The file was not applied; your current brain is unchanged.</p><ul>{r.errors.map((e) => <li key={e}>{e}</li>)}</ul></>, onConfirm: () => {} });
   };
 
   return (
     <header className="topbar">
       <span className="brand"><LogoLockup /></span>
-      <input className="office-name" aria-label="Office name" defaultValue={name} key={name} onBlur={(e) => e.target.value.trim() && e.target.value !== name && s.commit([{ op: 'office.rename', name: e.target.value.trim() }], 'Rename office')} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
+      <input className="office-name" aria-label="Brain name" defaultValue={name} key={name} onBlur={(e) => e.target.value.trim() && e.target.value !== name && s.commit([{ op: 'office.rename', name: e.target.value.trim() }], 'Rename brain')} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
       <nav className="seg" aria-label="Pages">
-        {(['dashboard', 'control', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'control' ? 'Control' : p[0].toUpperCase() + p.slice(1)}</button>)}
+        {(['office', 'dashboard', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'office' ? 'Brain' : p[0].toUpperCase() + p.slice(1)}</button>)}
       </nav>
       <span className="spacer" />
       <AlertBell />
-      <button className="btn icon sm" aria-label={prefs.simRunning ? 'Pause simulation' : 'Run simulation'} title={prefs.simRunning ? 'Pause simulation' : 'Run simulation'} onClick={() => s.setPrefs({ simRunning: !prefs.simRunning })}>{prefs.simRunning ? <Pause size={14} /> : <Play size={14} />}</button>
+      <button className="btn icon sm" aria-label={prefs.simRunning ? 'Pause queued tasks' : 'Run queued tasks'} title={prefs.simRunning ? 'Pause queued tasks' : 'Run queued tasks'} onClick={() => s.setPrefs({ simRunning: !prefs.simRunning })}>{prefs.simRunning ? <Pause size={14} /> : <Play size={14} />}</button>
       <EmergencyButton />
-      <select className="hide-sm" aria-label="Simulation speed" value={prefs.simSpeed} onChange={(e) => s.setPrefs({ simSpeed: Number(e.target.value) })} style={{ width: 64, minHeight: 26 }}>
-        {[0.5, 1, 2, 4].map((v) => <option key={v} value={v}>{v}×</option>)}
-      </select>
       <span className={`badge ${prov.kind} hide-sm`} title={prov.detail}>{prov.label}</span>
       <button className="btn icon sm" disabled={!canUndo} aria-label="Undo" title="Undo (Ctrl+Z)" onClick={s.undo}><Undo2 size={14} /></button>
       <button className="btn icon sm" disabled={!canRedo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)" onClick={s.redo}><Redo2 size={14} /></button>
@@ -60,8 +55,8 @@ export function TopBar() {
         <button className="btn sm" aria-expanded={versionsOpen} onClick={() => setVersionsOpen(!versionsOpen)}><History size={14} /><span className="hide-sm">Versions</span></button>
         {versionsOpen && <VersionsMenu onClose={() => setVersionsOpen(false)} />}
       </div>
-      <button className="btn icon sm" aria-label="Export office" title="Export office configuration" onClick={exportFile}><Download size={14} /></button>
-      <button className="btn icon sm" aria-label="Import office" title="Import office configuration" onClick={() => fileRef.current?.click()}><Upload size={14} /></button>
+      <button className="btn icon sm" aria-label="Export brain" title="Export the brain as a file" onClick={exportFile}><Download size={14} /></button>
+      <button className="btn icon sm" aria-label="Import brain" title="Import a brain file" onClick={() => fileRef.current?.click()}><Upload size={14} /></button>
       <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ''; }} />
     </header>
   );
@@ -70,30 +65,25 @@ export function TopBar() {
 function VersionsMenu({ onClose }: { onClose: () => void }) {
   const doc = useStore((s) => s.doc);
   const s = useStore.getState();
-  const [name, setName] = useState(`Layout ${new Date().toLocaleString()}`);
+  const [name, setName] = useState(`Brain ${new Date().toLocaleString()}`);
   const [, force] = useState(0);
   const versions = repo.listVersions().slice().reverse();
   return (
-    <div className="ctx-menu" style={{ right: 0, top: 32, width: 320, padding: 10 }} role="dialog" aria-label="Layout versions">
+    <div className="ctx-menu" style={{ right: 0, top: 32, width: 320, padding: 10 }} role="dialog" aria-label="Brain versions">
       <div className="label" style={{ marginBottom: 4 }}>Save named version</div>
       <div className="row"><input type="text" value={name} onChange={(e) => setName(e.target.value)} aria-label="Version name" /><button className="btn sm primary" onClick={() => { s.saveVersion(name); force((x) => x + 1); }}>Save</button></div>
       <div className="row" style={{ marginTop: 8, gap: 4 }}>
         <button className="btn sm" onClick={() => { s.resetToSaved(); onClose(); }}>Reset to last save</button>
-        <button className="btn sm" title="Store a copy of this layout as a version you can restore or keep editing separately" onClick={() => { s.saveVersion(`${doc.name} (duplicate)`); force((x) => x + 1); }}>Duplicate layout</button>
+        <button className="btn sm" title="Store a copy of this brain as a version you can restore later" onClick={() => { s.saveVersion(`${doc.name} (duplicate)`); force((x) => x + 1); }}>Duplicate brain</button>
       </div>
-      <div className="row" style={{ marginTop: 4, gap: 4 }}>
-        <button className="btn sm" title="Load the Roblox development headquarters sample" onClick={() => confirmAction({ title: 'Load the Roblox HQ sample?', confirmLabel: 'Load Roblox HQ', body: 'Replaces the current layout with the Roblox development headquarters: a throne room surrounded by seven team rooms. Undo brings your layout back, and saved versions are kept.', onConfirm: () => { s.newOffice('roblox'); onClose(); } })}><FolderOpen size={13} />Roblox HQ</button>
-        <button className="btn sm" title="Load the classic NEXUS-7 sample office" onClick={() => confirmAction({ title: 'Load the NEXUS-7 sample?', confirmLabel: 'Load NEXUS-7', body: 'Replaces the current layout with the classic NEXUS-7 sample office. Undo brings your layout back, and saved versions are kept.', onConfirm: () => { s.newOffice(true); onClose(); } })}>NEXUS-7</button>
-        <button className="btn sm" onClick={() => confirmAction({ title: 'Start a blank office?', confirmLabel: 'New blank office', body: 'Replaces the current layout with an empty one. Undo brings your layout back, and saved versions are kept.', onConfirm: () => { s.newOffice(false); onClose(); } })}>Blank</button>
-      </div>
-      <button className="btn sm primary" style={{ marginTop: 6, width: '100%', justifyContent: 'center' }} onClick={() => confirmAction({ title: 'Load your Creator Brain?', confirmLabel: 'Load Creator Brain', body: 'Loads a general-purpose collective agent firm with an Agent Creator, an operations lead and specialist teams for research, product, creative, engineering, quality, finance and community. This is a local starter configuration; agents remain simulated unless a live provider is connected. Your current layout remains undoable and saved versions are kept.', onConfirm: () => { s.newOffice('creator'); onClose(); } })}>Creator Brain · Agent Firm</button>
+      <button className="btn sm primary" style={{ marginTop: 6, width: '100%', justifyContent: 'center' }} onClick={() => confirmAction({ title: 'Start a fresh brain?', confirmLabel: 'Start fresh', body: 'Replaces the current brain with a new one where only ORIGIN is shown. Undo brings your current brain back, and saved versions are kept.', onConfirm: () => { s.newBrain(); onClose(); } })}>Start a fresh brain</button>
       <div className="label" style={{ margin: '10px 0 4px' }}>Saved versions ({versions.length})</div>
       {versions.length === 0 && <div className="muted small">None yet.</div>}
       <div style={{ maxHeight: 220, overflow: 'auto' }}>
         {versions.map((v) => (
           <div key={v.id} className="row small" style={{ padding: '3px 0' }}>
             <span className="grow" title={v.savedAt}>{v.name}<br /><span className="muted">{new Date(v.savedAt).toLocaleString()}</span></span>
-            <button className="btn sm" onClick={() => confirmAction({ title: `Restore “${v.name}”?`, confirmLabel: 'Restore', body: 'The current layout is kept in undo history, so you can step back to it.', onConfirm: () => { s.restoreVersion(v.id); onClose(); } })}>Restore</button>
+            <button className="btn sm" onClick={() => confirmAction({ title: `Restore “${v.name}”?`, confirmLabel: 'Restore', body: 'The current brain is kept in undo history, so you can step back to it.', onConfirm: () => { s.restoreVersion(v.id); onClose(); } })}>Restore</button>
             <button className="btn sm danger" aria-label={`Delete ${v.name}`} onClick={() => { repo.deleteVersion(v.id); force((x) => x + 1); }}>×</button>
           </div>
         ))}

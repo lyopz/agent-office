@@ -1,7 +1,0 @@
-/* Roblox development headquarters: team room furniture (2D floor plan). */
-.team-sign-text { font-family: var(--font-mono, ui-monospace, monospace); pointer-events: none; }
-.devil-pulse { animation: devil-pulse 3.2s ease-in-out infinite; }
-@keyframes devil-pulse { 0%, 100% { opacity: 0.75; transform: scale(1); } 50% { opacity: 1; transform: scale(1.03); } }
-.candle { animation: candle 1.6s ease-in-out infinite alternate; }
-@keyframes candle { from { opacity: 0.65; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .devil-pulse, .candle { animation: none; } }

@@ -33,9 +33,9 @@ describe('opportunity agent', () => {
     expect(originOutdated(applyOps(old, opportunityOriginOps(old)).doc)).toBe(false);
     expect(doc.library.kb_opp_status.summary).toMatch(/allowance: none approved/i);
     expect(doc.library.kb_opp_ledger.summary).toMatch(/unknown/);
-    // specialists get windows sized to their team
-    expect(doc.agents.agent_scout.schedule.runWindow).toMatchObject({ everyMinutes: 300, maxMinutes: 10, setBy: 'origin' });
-    expect(describeWindow(doc.agents.agent_scout.schedule.runWindow)).toBe('10 min every 5 h');
+    // a fresh brain starts with ORIGIN alone; every other agent is a branch it grows
+    expect(Object.keys(doc.agents)).toEqual(['agent_origin']);
+    expect(describeWindow({ everyMinutes: 300, maxMinutes: 10, setBy: 'origin', reason: '' })).toBe('10 min every 5 h');
   });
 
   test('setting up an older save keeps what ORIGIN already recorded', () => {
@@ -49,7 +49,8 @@ describe('opportunity agent', () => {
     let doc = creatorBrain();
     expect(branchKind(doc, 'agent_origin')).toBe('root');
     expect(growKind(doc, 'agent_origin')).toBe('venture');
-    // ORIGIN's starter staff can't grow branches
+    // agents that aren't ORIGIN's branches can't grow branches
+    doc = applyOps(doc, [{ op: 'agent.create', name: 'SCOUT', id: 'agent_scout' }]).doc;
     expect(growKind(doc, 'agent_scout')).toBeNull();
     doc = grow(doc, 'agent_roblox', 'agent_origin');
     expect(growKind(doc, 'agent_roblox')).toBe('skill');

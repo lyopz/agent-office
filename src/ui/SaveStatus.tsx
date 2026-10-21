@@ -1,6 +1,6 @@
 // Save status in the top bar (last save time, unsaved-changes indicator, Save now) and the
 // autosave loop: every 60 s, and once more when the page is hidden or closed. The repository
-// skips the write when the content hash matches the last successful save, so an idle office
+// skips the write when the content hash matches the last successful save, so an idle brain
 // never rewrites storage.
 import { useEffect, useState } from 'react';
 import { Save } from 'lucide-react';
@@ -52,7 +52,7 @@ export function SaveStatus() {
     never: 'Not saved',
   }[state];
   const detail = [
-    state === 'paused' ? 'Your saved office was damaged. Choose how to recover it before anything is saved.' : null,
+    state === 'paused' ? 'Your saved brain was damaged. Choose how to recover it before anything is saved.' : null,
     state === 'error' ? error : null,
     lastSaved ? `Last saved ${new Date(lastSaved).toLocaleString()} (${relativeTime(lastSaved, now)}).` : 'Not saved yet.',
     autosave ? `Autosaves every minute to ${where} when something changed.` : `Autosave is off. Saves go to ${where}.`,

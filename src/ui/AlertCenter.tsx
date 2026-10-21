@@ -7,8 +7,6 @@ import { useStore } from '../store/store';
 import type { Alert, AlertDelivery } from '../model/types';
 import { onAlertNotify, openAlerts, planDeliveries } from '../engine/alerts';
 import { installAudioUnlock, onSoundState, playSound, soundUnlocked, unlockAudio } from './sound';
-import { roomCenter } from '../engine/geometry';
-import { G } from '../viewport/OfficeLayers';
 
 const SEV_COLOR = { critical: 'var(--danger)', high: 'var(--accent-orange)', warning: 'var(--warn)', info: 'var(--accent-blue)' } as const;
 const DELIVERY_LABEL: Record<AlertDelivery['status'], string> = { delivered: 'delivered', shown: 'shown', queued: 'sent, awaiting confirmation', 'not-connected': 'not connected', 'permission-needed': 'needs permission', suppressed: 'held back' };
@@ -87,13 +85,7 @@ function AlertCard({ a }: { a: Alert }) {
   const project = a.projectId ? doc.projects[a.projectId] : undefined;
   const task = a.taskId ? rt.tasks[a.taskId] : undefined;
   const approval = a.approvalId ? rt.approvals[a.approvalId] : undefined;
-  const roomId = a.roomId ?? (agent ? rt.agents[agent.id]?.roomId ?? agent.schedule.assignedRoomId : null);
-  const openRoom = () => {
-    const r = roomId ? doc.rooms[roomId] : undefined; if (!r) return;
-    const c = roomCenter(r); const cam = useStore.getState().camera; const el = document.querySelector('.viewport');
-    const w = el?.clientWidth ?? 800, h = el?.clientHeight ?? 600;
-    setUi({ page: 'office', selection: agent ? { kind: 'agent', id: agent.id } : { kind: 'room', ids: [r.id] }, camera: { ...cam, x: w / 2 - c.x * G * cam.zoom, y: h / 2 - c.y * G * cam.zoom } });
-  };
+  const openAgent = () => { if (agent) setUi({ selection: { kind: 'agent', id: agent.id }, profileAgentId: agent.id, profileTab: 'identity' }); };
   return (
     <article className={`alert-card sev-${a.severity}${a.status !== 'open' ? ' done' : ''}`}>
       <header className="row" onClick={() => setOpen(!open)} style={{ cursor: 'pointer' }}>
@@ -119,7 +111,7 @@ function AlertCard({ a }: { a: Alert }) {
         {task && (task.status === 'failed' || task.status === 'paused') && <button className="btn sm" onClick={() => runRuntimeOps([{ op: 'task.update', id: task.id, patch: { status: 'queued' } }])}>Retry</button>}
         {task && <select aria-label="Reassign task" value="" onChange={(e) => e.target.value && runRuntimeOps([{ op: 'task.update', id: task.id, patch: { agentId: e.target.value, status: 'queued' } }])}><option value="">Reassign…</option>{Object.values(doc.agents).filter((x) => x.id !== task.agentId).map((x) => <option key={x.id} value={x.id}>{x.identity.name}</option>)}</select>}
         {project && project.status === 'active' && <button className="btn sm" onClick={() => commit([{ op: 'project.upsert', project: { ...project, status: 'paused' } }], `Pause ${project.name}`)}>Pause project</button>}
-        {roomId && <button className="btn sm" onClick={openRoom}>Open room</button>}
+        {agent && <button className="btn sm" onClick={openAgent}>Open agent</button>}
         {a.severity !== 'critical' && !doc.alertSettings.muted[a.category] && <button className="btn sm" title="Mute sounds for this category (critical alerts always sound)" onClick={() => commit([{ op: 'alerts.update', patch: { muted: { [a.category]: true } } }], `Mute ${a.category} alerts`)}>Mute {a.category}</button>}
         {a.status !== 'resolved' && <button className="btn sm" onClick={() => runRuntimeOps([{ op: 'alert.resolve', id: a.id }])}>Resolve</button>}
       </div>

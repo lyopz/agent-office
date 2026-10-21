@@ -1,51 +1,15 @@
-// Schema validation + migrations for saved/imported offices.
+// Schema validation + migrations for saved/imported brains.
 import { z } from 'zod';
-import { DEFAULT_APPEARANCE, DEFAULT_OUTFITS, HQ_ROOM_TEMPLATE_SIZES, defaultPlayer, ROLE_UNIFORMS, builtinRoomTemplates, makeAgent, roleUniformId, withAppearance } from './defaults';
-import { FURNITURE_MATERIALS, FURNITURE_TYPES, LAYOUT_PRESETS, ROOM_TYPES, type OfficeDoc } from './types';
-import { BUILTIN_COSMETICS, OUTFIT_FIELDS } from './cosmetics';
+import { makeAgent } from './defaults';
+import type { OfficeDoc } from './types';
 import { defaultAppearanceSettings } from './themes';
 import { defaultAlertSettings } from './alertDefaults';
-import { TOKEN_FREE_VERIFIED, defaultArcade, defaultControl } from './control';
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 const id = z.string().min(1).max(120);
 const num = z.number().finite();
-const point = z.object({ x: num, y: num });
 const color = z.string().max(40);
-
-const door = z.object({ id, side: z.enum(['n', 's', 'e', 'w']), offset: num, width: num.min(1) });
-const room = z.object({
-  id, name: z.string().max(120), type: z.enum(ROOM_TYPES), x: num, y: num, w: num.min(1), h: num.min(1),
-  rotation: z.literal(0).default(0),
-  walls: z.object({ thickness: num, style: z.enum(['solid', 'glass']) }).default({ thickness: 2, style: 'solid' }),
-  doors: z.array(door), appearance: z.object({
-    floor: z.enum(['grid', 'tile', 'carpet', 'metal', 'wood', 'plain']), wallColor: color, accent: color, lighting: num, theme: z.string().optional(),
-    floorColor: color.optional(), lightTemp: num.optional(), doorColor: color.optional(), windowTint: color.optional(),
-    furnitureMaterial: z.enum(FURNITURE_MATERIALS).optional(), displayColor: color.optional(),
-    effect: z.enum(['none', 'ambient-glow', 'scanlines', 'particles']).optional(),
-  }),
-  furnitureIds: z.array(id), assignedAgentIds: z.array(id), purpose: z.string().max(500).default(''), special: z.string().optional(),
-});
-const endpoint = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('door'), roomId: id, doorId: id }),
-  z.object({ kind: z.literal('corridor'), corridorId: id }),
-]);
-const corridor = z.object({
-  id, name: z.string().max(120), width: num.min(1).max(12), points: z.array(point).max(500), start: endpoint, end: endpoint,
-  routing: z.enum(['auto', 'manual']), isMain: z.boolean().default(false), blocked: z.boolean().default(false),
-  status: z.enum(['ok', 'warning', 'broken']).default('ok'), statusMessage: z.string().optional(),
-});
-const workstation = z.object({
-  name: z.string(), assignedAgentId: id.nullable(), equipment: z.array(z.string()), status: z.enum(['online', 'offline', 'maintenance']), services: z.array(z.string()),
-});
-const furniture = z.object({
-  id, type: z.enum(FURNITURE_TYPES), roomId: id, x: num, y: num, w: num.min(1), h: num.min(1),
-  rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]), color, blocking: z.boolean(), workstation: workstation.optional(),
-  label: z.string().max(120).optional(), material: z.enum(FURNITURE_MATERIALS).optional(), groupId: z.string().max(120).optional(),
-  tube: z.object({ stationName: z.string().max(120), department: z.string().max(120) }).optional(),
-  arcade: z.object({ game: z.enum(['flappy', 'pacman', 'pong']), theme: z.string().max(60) }).optional(),
-});
 
 // Agents are validated loosely and then filled from defaults, so older files gain new fields.
 const agent = z.object({
@@ -53,21 +17,11 @@ const agent = z.object({
   identity: z.object({ name: z.string().min(1).max(80), title: z.string().max(120) }).passthrough(),
 }).passthrough();
 
-const settings = z.object({
-  gridSize: num, bounds: z.object({ x: num, y: num, w: num, h: num }).nullable(),
-  hallwayMode: z.enum(['automatic', 'manual', 'hybrid']), minCorridorWidth: num, defaultCorridorWidth: num,
-  collisionRule: z.enum(['warn', 'prevent']).default('warn'),
-  animationIntensity: z.enum(['off', 'subtle', 'full']).default('subtle'),
-  idleWandering: z.boolean().default(false),
-  layoutPreset: z.enum(LAYOUT_PRESETS).default('grid'),
-});
-
 const tokens = z.object({
   bg: color, bg2: color, panel: color, accent: color, accent2: color, text: color, border: color,
   selection: color, success: color, warning: color, error: color, highlight: color,
 });
-const officeColors = z.object({ floor: color, wall: color, door: color, corridor: color, lighting: color });
-const theme = z.object({ id, name: z.string().max(80), builtin: z.boolean().optional(), dark: tokens, light: tokens, office: z.object({ dark: officeColors, light: officeColors }) });
+const theme = z.object({ id, name: z.string().max(80), builtin: z.boolean().optional(), dark: tokens, light: tokens });
 const appearanceSettings = z.object({ mode: z.enum(['dark', 'light', 'system']), themeId: id, themes: z.array(theme).min(1).max(60) });
 
 const severity = z.enum(['critical', 'high', 'warning', 'info']);
@@ -96,53 +50,15 @@ const knowledge = z.object({
   createdAt: z.string(), authorAgentId: id.nullable(), projectId: id.nullable(), confidence: num.min(0).max(1),
   verification: z.enum(['unverified', 'verified', 'disputed']), sensitive: z.boolean(), allowedAgentIds: z.array(id),
 });
-const cosmetic = z.object({
-  id, name: z.string().max(120), category: z.enum(['head', 'clothing', 'accessory', 'effect']), slot: z.string().max(40),
-  patch: z.record(z.unknown()).optional(), accessoryId: z.string().max(80).optional(),
-  rarity: z.enum(['common', 'uncommon', 'rare', 'legendary']).optional(), collection: z.string().max(80).optional(),
-  functionalTool: z.string().max(80).optional(), custom: z.boolean().optional(), assetId: id.nullable().optional(), tags: z.array(z.string().max(40)).optional(),
-});
-
-const department = z.object({
-  id, name: z.string().min(1).max(120), color, description: z.string().max(500).default(''),
-  mode: z.enum(['running', 'paused']), essential: z.boolean(), maxConcurrent: num.int().min(1).nullable(),
-  excludedAgentIds: z.array(id).max(500), renderPolicy: z.enum(['finish', 'cancel', 'defer']),
-});
-const control = z.object({
-  emergencyStop: z.boolean(),
-  policy: z.object({ prioritizeRendering: z.boolean(), backgroundLimit: num.int().min(1).max(200), pauseNonessential: z.boolean(), autoResume: z.boolean() }),
-  simplifyAbove: num.int().min(0).max(1000),
-  blenderBridgeUrl: z.string().max(300).refine((u) => u === '' || /^https?:\/\/[^\s]+$/.test(u), 'must be an http(s) URL'),
-});
-const gameLimit = z.object({ maxScore: num.int().min(1).max(1_000_000), maxSessionSec: num.min(10).max(3600) });
-const arcade = z.object({
-  policy: z.enum(['human-only', 'agent-disabled', 'token-free']),
-  limits: z.object({ flappy: gameLimit, pacman: gameLimit, pong: gameLimit }),
-  maxAgentMatchesPerDay: num.int().min(0).max(100), tokenFreeVerified: z.boolean(),
-});
-
 export const officeSchema = z.object({
   schemaVersion: z.number().int(),
   id, name: z.string().max(200),
-  settings,
-  rooms: z.record(room), corridors: z.record(corridor), furniture: z.record(furniture), agents: z.record(agent),
-  outfitTemplates: z.array(z.object({
-    id, name: z.string(), patch: z.record(z.unknown()), kind: z.enum(['outfit', 'uniform']).optional(),
-    department: z.string().max(120).optional(), approved: z.boolean().optional(), occasion: z.string().max(120).optional(), locked: z.boolean().optional(),
-  })).default([]),
-  roomTemplates: z.array(z.unknown()).default([]),
-  cosmetics: z.array(cosmetic).max(500),
+  agents: z.record(agent),
   appearance: appearanceSettings,
   alertSettings,
   projects: z.record(project),
   library: z.record(knowledge),
-  departments: z.record(department),
-  control,
-  arcade,
-  player: z.object({
-    name: z.string().min(1).max(60), appearance: z.record(z.unknown()),
-    camera: z.enum(['first', 'third']).default('third'), lastRoomId: z.string().nullable().default(null),
-  }).default(() => defaultPlayer() as unknown as { name: string; appearance: Record<string, unknown>; camera: "first" | "third"; lastRoomId: string | null }),
+  control: z.object({ emergencyStop: z.boolean() }),
   skillRequests: z.array(z.object({
     id, fromAgentId: id, ventureId: id, name: z.string().min(1).max(80), skill: z.string().max(120), specialty: z.string().max(200), purpose: z.string().max(4000),
     status: z.enum(['venture-review', 'owner-review', 'not-relevant', 'approved', 'denied']), ventureNote: z.string().max(2000),
@@ -168,82 +84,28 @@ export function stripSecrets<T>(value: T): T {
 }
 
 type Raw = Record<string, any>;
-const migrations: Record<number, (d: Raw) => Raw> = {
-  // v1 → v2: templates, hallway flags and agent appearance assets were added.
-  1: (d) => {
-    for (const c of Object.values<Raw>(d.corridors ?? {})) { c.isMain ??= false; c.blocked ??= false; c.status ??= 'ok'; }
-    d.outfitTemplates ??= DEFAULT_OUTFITS;
-    d.roomTemplates ??= builtinRoomTemplates();
-    d.settings ??= {};
-    d.settings.hallwayMode ??= 'hybrid';
-    d.settings.minCorridorWidth ??= 1;
-    d.settings.defaultCorridorWidth ??= 2;
-    d.settings.gridSize ??= 24;
-    d.settings.bounds ??= null;
-    d.schemaVersion = 2;
-    return d;
-  },
-  // v2 → v3: headquarters features — object library, cosmetics, themes, alerts, projects, library.
-  2: (d) => {
-    d.settings ??= {};
-    d.settings.collisionRule ??= 'warn';
-    d.settings.animationIntensity ??= 'subtle';
-    d.settings.idleWandering ??= false;
-    d.cosmetics ??= BUILTIN_COSMETICS;
-    d.appearance ??= defaultAppearanceSettings();
-    d.alertSettings ??= defaultAlertSettings();
-    d.projects ??= {};
-    d.library ??= {};
-    d.schemaVersion = 3;
-    return d;
-  },
-  // v3 → v4: departments and executive control, the arcade.
-  3: (d) => {
-    d.departments ??= {};
-    d.control ??= defaultControl();
-    d.arcade ??= defaultArcade();
-    d.schemaVersion = 4;
-    return d;
-  },
-  // v4 → v5: sci-fi wardrobe (4 items per slot) and locked role uniforms.
-  // Custom items and saved outfits are kept; only the built-in catalogue is replaced.
-  4: (d) => {
-    const custom = (Array.isArray(d.cosmetics) ? d.cosmetics : []).filter((c: Raw) => c?.custom);
-    d.cosmetics = [...BUILTIN_COSMETICS.map((c) => JSON.parse(JSON.stringify(c))), ...custom];
-    d.outfitTemplates = Array.isArray(d.outfitTemplates) ? d.outfitTemplates : [];
-    for (const u of ROLE_UNIFORMS) if (!d.outfitTemplates.some((t: Raw) => t?.id === u.id)) d.outfitTemplates.push(JSON.parse(JSON.stringify(u)));
-    // lock an agent into its role uniform only if it is already dressed exactly that way, so no one's look changes
-    for (const a of Object.values((d.agents ?? {}) as Record<string, Raw>)) {
-      const u = a?.archetype && ROLE_UNIFORMS.find((x) => x.id === roleUniformId(a.archetype));
-      if (!u || a.uniformId !== undefined) continue;
-      const look = withAppearance(DEFAULT_APPEARANCE, a.appearance ?? {});
-      const same = OUTFIT_FIELDS.every((k) => JSON.stringify(look[k]) === JSON.stringify((u.patch as Raw)[k]));
-      a.uniformId = same ? u.id : null;
-    }
-    d.schemaVersion = 5;
-    return d;
-  },
-  // v5 → v6: Neural Command Campus — layout presets (grid or bubble office).
-  5: (d) => {
-    d.settings ??= {};
-    d.settings.layoutPreset ??= 'grid';
-    // the Royal Lounge joins the built-in room templates
-    d.roomTemplates = Array.isArray(d.roomTemplates) ? d.roomTemplates : [];
-    for (const t of builtinRoomTemplates()) if (t.type === 'royal-lounge' && !d.roomTemplates.some((x: Raw) => x?.id === t.id)) d.roomTemplates.push(t);
-    d.schemaVersion = 6;
-    return d;
-  },
-  // v6 → v7: Roblox dev headquarters — the owner's own avatar for the 3D view.
-  6: (d) => {
-    d.player ??= defaultPlayer();
-    // the headquarters team rooms join the built-in templates, and their roles' uniforms the outfit list
-    d.roomTemplates = Array.isArray(d.roomTemplates) ? d.roomTemplates : [];
-    for (const t of builtinRoomTemplates()) if (HQ_ROOM_TEMPLATE_SIZES.some(([type]) => type === t.type) && !d.roomTemplates.some((x: Raw) => x?.id === t.id)) d.roomTemplates.push(t);
-    if (Array.isArray(d.outfitTemplates)) for (const u of ROLE_UNIFORMS) if (!d.outfitTemplates.some((t: Raw) => t?.id === u.id)) d.outfitTemplates.push(JSON.parse(JSON.stringify(u)));
-    d.schemaVersion = 7;
-    return d;
-  },
-};
+
+/** Fields that belonged to the old office (rooms, hallways, furniture, outfits, arcade) and are dropped on load. */
+const OFFICE_FIELDS = ['settings', 'rooms', 'corridors', 'furniture', 'outfitTemplates', 'roomTemplates', 'cosmetics', 'departments', 'arcade', 'player'];
+const OFFICE_AGENT_FIELDS = ['appearance', 'defaultAppearance', 'uniformId', 'assets'];
+
+/** Any older save (v1 to v7, the office) becomes a brain: its agents, knowledge, projects and settings are kept. */
+function fromOffice(d: Raw): Raw {
+  for (const k of OFFICE_FIELDS) delete d[k];
+  d.appearance ??= defaultAppearanceSettings();
+  for (const t of Array.isArray(d.appearance?.themes) ? d.appearance.themes : []) delete t.office;
+  d.alertSettings ??= defaultAlertSettings();
+  d.projects ??= {};
+  d.library ??= {};
+  d.control = { emergencyStop: !!d.control?.emergencyStop };
+  for (const a of Object.values((d.agents ?? {}) as Record<string, Raw>)) {
+    for (const k of OFFICE_AGENT_FIELDS) delete a[k];
+    if (a.schedule) { delete a.schedule.assignedRoomId; delete a.schedule.preferredWorkstationId; }
+    if (a.permissions) delete a.permissions.canMoveRooms;
+  }
+  d.schemaVersion = 8;
+  return d;
+}
 
 function fillAgent(a: Raw): Raw {
   const base = makeAgent(a.identity?.name ?? 'Agent', a.identity?.title ?? 'Generalist', a.identity?.department ?? 'Operations') as unknown as Raw;
@@ -254,8 +116,6 @@ function fillAgent(a: Raw): Raw {
     }
   };
   merge(base, a);
-  base.appearance = withAppearance(DEFAULT_APPEARANCE, a.appearance ?? {});
-  base.defaultAppearance = a.defaultAppearance ? withAppearance(DEFAULT_APPEARANCE, a.defaultAppearance) : base.appearance;
   base.id = a.id;
   return base;
 }
@@ -267,34 +127,20 @@ export function parseOffice(input: unknown): ParseResult {
   try {
     if (!input || typeof input !== 'object') return { ok: false, errors: ['File is not a JSON object'] };
     let d: Raw = JSON.parse(JSON.stringify(stripSecrets(input)));
-    if (d.format === 'agent-office' && d.office) d = d.office;
+    if ((d.format === 'the-brain' || d.format === 'agent-office') && d.office) d = d.office;
     const warnings: string[] = [];
     const v = typeof d.schemaVersion === 'number' ? d.schemaVersion : 1;
     if (v > SCHEMA_VERSION) return { ok: false, errors: [`File uses schema v${v}; this app supports up to v${SCHEMA_VERSION}`] };
-    for (let k = v; k < SCHEMA_VERSION; k++) { d = migrations[k](d); warnings.push(`Migrated from schema v${k} to v${k + 1}`); }
+    if (v < SCHEMA_VERSION) { d = fromOffice(d); warnings.push(`Converted a v${v} office save into a brain`); }
     const r = officeSchema.safeParse(d);
     if (!r.success) {
       return { ok: false, errors: r.error.issues.slice(0, 12).map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`) };
     }
     const doc = r.data as unknown as OfficeDoc;
-    doc.player.appearance = withAppearance(DEFAULT_APPEARANCE, doc.player.appearance as Partial<OfficeDoc['player']['appearance']>);
-    if (doc.player.lastRoomId && !doc.rooms[doc.player.lastRoomId]) doc.player.lastRoomId = null;
     for (const [k, a] of Object.entries(doc.agents)) doc.agents[k] = fillAgent(a as unknown as Raw) as unknown as OfficeDoc['agents'][string];
-    if (!doc.roomTemplates.length) doc.roomTemplates = builtinRoomTemplates();
-    // referential integrity
     const errs: string[] = [];
-    for (const r of Object.values(doc.rooms)) for (const fid of r.furnitureIds) if (!doc.furniture[fid]) errs.push(`Room ${r.name} references missing furniture ${fid}`);
-    for (const f of Object.values(doc.furniture)) if (!doc.rooms[f.roomId]) errs.push(`Furniture ${f.id} references missing room ${f.roomId}`);
-    for (const c of Object.values(doc.corridors)) for (const e of [c.start, c.end]) {
-      if (e.kind === 'door' && !doc.rooms[e.roomId]) errs.push(`${c.name} references missing room ${e.roomId}`);
-      if (e.kind === 'corridor' && !doc.corridors[e.corridorId]) errs.push(`${c.name} joins missing hallway ${e.corridorId}`);
-    }
-    for (const [k, r] of Object.entries(doc.rooms)) if (r.id !== k) errs.push(`Room key ${k} doesn't match its id`);
-    for (const a of Object.values(doc.agents)) if (a.uniformId && !doc.outfitTemplates.some((t) => t.id === a.uniformId && t.locked)) a.uniformId = null;
+    for (const [k, a] of Object.entries(doc.agents)) if (a.id !== k) errs.push(`Agent key ${k} doesn't match its id`);
     for (const p of Object.values(doc.projects)) if (p.ownerAgentId && !doc.agents[p.ownerAgentId]) p.ownerAgentId = null;
-    for (const [k, dep] of Object.entries(doc.departments)) { if (dep.id !== k) errs.push(`Department key ${k} doesn't match its id`); dep.excludedAgentIds = dep.excludedAgentIds.filter((x) => doc.agents[x]); }
-    doc.arcade.tokenFreeVerified = TOKEN_FREE_VERIFIED;
-    if (doc.arcade.policy === 'token-free' && !TOKEN_FREE_VERIFIED) { doc.arcade.policy = 'human-only'; warnings.push('Token-free agent arcade play is not verified; policy reset to human only'); }
     if (!doc.appearance.themes.some((t) => t.id === doc.appearance.themeId)) doc.appearance.themeId = doc.appearance.themes[0].id;
     if (errs.length) return { ok: false, errors: errs.slice(0, 12) };
     doc.schemaVersion = SCHEMA_VERSION;
@@ -305,5 +151,5 @@ export function parseOffice(input: unknown): ParseResult {
 }
 
 export function exportOffice(doc: OfficeDoc, extra: Record<string, unknown> = {}) {
-  return JSON.stringify(stripSecrets({ format: 'agent-office', version: SCHEMA_VERSION, exportedAt: new Date().toISOString(), office: doc, ...extra }), null, 2);
+  return JSON.stringify(stripSecrets({ format: 'the-brain', version: SCHEMA_VERSION, exportedAt: new Date().toISOString(), office: doc, ...extra }), null, 2);
 }

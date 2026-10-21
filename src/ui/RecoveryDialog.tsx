@@ -1,4 +1,4 @@
-// Shown when the saved office could not be loaded. Nothing is overwritten and autosave stays off
+// Shown when the saved brain could not be loaded. Nothing is overwritten and autosave stays off
 // until the user picks one of: restore the backup, download the damaged data, or start fresh.
 // A copy of the damaged data has already been kept (damaged-<time>) by the repository.
 import { useState } from 'react';
@@ -16,14 +16,14 @@ export function RecoveryDialog() {
 
   const download = async () => {
     if (!rec.raw) return;
-    const r = await saveFile(`damaged-office-save-${new Date().toISOString().replace(/[:.]/g, '-')}.json`, rec.raw);
+    const r = await saveFile(`damaged-brain-save-${new Date().toISOString().replace(/[:.]/g, '-')}.json`, rec.raw);
     setDownloaded(r === 'saved' ? 'Download started.' : r === 'declined' ? 'Download cancelled.' : 'Download is unavailable here.');
   };
 
   return (
     <div className="overlay recovery-overlay">
       <div className="modal" role="alertdialog" aria-modal="true" aria-labelledby="recovery-h" aria-describedby="recovery-d">
-        <div className="panel-h" id="recovery-h" style={{ color: 'var(--warn)' }}>Your saved office could not be loaded</div>
+        <div className="panel-h" id="recovery-h" style={{ color: 'var(--warn)' }}>Your saved brain could not be loaded</div>
         <div className="modal-b recovery-body" id="recovery-d">
           <p><strong>{rec.reason}</strong></p>
           <p>Nothing has been overwritten, and saving is paused until you choose what to do.</p>
@@ -35,7 +35,7 @@ export function RecoveryDialog() {
           {downloaded && <p className="muted" role="status">{downloaded}</p>}
           {confirmFresh && (
             <div className="recovery-confirm" role="group" aria-label="Confirm start fresh">
-              <p>Start fresh with the sample office? It will be saved as your current office{rec.backup ? ', and the backup is kept' : ''}.{rec.raw ? (rec.damagedName ? ' The copy of the damaged data stays.' : ' The damaged data could not be kept, so download it first if you want it.') : ''}</p>
+              <p>Start a fresh brain with only ORIGIN? It will be saved as your current brain{rec.backup ? ', and the backup is kept' : ''}.{rec.raw ? (rec.damagedName ? ' The copy of the damaged data stays.' : ' The damaged data could not be kept, so download it first if you want it.') : ''}</p>
               <div className="row" style={{ gap: 6 }}>
                 <button className="btn" onClick={() => setConfirmFresh(false)} autoFocus>Go back</button>
                 <button className="btn danger" onClick={() => resolveRecovery('fresh')}>Yes, start fresh</button>

@@ -69,16 +69,7 @@
 .brain-agent-status[data-enabled="true"] { border-color: rgba(255,82,105,.28); color: #ff8190; }
 .brain-switch-label { display: flex; align-items: center; gap: 7px; margin: 9px 7px 5px; color: #a98f97; }
 .brain-switch-label > span { margin-left: auto; color: #e66073; font-size: 9px; }
-.brain-reference-block { margin-top: 8px; padding: 2px 0 3px; border-top: 1px solid rgba(255,255,255,.07); }
-.brain-reference-block > p { margin: 2px 7px 9px; color: #9e8d94; font: 400 10px/1.5 var(--font-sans, system-ui, sans-serif); }
-.brain-reference-list { display: grid; gap: 3px; }
-.brain-reference { min-height: 34px; display: flex; align-items: center; gap: 9px; padding: 3px 7px; color: #9f9095; font: 400 10px var(--font-sans, system-ui, sans-serif); }
-.brain-reference-mark { position: relative; min-width: 63px; color: #f8f2f4; font: 700 14px/1 Georgia, serif; letter-spacing: -.04em; }
-.brain-reference-mark.brand-amazon { font: 650 14px/1 Arial, sans-serif; letter-spacing: -.07em; }
-.brand-amazon i { position: absolute; left: 13px; bottom: -3px; width: 24px; height: 5px; border-bottom: 1.5px solid #ff9e55; border-radius: 0 0 60% 60%; transform: rotate(5deg); }
-.brain-reference-mark.brand-etsy { color: #f5e8ec; font: 700 17px/1 Georgia, serif; }
-.brain-reference-mark.brand-roblox { display: flex; align-items: center; gap: 5px; font: 750 10px/1 Arial, sans-serif; letter-spacing: .03em; }
-.brand-roblox i { width: 13px; height: 13px; display: grid; place-items: center; border: 2px solid #efedf0; color: #efedf0; font: 12px/8px Arial, sans-serif; transform: rotate(15deg); }
+.brain-switch-empty { margin: 2px 7px 9px; color: #9e8d94; font: 400 10px/1.5 var(--font-sans, system-ui, sans-serif); }
 .brain-create-button { width: 100%; min-height: 39px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; border: 1px solid rgba(255,76,98,.32); border-radius: 6px; background: linear-gradient(105deg, rgba(255,53,79,.15), rgba(128,20,42,.13)); color: #ffdce2; font: 600 11px var(--font-sans, system-ui, sans-serif); cursor: pointer; }
 .brain-create-button:hover, .brain-create-button:focus-visible { border-color: rgba(255,92,112,.64); background: rgba(255,53,79,.2); outline: none; }
 .info-card { position: absolute; right: 12px; top: 10px; width: min(340px, calc(100% - 24px)); background: color-mix(in srgb, var(--panel) 94%, transparent); border: 1px solid var(--border-strong); border-radius: 10px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.45); z-index: 3; cursor: default; }

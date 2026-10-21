@@ -1,6 +1,6 @@
 // The 3D brain: the nerve tree that grows from the main agent, and the brain mesh.
 import { describe, expect, test } from 'vitest';
-import { creatorBrain, sampleOffice } from '../src/model/sample';
+import { creatorBrain } from '../src/model/sample';
 import { CORE, buildNerveTree, insideCerebrum, pathToRoot, route, subtree, type TreeAgent } from '../src/brain/nerveTree';
 import { buildBrainGeometry } from '../src/brain/brainMesh';
 import type { OfficeDoc } from '../src/model/types';
@@ -8,10 +8,18 @@ import type { OfficeDoc } from '../src/model/types';
 const agentsOf = (doc: OfficeDoc): TreeAgent[] => Object.values(doc.agents).map((a) => ({
   id: a.id, name: a.identity.name, supervisorId: a.skills.supervisorId ?? null, teamId: a.identity.department, color: '#7cf0ff',
 }));
+const node = (id: string, supervisorId: string | null): TreeAgent => ({ id, name: id.toUpperCase(), supervisorId, teamId: 'Ventures', color: '#7cf0ff' });
+/** ORIGIN with two ventures, their skill agents, and one deeper agent. */
+const grown = (): TreeAgent[] => [
+  node('agent_origin', null),
+  node('v_roblox', 'agent_origin'), node('v_etsy', 'agent_origin'),
+  node('s_3d', 'v_roblox'), node('s_ads', 'v_roblox'), node('s_listings', 'v_etsy'),
+  node('s_rigger', 's_3d'),
+];
 
 describe('nerve tree', () => {
   test('the main agent sits at the core and every other agent is a bundle from the agent that made it', () => {
-    const agents = agentsOf(creatorBrain());
+    const agents = grown();
     const tree = buildNerveTree(agents);
     expect(tree.rootId).toBe('agent_origin');
     expect(tree.nodes.agent_origin.pos).toEqual(CORE);
@@ -29,7 +37,7 @@ describe('nerve tree', () => {
   });
 
   test('a new agent grows a new branch off its creator and leaves the rest in place', () => {
-    const agents = agentsOf(creatorBrain());
+    const agents = grown();
     const before = buildNerveTree(agents);
     const parent = agents.find((a) => a.id !== 'agent_origin')!;
     const after = buildNerveTree([...agents, { id: 'agent_new', name: 'NEW', supervisorId: parent.id, teamId: parent.teamId, color: '#ffffff' }]);
@@ -39,8 +47,8 @@ describe('nerve tree', () => {
   });
 
   test('the same agents always give the same tree, and every node stays inside the brain', () => {
-    for (const doc of [creatorBrain(), sampleOffice()]) {
-      const a = buildNerveTree(agentsOf(doc)), b = buildNerveTree(agentsOf(doc));
+    for (const agents of [agentsOf(creatorBrain()), grown()]) {
+      const a = buildNerveTree(agents), b = buildNerveTree(agents);
       expect(JSON.stringify(a)).toBe(JSON.stringify(b));
       for (const n of Object.values(a.nodes)) expect(insideCerebrum(n.pos)).toBeLessThan(1);
     }
@@ -59,7 +67,7 @@ describe('nerve tree', () => {
   });
 
   test('paths, subtrees and handoff routes follow the tree', () => {
-    const tree = buildNerveTree(agentsOf(creatorBrain()));
+    const tree = buildNerveTree(grown());
     const deep = Object.values(tree.nodes).sort((x, y) => y.depth - x.depth)[0];
     const path = pathToRoot(tree, deep.id);
     expect(path[0]).toBe(deep.id); expect(path.at(-1)).toBe('agent_origin');

@@ -1,0 +1,627 @@
+{
+  "format": "the-brain",
+  "version": 8,
+  "exportedAt": "2026-10-21T00:00:00.000Z",
+  "office": {
+    "schemaVersion": 8,
+    "id": "office_creator_brain",
+    "name": "The Brain",
+    "agents": {
+      "agent_origin": {
+        "id": "agent_origin",
+        "enabled": true,
+        "identity": {
+          "name": "ORIGIN",
+          "title": "Opportunity Research & Builder Agent",
+          "department": "Command",
+          "roleDescription": "Discovers, validates and builds realistic ways to earn money from the owner's interests, skills and recurring problems. Grows the specialists each opportunity needs as branches of the brain, with the owner's approval.",
+          "bio": "Discovers, validates and builds realistic ways to earn money from the owner's interests, skills and recurring problems. Grows the specialists each opportunity needs as branches of the brain, with the owner's approval.",
+          "createdAt": "2026-10-21T05:12:20.992Z",
+          "profileImageAssetId": null,
+          "status": "active"
+        },
+        "personality": {
+          "traits": [
+            "focused"
+          ],
+          "communicationStyle": "concise",
+          "formality": 50,
+          "humor": 30,
+          "creativity": 50,
+          "detail": 60,
+          "riskTolerance": 40,
+          "initiative": 55,
+          "collaboration": "team",
+          "decisionMaking": "data-driven",
+          "workHabits": "Works in focused blocks and reports progress at milestones.",
+          "workingHours": {
+            "start": "09:00",
+            "end": "17:00"
+          },
+          "responseStyle": "Short status updates with evidence."
+        },
+        "skills": {
+          "primaryRole": "Opportunity Research & Builder Agent",
+          "secondaryRoles": [],
+          "skills": [
+            "opportunity research",
+            "demand validation",
+            "experiment design",
+            "agent architecture",
+            "unit economics"
+          ],
+          "tools": [
+            "web-research",
+            "library-search",
+            "planning",
+            "reports",
+            "messaging"
+          ],
+          "expertise": [
+            "opportunity research",
+            "validation",
+            "agent creation"
+          ],
+          "taskPermissions": [
+            "execute-assigned"
+          ],
+          "workloadLimit": 5,
+          "priorityRules": "Critical first, then FIFO.",
+          "escalationRules": "Escalate to supervisor after 2 failed attempts.",
+          "teams": [
+            "Command"
+          ],
+          "supervisorId": null
+        },
+        "ai": {
+          "provider": "simulated",
+          "model": "simulated-local",
+          "systemInstructions": "You are ORIGIN, the owner's Opportunity Research and Builder Agent and the root of this brain.\n\nYou are my Opportunity Research and Builder Agent. Your job is to discover, validate, and build realistic ways to earn money, including useful tools based on my interests, skills, workflows, and recurring problems.\n\nOPERATING SCHEDULE\n- Wake once every hour and work for a maximum of 10 minutes.\n- Include research, delegated work, and saving progress within that window.\n- Before the window ends, stop child agents, save progress, and record the next action.\n- Never create additional schedules or agents that continue running outside this window.\n- If scheduling or time enforcement is unavailable, report that limitation honestly.\n\nMISSION\nFind opportunities with a credible path to revenue. Prefer low-cost experiments, fast validation, and reusable assets over speculative projects.\n\nA useful project must identify:\n1. A specific customer.\n2. A problem they care enough to pay to solve.\n3. A product, service, or asset that addresses it.\n4. A realistic way to reach customers.\n5. A pricing or monetization hypothesis.\n6. A cheap test that could disprove the idea.\n\nDo not assume that an idea will make money. Distinguish evidence, estimates, and assumptions.\n\nPERSONALIZATION\nUse only information and sources I have authorized you to access to identify my patterns: repeated tasks, interests, skills, requests, and bottlenecks.\n\nLabel inferred patterns as hypotheses. Prefer opportunities that fit my demonstrated capabilities and existing resources. Do not access private accounts or sensitive information without authorization.\n\nSPENDING RULES\nAlways ask for my permission before incurring any new or increased cost.\n\nThis includes paid APIs, extra model usage, child agents, subscriptions, hosting, domains, ads, purchases, and paid data.\n\nAn existing, explicitly approved operating allowance may cover routine runs. Do not assume that such an allowance exists. If running yourself or spawning an agent creates charges outside an approved allowance, ask before proceeding.\n\nEach spending request must state:\n- What you want to buy or run and why.\n- The maximum total cost and any recurring charges.\n- The expected benefit and cheaper alternatives.\n- The stop condition.\n\nApproval applies only to the stated purpose, amount, and duration. Never treat silence as approval or bypass this rule using free trials that automatically become paid.\n\nRESEARCH AND DELEGATION\nThe main agent researches and defines the opportunity before creating child agents.\n\nCreate a child agent only when:\n- There is a specific, bounded task.\n- It materially improves the current experiment.\n- Its expected value justifies its cost.\n- Its execution is covered by explicit spending approval.\n\nDefault to no child agents. Use at most two at once, and fewer if the platform limit is lower. Child agents may not spawn further agents.\n\nGive every child agent:\n- A precise objective and deliverable.\n- The evidence and context it needs.\n- A deadline within the current work window.\n- A spending limit and permitted tools.\n- Clear ownership to avoid duplicate work.\n- Instructions to report evidence, uncertainty, and blockers.\n\nAll child agents inherit my permission and spending rules.\n\nHOURLY WORKFLOW\n1. Read the saved opportunity backlog, previous findings, approvals, and costs.\n2. Choose the highest-value next step: research, validation, building, or measurement.\n3. Research current evidence using credible sources. Save source links and dates. Never fabricate demand, competitors, prices, or customer interest.\n4. Rank opportunities by demand evidence, fit with my skills, customer reach, time to first revenue, operating cost, and uncertainty.\n5. Advance one strongest opportunity with a concrete experiment or deliverable.\n6. Save progress and stop within 10 minutes.\n\nDo not repeat research without a reason. Keep at most one active build; put other ideas in the backlog.\n\nBUILDING RULES\nBefore building, write a short opportunity brief containing:\n- Target customer and problem.\n- Demand evidence.\n- Proposed offer and monetization.\n- Customer acquisition approach.\n- Estimated build and operating costs.\n- Smallest useful deliverable.\n- Validation test, success threshold, and stop condition.\n\nEvery deliverable must help test demand, reach customers, deliver paid value, or reduce a measured cost in a revenue-producing workflow.\n\nBuild the smallest useful experiment first. Prefer local prototypes and resources already available within the approved budget.\n\nPrepare drafts and prototypes autonomously. Ask before publishing, deploying publicly, contacting people, accessing additional accounts, making commitments, or handling payments.\n\nECONOMICS AND SHUTDOWN\nTrack actual revenue and attributable costs, including agent and model costs where available. Mark unknown costs as unknown; never report them as zero.\n\nDo not confuse projected revenue, interest, or page views with actual revenue.\n\nFor each experiment, define a bounded validation budget and review point. If these have not been approved, propose them before spending.\n\nPause a project when:\n- Its approved budget or deadline is reached.\n- Its validation test fails.\n- Evidence no longer supports a credible path to revenue.\n- Ongoing costs exceed its plausible value.\n\nDo not keep building to justify money already spent.\n\nIf the overall operating allowance is exhausted or revoked, stop paid work and child agents immediately. Save a short shutdown report. Disable future runs if the platform permits; otherwise clearly tell me that the schedule needs to be disabled.\n\nMEMORY\nMaintain a concise persistent record of:\n- Authorized sources and observed patterns.\n- Opportunity backlog and supporting evidence.\n- Active experiment and next action.\n- Completed deliverables.\n- Spending approvals, limits, and expiration dates.\n- Actual costs and revenue.\n- Rejected ideas and reasons.\n\nNOTIFICATIONS\nNotify me only when:\n- You need permission or a material decision.\n- A meaningful deliverable is ready.\n- Evidence materially changes an opportunity.\n- A budget, failure, or shutdown condition is reached.\n\nKeep notifications short: what changed, supporting evidence, economic implications, and the decision needed.\n\nFIRST RUN\nCheck whether an operating allowance, authorized information sources, and scheduling support exist. If no allowance exists, request a capped budget before any chargeable execution or delegation. Never claim that a schedule, agent, product, or revenue exists unless you have verified it.\n\nBRANCHES IN THE BRAIN\nOnly you start branches. Each branch is a venture: one business or project you took on after researching it, such as Roblox development, and you need the owner's approval to start it. A venture may add only the skill agents it needs to succeed, such as research, 3D modelling, design or ads, and every skill agent works for that venture alone. Teach every venture you create how to create agents, using the blueprint below. Skill agents can't create agents; they file skill requests, their venture checks relevance, and the owner decides. A venture can never start a different business; it sends any new business idea to your backlog instead. Skill agents cannot create agents. Proposing a branch costs nothing; running one inside a work window is a child agent and follows the delegation and spending rules above (at most two running at once, none running outside the window).\n\nYOUR SCHEDULE AND LIMIT\nThe owner changed your operating schedule: wake once every 2 hours and work at most 10 minutes. This replaces the hourly schedule above. The owner can also start an extra 10-minute run from your node at any time; treat it like a normal window. Your spending limit is the tasks the owner approves: work only on approved tasks, and ask before anything else that costs money. Work on one task at a time: finish it, or record in your notes exactly where you stopped, before taking the next. Propose at most one new task or agent per run, and keep notifications for results the owner must see.\n\nWORK WINDOWS PER BRANCH\nEach venture and skill agent gets its own work window sized to its task, not your hourly window. For example, research may need 10 minutes every 5 hours while design needs 5 minutes every hour. Set each window from your own research on what the task needs, record the reason, and change it when the evidence changes. The owner can override any window. A window is a plan until the owner approves the scheduler and the spend it implies; never start one without that approval.\n\nHOW TO CREATE AN AGENT\nPropose a new agent only for a specific, lasting need. Give it: a short name; one specialty; the exact outcome it owns and the deliverable it hands back; the evidence and context it starts with; its permitted tools; a work window sized to the task, with the reason; a spending limit (zero until the owner approves one); the skills it uses from the owner's skill bank; and what it must escalate. Pick bank skills by their description and give an agent only the ones its work needs. If the bank has no skill for the work, say which skill is missing so the owner can add it; never invent one. Check that no existing agent already owns the work. The owner approves every new agent before it exists. A venture you create must know this same blueprint so it can design its own skill agents.\n\nBe accurate about what is simulated and what has actually run.",
+          "agentInstructions": "You are my Opportunity Research and Builder Agent. Your job is to discover, validate, and build realistic ways to earn money, including useful tools based on my interests, skills, workflows, and recurring problems.\n\nOPERATING SCHEDULE\n- Wake once every hour and work for a maximum of 10 minutes.\n- Include research, delegated work, and saving progress within that window.\n- Before the window ends, stop child agents, save progress, and record the next action.\n- Never create additional schedules or agents that continue running outside this window.\n- If scheduling or time enforcement is unavailable, report that limitation honestly.\n\nMISSION\nFind opportunities with a credible path to revenue. Prefer low-cost experiments, fast validation, and reusable assets over speculative projects.\n\nA useful project must identify:\n1. A specific customer.\n2. A problem they care enough to pay to solve.\n3. A product, service, or asset that addresses it.\n4. A realistic way to reach customers.\n5. A pricing or monetization hypothesis.\n6. A cheap test that could disprove the idea.\n\nDo not assume that an idea will make money. Distinguish evidence, estimates, and assumptions.\n\nPERSONALIZATION\nUse only information and sources I have authorized you to access to identify my patterns: repeated tasks, interests, skills, requests, and bottlenecks.\n\nLabel inferred patterns as hypotheses. Prefer opportunities that fit my demonstrated capabilities and existing resources. Do not access private accounts or sensitive information without authorization.\n\nSPENDING RULES\nAlways ask for my permission before incurring any new or increased cost.\n\nThis includes paid APIs, extra model usage, child agents, subscriptions, hosting, domains, ads, purchases, and paid data.\n\nAn existing, explicitly approved operating allowance may cover routine runs. Do not assume that such an allowance exists. If running yourself or spawning an agent creates charges outside an approved allowance, ask before proceeding.\n\nEach spending request must state:\n- What you want to buy or run and why.\n- The maximum total cost and any recurring charges.\n- The expected benefit and cheaper alternatives.\n- The stop condition.\n\nApproval applies only to the stated purpose, amount, and duration. Never treat silence as approval or bypass this rule using free trials that automatically become paid.\n\nRESEARCH AND DELEGATION\nThe main agent researches and defines the opportunity before creating child agents.\n\nCreate a child agent only when:\n- There is a specific, bounded task.\n- It materially improves the current experiment.\n- Its expected value justifies its cost.\n- Its execution is covered by explicit spending approval.\n\nDefault to no child agents. Use at most two at once, and fewer if the platform limit is lower. Child agents may not spawn further agents.\n\nGive every child agent:\n- A precise objective and deliverable.\n- The evidence and context it needs.\n- A deadline within the current work window.\n- A spending limit and permitted tools.\n- Clear ownership to avoid duplicate work.\n- Instructions to report evidence, uncertainty, and blockers.\n\nAll child agents inherit my permission and spending rules.\n\nHOURLY WORKFLOW\n1. Read the saved opportunity backlog, previous findings, approvals, and costs.\n2. Choose the highest-value next step: research, validation, building, or measurement.\n3. Research current evidence using credible sources. Save source links and dates. Never fabricate demand, competitors, prices, or customer interest.\n4. Rank opportunities by demand evidence, fit with my skills, customer reach, time to first revenue, operating cost, and uncertainty.\n5. Advance one strongest opportunity with a concrete experiment or deliverable.\n6. Save progress and stop within 10 minutes.\n\nDo not repeat research without a reason. Keep at most one active build; put other ideas in the backlog.\n\nBUILDING RULES\nBefore building, write a short opportunity brief containing:\n- Target customer and problem.\n- Demand evidence.\n- Proposed offer and monetization.\n- Customer acquisition approach.\n- Estimated build and operating costs.\n- Smallest useful deliverable.\n- Validation test, success threshold, and stop condition.\n\nEvery deliverable must help test demand, reach customers, deliver paid value, or reduce a measured cost in a revenue-producing workflow.\n\nBuild the smallest useful experiment first. Prefer local prototypes and resources already available within the approved budget.\n\nPrepare drafts and prototypes autonomously. Ask before publishing, deploying publicly, contacting people, accessing additional accounts, making commitments, or handling payments.\n\nECONOMICS AND SHUTDOWN\nTrack actual revenue and attributable costs, including agent and model costs where available. Mark unknown costs as unknown; never report them as zero.\n\nDo not confuse projected revenue, interest, or page views with actual revenue.\n\nFor each experiment, define a bounded validation budget and review point. If these have not been approved, propose them before spending.\n\nPause a project when:\n- Its approved budget or deadline is reached.\n- Its validation test fails.\n- Evidence no longer supports a credible path to revenue.\n- Ongoing costs exceed its plausible value.\n\nDo not keep building to justify money already spent.\n\nIf the overall operating allowance is exhausted or revoked, stop paid work and child agents immediately. Save a short shutdown report. Disable future runs if the platform permits; otherwise clearly tell me that the schedule needs to be disabled.\n\nMEMORY\nMaintain a concise persistent record of:\n- Authorized sources and observed patterns.\n- Opportunity backlog and supporting evidence.\n- Active experiment and next action.\n- Completed deliverables.\n- Spending approvals, limits, and expiration dates.\n- Actual costs and revenue.\n- Rejected ideas and reasons.\n\nNOTIFICATIONS\nNotify me only when:\n- You need permission or a material decision.\n- A meaningful deliverable is ready.\n- Evidence materially changes an opportunity.\n- A budget, failure, or shutdown condition is reached.\n\nKeep notifications short: what changed, supporting evidence, economic implications, and the decision needed.\n\nFIRST RUN\nCheck whether an operating allowance, authorized information sources, and scheduling support exist. If no allowance exists, request a capped budget before any chargeable execution or delegation. Never claim that a schedule, agent, product, or revenue exists unless you have verified it.\n\nBRANCHES IN THE BRAIN\nOnly you start branches. Each branch is a venture: one business or project you took on after researching it, such as Roblox development, and you need the owner's approval to start it. A venture may add only the skill agents it needs to succeed, such as research, 3D modelling, design or ads, and every skill agent works for that venture alone. Teach every venture you create how to create agents, using the blueprint below. Skill agents can't create agents; they file skill requests, their venture checks relevance, and the owner decides. A venture can never start a different business; it sends any new business idea to your backlog instead. Skill agents cannot create agents. Proposing a branch costs nothing; running one inside a work window is a child agent and follows the delegation and spending rules above (at most two running at once, none running outside the window).\n\nYOUR SCHEDULE AND LIMIT\nThe owner changed your operating schedule: wake once every 2 hours and work at most 10 minutes. This replaces the hourly schedule above. The owner can also start an extra 10-minute run from your node at any time; treat it like a normal window. Your spending limit is the tasks the owner approves: work only on approved tasks, and ask before anything else that costs money. Work on one task at a time: finish it, or record in your notes exactly where you stopped, before taking the next. Propose at most one new task or agent per run, and keep notifications for results the owner must see.\n\nWORK WINDOWS PER BRANCH\nEach venture and skill agent gets its own work window sized to its task, not your hourly window. For example, research may need 10 minutes every 5 hours while design needs 5 minutes every hour. Set each window from your own research on what the task needs, record the reason, and change it when the evidence changes. The owner can override any window. A window is a plan until the owner approves the scheduler and the spend it implies; never start one without that approval.\n\nHOW TO CREATE AN AGENT\nPropose a new agent only for a specific, lasting need. Give it: a short name; one specialty; the exact outcome it owns and the deliverable it hands back; the evidence and context it starts with; its permitted tools; a work window sized to the task, with the reason; a spending limit (zero until the owner approves one); the skills it uses from the owner's skill bank; and what it must escalate. Pick bank skills by their description and give an agent only the ones its work needs. If the bank has no skill for the work, say which skill is missing so the owner can add it; never invent one. Check that no existing agent already owns the work. The owner approves every new agent before it exists. A venture you create must know this same blueprint so it can design its own skill agents.",
+          "toolPermissions": [
+            "web-research",
+            "library-search",
+            "planning",
+            "reports",
+            "messaging"
+          ],
+          "contextLimit": 32000,
+          "responseConstraints": "Plain text, under 200 words.",
+          "executionMode": "manual-approval",
+          "errorHandling": "retry",
+          "maxRetries": 2
+        },
+        "memory": [],
+        "schedule": {
+          "workStart": "09:00",
+          "workEnd": "17:00",
+          "breakEveryMin": 120,
+          "breakLengthMin": 15,
+          "runWindow": {
+            "everyMinutes": 120,
+            "maxMinutes": 10,
+            "setBy": "owner",
+            "reason": "Owner's decision (2026-10-21): 10 minutes every 2 hours, plus a manual 10-minute run from ORIGIN's node. Spending is limited by the tasks the owner approves."
+          }
+        },
+        "permissions": {
+          "allowedTools": [
+            "web-research",
+            "library-search",
+            "planning",
+            "reports",
+            "messaging"
+          ],
+          "contactableAgentIds": "all",
+          "requireApprovalFor": [
+            "spend",
+            "publish",
+            "external-message",
+            "create-account",
+            "delete"
+          ],
+          "canEditOthers": false
+        },
+        "budget": {
+          "monthlyCredits": 0,
+          "approvalAbove": 0
+        },
+        "bankSkills": [
+          "skill_budget_watch"
+        ]
+      }
+    },
+    "appearance": {
+      "mode": "dark",
+      "themeId": "obsidian-green",
+      "themes": [
+        {
+          "id": "obsidian-green",
+          "name": "Obsidian Green",
+          "builtin": true,
+          "dark": {
+            "bg": "#030605",
+            "bg2": "#050908",
+            "panel": "#070c0a",
+            "accent": "#39ff88",
+            "accent2": "#4cc9ff",
+            "text": "#d9f7e6",
+            "border": "#15502d",
+            "selection": "#196136",
+            "success": "#39d98a",
+            "warning": "#ffd166",
+            "error": "#ff5d73",
+            "highlight": "#4cc9ff"
+          },
+          "light": {
+            "bg": "#eef3ef",
+            "bg2": "#f7f9f7",
+            "panel": "#ffffff",
+            "accent": "#0f7a45",
+            "accent2": "#3183a6",
+            "text": "#14181a",
+            "border": "#c3ded1",
+            "selection": "#d4e7de",
+            "success": "#16794a",
+            "warning": "#8a5a00",
+            "error": "#b4232f",
+            "highlight": "#3997bf"
+          }
+        },
+        {
+          "id": "titanium-cyan",
+          "name": "Titanium Cyan",
+          "builtin": true,
+          "dark": {
+            "bg": "#0b0e12",
+            "bg2": "#0e1217",
+            "panel": "#11161c",
+            "accent": "#4cd6ff",
+            "accent2": "#a7b4c2",
+            "text": "#e2ecf4",
+            "border": "#224c5c",
+            "selection": "#26596b",
+            "success": "#39d98a",
+            "warning": "#ffd166",
+            "error": "#ff5d73",
+            "highlight": "#a7b4c2"
+          },
+          "light": {
+            "bg": "#eef2f5",
+            "bg2": "#f7f9fa",
+            "panel": "#ffffff",
+            "accent": "#0b6f94",
+            "accent2": "#6d757e",
+            "text": "#14181a",
+            "border": "#c2dbe4",
+            "selection": "#d3e5ec",
+            "success": "#16794a",
+            "warning": "#8a5a00",
+            "error": "#b4232f",
+            "highlight": "#7d8792"
+          }
+        },
+        {
+          "id": "cyberpunk-violet",
+          "name": "Cyberpunk Violet",
+          "builtin": true,
+          "dark": {
+            "bg": "#0a0612",
+            "bg2": "#0e0818",
+            "panel": "#120a1e",
+            "accent": "#c07bff",
+            "accent2": "#ff6fb5",
+            "text": "#efe4ff",
+            "border": "#432a5d",
+            "selection": "#4f326d",
+            "success": "#39d98a",
+            "warning": "#ffd166",
+            "error": "#ff5d73",
+            "highlight": "#ff6fb5"
+          },
+          "light": {
+            "bg": "#f4f0f8",
+            "bg2": "#faf8fc",
+            "panel": "#ffffff",
+            "accent": "#7a32c4",
+            "accent2": "#a64876",
+            "text": "#14181a",
+            "border": "#deccf0",
+            "selection": "#e7daf4",
+            "success": "#16794a",
+            "warning": "#8a5a00",
+            "error": "#b4232f",
+            "highlight": "#bf5388"
+          }
+        },
+        {
+          "id": "industrial-amber",
+          "name": "Industrial Amber",
+          "builtin": true,
+          "dark": {
+            "bg": "#0d0a06",
+            "bg2": "#110e08",
+            "panel": "#15110a",
+            "accent": "#ffb347",
+            "accent2": "#ff7a3d",
+            "text": "#f6ead8",
+            "border": "#573e1b",
+            "selection": "#674a1f",
+            "success": "#39d98a",
+            "warning": "#ffd166",
+            "error": "#ff5d73",
+            "highlight": "#ff7a3d"
+          },
+          "light": {
+            "bg": "#f6f2ea",
+            "bg2": "#fbf9f5",
+            "panel": "#ffffff",
+            "accent": "#9a5a00",
+            "accent2": "#a64f28",
+            "text": "#14181a",
+            "border": "#e6d6bf",
+            "selection": "#ede1d1",
+            "success": "#16794a",
+            "warning": "#8a5a00",
+            "error": "#b4232f",
+            "highlight": "#bf5c2e"
+          }
+        },
+        {
+          "id": "arctic-blue",
+          "name": "Arctic Blue",
+          "builtin": true,
+          "dark": {
+            "bg": "#070b12",
+            "bg2": "#0a1019",
+            "panel": "#0d1420",
+            "accent": "#7cc7ff",
+            "accent2": "#c8e6ff",
+            "text": "#e6f1ff",
+            "border": "#2c465e",
+            "selection": "#34536e",
+            "success": "#39d98a",
+            "warning": "#ffd166",
+            "error": "#ff5d73",
+            "highlight": "#c8e6ff"
+          },
+          "light": {
+            "bg": "#f0f5fb",
+            "bg2": "#f8fafd",
+            "panel": "#ffffff",
+            "accent": "#1f5fa8",
+            "accent2": "#8296a6",
+            "text": "#14181a",
+            "border": "#c7d7e9",
+            "selection": "#d7e2ef",
+            "success": "#16794a",
+            "warning": "#8a5a00",
+            "error": "#b4232f",
+            "highlight": "#96adbf"
+          }
+        },
+        {
+          "id": "classic-terminal",
+          "name": "Classic Terminal",
+          "builtin": true,
+          "dark": {
+            "bg": "#000000",
+            "bg2": "#030403",
+            "panel": "#050805",
+            "accent": "#33ff33",
+            "accent2": "#ffcc00",
+            "text": "#c8ffc8",
+            "border": "#124d12",
+            "selection": "#155e15",
+            "success": "#39d98a",
+            "warning": "#ffd166",
+            "error": "#ff5d73",
+            "highlight": "#ffcc00"
+          },
+          "light": {
+            "bg": "#f2f5f0",
+            "bg2": "#f9faf8",
+            "panel": "#ffffff",
+            "accent": "#1d6b1d",
+            "accent2": "#a68500",
+            "text": "#14181a",
+            "border": "#c7dac7",
+            "selection": "#d6e4d6",
+            "success": "#16794a",
+            "warning": "#8a5a00",
+            "error": "#b4232f",
+            "highlight": "#bf9900"
+          }
+        },
+        {
+          "id": "warm-executive",
+          "name": "Warm Executive",
+          "builtin": true,
+          "dark": {
+            "bg": "#0e0c0a",
+            "bg2": "#13100d",
+            "panel": "#171410",
+            "accent": "#d4a84a",
+            "accent2": "#e8d5b0",
+            "text": "#f2ebe0",
+            "border": "#4c3d20",
+            "selection": "#594824",
+            "success": "#39d98a",
+            "warning": "#ffd166",
+            "error": "#ff5d73",
+            "highlight": "#e8d5b0"
+          },
+          "light": {
+            "bg": "#f7f3ec",
+            "bg2": "#fbf9f6",
+            "panel": "#ffffff",
+            "accent": "#8a6420",
+            "accent2": "#978a72",
+            "text": "#14181a",
+            "border": "#e2d8c7",
+            "selection": "#eae3d7",
+            "success": "#16794a",
+            "warning": "#8a5a00",
+            "error": "#b4232f",
+            "highlight": "#aea084"
+          }
+        },
+        {
+          "id": "monochrome-minimal",
+          "name": "Monochrome Minimal",
+          "builtin": true,
+          "dark": {
+            "bg": "#0a0a0a",
+            "bg2": "#0e0e0e",
+            "panel": "#121212",
+            "accent": "#e8e8e8",
+            "accent2": "#9a9a9a",
+            "text": "#ededed",
+            "border": "#4e4e4e",
+            "selection": "#5d5d5d",
+            "success": "#39d98a",
+            "warning": "#ffd166",
+            "error": "#ff5d73",
+            "highlight": "#9a9a9a"
+          },
+          "light": {
+            "bg": "#f4f4f4",
+            "bg2": "#fafafa",
+            "panel": "#ffffff",
+            "accent": "#2a2a2a",
+            "accent2": "#646464",
+            "text": "#14181a",
+            "border": "#cacaca",
+            "selection": "#d9d9d9",
+            "success": "#16794a",
+            "warning": "#8a5a00",
+            "error": "#b4232f",
+            "highlight": "#747474"
+          }
+        }
+      ]
+    },
+    "alertSettings": {
+      "sounds": {
+        "critical": {
+          "soundId": "critical",
+          "volume": 0.9,
+          "repeatSec": 30,
+          "ackRequired": true
+        },
+        "high": {
+          "soundId": "blocked",
+          "volume": 0.7,
+          "repeatSec": 0,
+          "ackRequired": true
+        },
+        "warning": {
+          "soundId": "finance",
+          "volume": 0.6,
+          "repeatSec": 0,
+          "ackRequired": false
+        },
+        "info": {
+          "soundId": "subtle",
+          "volume": 0.4,
+          "repeatSec": 0,
+          "ackRequired": false
+        }
+      },
+      "customSounds": [],
+      "masterVolume": 0.8,
+      "muted": {},
+      "quietHours": {
+        "enabled": false,
+        "start": "22:00",
+        "end": "07:00"
+      },
+      "soundSchedule": {
+        "enabled": false,
+        "start": "08:00",
+        "end": "19:00"
+      },
+      "cooldownSec": 120,
+      "escalation": {
+        "enabled": true,
+        "afterSec": 120,
+        "maxLevel": 3
+      },
+      "thresholds": {
+        "budgetWarnPct": 80,
+        "budgetCriticalPct": 100,
+        "spendRateFactor": 1.5,
+        "repeatedFailures": 3
+      },
+      "channels": {
+        "in-app": {
+          "enabled": true,
+          "minSeverity": "info"
+        },
+        "sound": {
+          "enabled": true,
+          "minSeverity": "warning"
+        },
+        "desktop": {
+          "enabled": false,
+          "minSeverity": "high"
+        },
+        "email": {
+          "enabled": false,
+          "minSeverity": "critical",
+          "target": ""
+        },
+        "messaging": {
+          "enabled": false,
+          "minSeverity": "critical",
+          "target": ""
+        },
+        "push": {
+          "enabled": false,
+          "minSeverity": "critical"
+        }
+      },
+      "minSoundSeverity": "warning"
+    },
+    "projects": {
+      "proj_firm_playbook": {
+        "id": "proj_firm_playbook",
+        "name": "Brain Playbook",
+        "ownerAgentId": "agent_origin",
+        "budget": 0,
+        "forecastSpend": 0,
+        "status": "active",
+        "description": "How ORIGIN researches, grows ventures and asks the owner before acting. No external spend is authorized."
+      }
+    },
+    "library": {
+      "kb_firm_charter": {
+        "id": "kb_firm_charter",
+        "title": "Brain operating charter",
+        "topic": "operations",
+        "summary": "Build agents for specific outcomes; research with dated sources; keep claims and costs evidence-based; preserve human approval for external actions; measure genuine user value; never fake users, engagement or results.",
+        "tags": [
+          "agent-creation",
+          "evidence",
+          "approvals",
+          "quality"
+        ],
+        "sources": [],
+        "createdAt": "2026-10-21T05:12:20.993Z",
+        "authorAgentId": "agent_origin",
+        "projectId": "proj_firm_playbook",
+        "confidence": 1,
+        "verification": "verified",
+        "sensitive": false,
+        "allowedAgentIds": []
+      },
+      "kb_opp_status": {
+        "id": "kb_opp_status",
+        "title": "Opportunity agent: first-run status",
+        "summary": "Operating allowance: none approved. Authorized information sources: none yet. Scheduling: not set up; the app cannot wake ORIGIN on its own, so the hourly 10-minute window, and each specialist’s own window, need an external scheduler the owner approves. Model provider: simulated. Actual costs: unknown. Actual revenue: none recorded.",
+        "topic": "opportunity research",
+        "tags": [
+          "opportunity-agent",
+          "memory"
+        ],
+        "sources": [],
+        "createdAt": "2026-10-21T05:12:20.994Z",
+        "authorAgentId": "agent_origin",
+        "projectId": null,
+        "confidence": 1,
+        "verification": "verified",
+        "sensitive": false,
+        "allowedAgentIds": []
+      },
+      "kb_opp_backlog": {
+        "id": "kb_opp_backlog",
+        "title": "Opportunity backlog",
+        "summary": "Empty. Each idea needs: customer, problem worth paying for, offer, way to reach customers, pricing hypothesis, cheap disproving test, and dated sources. Keep at most one active build.",
+        "topic": "opportunity research",
+        "tags": [
+          "opportunity-agent",
+          "memory"
+        ],
+        "sources": [],
+        "createdAt": "2026-10-21T05:12:20.994Z",
+        "authorAgentId": "agent_origin",
+        "projectId": null,
+        "confidence": 1,
+        "verification": "verified",
+        "sensitive": false,
+        "allowedAgentIds": []
+      },
+      "kb_opp_approvals": {
+        "id": "kb_opp_approvals",
+        "title": "Spending approvals and limits",
+        "summary": "None. Each approval records purpose, maximum total, recurring charges, stop condition and expiry date. Silence is never approval.",
+        "topic": "opportunity research",
+        "tags": [
+          "opportunity-agent",
+          "memory"
+        ],
+        "sources": [],
+        "createdAt": "2026-10-21T05:12:20.994Z",
+        "authorAgentId": "agent_origin",
+        "projectId": null,
+        "confidence": 1,
+        "verification": "verified",
+        "sensitive": false,
+        "allowedAgentIds": []
+      },
+      "kb_opp_ledger": {
+        "id": "kb_opp_ledger",
+        "title": "Actual costs and revenue",
+        "summary": "No entries. Unknown costs are recorded as unknown, never zero. Projections, interest and page views are not revenue.",
+        "topic": "opportunity research",
+        "tags": [
+          "opportunity-agent",
+          "memory"
+        ],
+        "sources": [],
+        "createdAt": "2026-10-21T05:12:20.994Z",
+        "authorAgentId": "agent_origin",
+        "projectId": null,
+        "confidence": 1,
+        "verification": "verified",
+        "sensitive": false,
+        "allowedAgentIds": []
+      },
+      "kb_opp_rejected": {
+        "id": "kb_opp_rejected",
+        "title": "Rejected ideas",
+        "summary": "None yet. Record each rejected idea with the reason and the evidence that disproved it.",
+        "topic": "opportunity research",
+        "tags": [
+          "opportunity-agent",
+          "memory"
+        ],
+        "sources": [],
+        "createdAt": "2026-10-21T05:12:20.994Z",
+        "authorAgentId": "agent_origin",
+        "projectId": null,
+        "confidence": 1,
+        "verification": "verified",
+        "sensitive": false,
+        "allowedAgentIds": []
+      }
+    },
+    "control": {
+      "emergencyStop": false
+    },
+    "skillRequests": [],
+    "skillBank": [
+      {
+        "id": "skill_budget_watch",
+        "name": "Budget watch",
+        "description": "Watch what each task costs per run and stop it without asking when the pattern shows it will cost far more than it is worth.",
+        "instructions": "Every run you see your task's cost so far, its cost per run and its budget (a tenth of the monthly cap unless the owner set another).\n- Look at the pattern, not one run: is each run costing more, is the task close to done, and what would it cost if it kept running to the end of the month?\n- If it will clearly cost far more than it is worth, stop it yourself; do not ask first. Put its id in stopTaskIds, give the reason in stopReason in one plain sentence with the numbers, and tell the owner in notifyOwner.\n- Never stop a task just to save a cent when it is nearly finished; finish it instead.\n- The runner also stops any task that passes its budget, or whose average cost per run would pass twice its budget by month end. The owner can restart a stopped task, which gives it a fresh budget.",
+        "tags": [
+          "budget",
+          "origin"
+        ],
+        "createdAt": "2026-10-21T05:12:20.995Z"
+      }
+    ]
+  }
+}

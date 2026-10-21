@@ -8,7 +8,7 @@ import { useMemo, useState, type CSSProperties } from 'react';
 import { ChevronRight, GitBranch, Play, Lightbulb, MessageSquarePlus, Sparkles, Sprout, UserRound } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { Agent, AgentStatus } from '../model/types';
-import { STATUS_COLOR } from '../viewport/AgentsLayer';
+import { STATUS_COLOR } from './status';
 import type { Team } from './connectome';
 import { useBrainFocus } from './ConnectomeView';
 import { askGrow, treeOf } from './BrainScene';
