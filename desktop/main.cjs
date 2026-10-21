@@ -102,8 +102,12 @@ function serveApp() {
   });
 }
 
+// Node reports the origin of a custom scheme such as app:// as "null", so compare scheme and host instead.
 const isAppUrl = (raw) => {
-  try { const o = new URL(raw).origin; return o === APP_ORIGIN || (DEV_ORIGIN !== null && o === DEV_ORIGIN); } catch { return false; }
+  try {
+    const u = new URL(raw);
+    return (u.protocol === `${SCHEME}:` && u.host === HOST) || (DEV_ORIGIN !== null && u.origin === DEV_ORIGIN);
+  } catch { return false; }
 };
 const openExternally = (raw) => {
   try { const u = new URL(raw); if (u.protocol === 'https:' || u.protocol === 'http:') void shell.openExternal(u.toString()); } catch { /* ignore */ }
