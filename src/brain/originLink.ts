@@ -66,7 +66,7 @@ export interface OriginAsk { at: string; q: string; a: string; costUsd: number |
 
 /** Ask ORIGIN a question from the console; it answers right away, any time, against the same cap. */
 export async function askOrigin(question: string) {
-  const r = await call<{ ok: true; answer: string; costUsd: number | null; taskTitle: string | null } | { ok: false; reason: string }>('/ask', { question }, 70_000);
+  const r = await call<{ ok: true; answer: string; costUsd: number | null; taskTitle: string | null; approved?: string[] | null } | { ok: false; reason: string }>('/ask', { question }, 70_000);
   if (!r) return null;
   // an older runner without /ask answers 404
   if (!r.data.ok && !('reason' in r.data && r.data.reason)) return { ok: false as const, reason: "ORIGIN's runner is out of date. Stop it and start it again with npm.cmd run origin." };

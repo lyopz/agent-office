@@ -147,6 +147,22 @@ describe('origin runner: console questions', () => {
     expect(s.asks[0]).toMatchObject({ q: 'How far along is the task?', a: 'About halfway.' });
   });
 
+  test("the owner's plain consent in the console approves work, worked as the venture, with the budget they named", async () => {
+    write({ ...base, agents: [{ id: 'v1', name: 'etsy store', kind: 'venture' }], tasks: [{ id: 'p1', title: 'Validate demand', detail: '', status: 'proposed', by: 'origin', createdAt: '' }, { id: 't0', title: 'old', detail: '', status: 'approved', by: 'owner', createdAt: '', waitingOnOwner: true }] });
+    const text = 'I will get the Etsy store going.\nAPPROVE {"title": "Get etsy store started", "detail": "first products", "agentId": "v1", "budgetUsd": 1, "approveIds": ["p1"]}';
+    const r = await runner.ask('allow etsy store to run, 1 dollar approval', { fetch: async () => reply(text, { input_tokens: 1000, output_tokens: 100 }), file, key: 'test' } as any);
+    expect(r).toMatchObject({ ok: true, answer: 'I will get the Etsy store going.', approved: ['Validate demand', 'Get etsy store started'] });
+    const s = read();
+    expect(s.tasks.find((t: any) => t.id === 'p1').status).toBe('approved');
+    expect(s.tasks.find((t: any) => t.title === 'Get etsy store started')).toMatchObject({ status: 'approved', by: 'owner', agentId: 'v1', budgetUsd: 1 });
+    expect(s.tasks.some((t: any) => t.waitingOnOwner)).toBe(false);
+  });
+
+  test('an answer without an APPROVE line changes no tasks', () => {
+    expect(runner.parseConsent('Just an answer.')).toBeNull();
+    expect(runner.parseConsent('APPROVE {broken')).toBeNull();
+  });
+
   test('a question past the cap is refused before any call', async () => {
     write({ ...base, ledger: { month, spentUsd: 14.99, unknownCostRuns: 0 } });
     let calls = 0;

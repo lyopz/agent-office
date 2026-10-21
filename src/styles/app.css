@@ -132,6 +132,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 
 .console { border-top: 1px solid var(--border); background: var(--panel); display: grid; grid-template-rows: auto 1fr auto auto; height: 190px; }
 .console.collapsed { height: 34px; grid-template-rows: auto; }
+.console.big { height: min(70vh, 640px); }
 .console-log { overflow: auto; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); line-height: 1.5; }
 .console-log .u { color: var(--accent-blue); }
 .console-log .u::before { content: '> '; color: var(--muted); }

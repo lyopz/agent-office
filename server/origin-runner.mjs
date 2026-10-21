@@ -181,6 +181,7 @@ function briefFor(s, task, deadline) {
     `Current time: ${new Date().toISOString()}. This work window ends at ${deadline.toISOString()} (${MAX_MIN} minutes). Model: ${MODEL}.`,
     `Budget: $${s.ledger.spentUsd.toFixed(2)} of the owner's $${CAP} monthly cap spent this month; this run may spend at most $${Math.min(RUN_LIMIT_USD, remaining(s)).toFixed(2)}. Approved spending covers only these runs on the tasks below. Ask before anything else that costs money.`,
     roster(s),
+    'Approval: every task listed as approved below is approved by the owner, including ones they gave in plain words in the console. Do not ask for it again, in other words, or for an exact scope. Old runs that failed with a 401 or "no API key" were before the owner set their key; it works now. If your notes say otherwise, correct them this run.',
     `Your notes from earlier runs (check them against the list above):\n${s.memory || '(none yet: this is your first real run)'}`,
     `Next action you recorded: ${s.nextAction || '(none)'}`,
     task?.kind === 'skill-file'
@@ -359,6 +360,35 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
 /** Most one console answer may cost: a short reply with ORIGIN's prompt, no tools. */
 const ASK_WORST_USD = 0.05;
 
+/** The APPROVE line ORIGIN adds when the owner's words in the console approve work. */
+export function parseConsent(text) {
+  const m = String(text || '').match(/^\s*APPROVE\s*(\{.*\})\s*$/ms);
+  if (!m) return null;
+  try { const o = JSON.parse(m[1]); return o && typeof o === 'object' ? o : null; } catch { return null; }
+}
+
+/** Turn the owner's consent into approved work: waiting proposals they named, and the task they asked for. */
+export function applyConsent(s, c) {
+  const done = [];
+  for (const id of Array.isArray(c.approveIds) ? c.approveIds : []) {
+    const t = s.tasks.find((x) => x.id === id && x.status === 'proposed');
+    if (t) { t.status = 'approved'; done.push(t.title); }
+  }
+  if (done.length) for (const x of s.tasks) delete x.waitingOnOwner;
+  const title = typeof c.title === 'string' ? c.title.trim().slice(0, 160) : '';
+  if (title && !s.tasks.some((t) => t.status === 'approved' && t.title.toLowerCase() === title.toLowerCase())) {
+    const task = { id: newId('task'), title, detail: String(c.detail || '').slice(0, 4000), status: 'approved', by: 'owner', via: 'console', createdAt: new Date().toISOString() };
+    if (typeof c.agentId === 'string' && (s.agents || []).some((a) => a.id === c.agentId)) task.agentId = c.agentId;
+    const usd = Number(c.budgetUsd);
+    if (usd > 0) task.budgetUsd = Math.min(usd, CAP);
+    // the owner's own words: it goes first, ahead of SKILL.md writing
+    s.tasks.push(task);
+    for (const x of s.tasks) delete x.waitingOnOwner;
+    done.push(title);
+  }
+  return done.length ? done : null;
+}
+
 /**
  * The owner's question from the console, answered by ORIGIN right away, any time,
  * without approval. It costs one model call against the same monthly cap, uses no
@@ -376,8 +406,11 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
   const recent = (s.asks || []).slice(0, 4).reverse().flatMap((a) => [{ role: 'user', content: a.q }, { role: 'assistant', content: a.a }]);
   const context = [
     'The owner is asking you a question in the console, outside your work window. Answer directly and briefly from what you know; you have no tools here and this does not count as a run. Do not propose tasks or agents here.',
+    `OWNER CONSENT: the owner's plain words are approval, inside the $${CAP} monthly cap and the per-task budget. "allow etsy store to run", "go ahead", "yes do it", "1 dollar approval" all count; never ask them to repeat it in exact wording or to restate a scope. When their message approves work, say in one sentence what you will do, then end your answer with one line exactly like this: APPROVE {"title": "short task title", "detail": "what to do and what a good result looks like", "agentId": "id from AGENTS IN THE BRAIN NOW of the agent who should do it, or null for you", "budgetUsd": the dollar amount they named or null, "approveIds": ["ids of waiting proposals they approved"]}. Write that line only when they approved something. Ventures create the skill agents they need without asking; that never needs approval.`,
+    'Old runs that failed with a 401 or "no API key" were before the owner set their key. The key works now (this answer proves it), so never say it is broken.',
     `Your current task: ${task ? `${task.title}: ${task.detail} (cost so far $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} runs)` : 'none approved yet'}.`,
     `Queued after it: ${s.tasks.filter((t) => t.status === 'approved' && t !== task).map((t) => t.title).join('; ') || 'nothing'}.`,
+    `Waiting for the owner's approval: ${s.tasks.filter((t) => t.status === 'proposed').map((t) => `[${t.id}] ${t.title}`).join('; ') || 'nothing'}.`,
     roster(s),
     `Your notes (check them against the list above):\n${s.memory || '(none yet)'}`,
     `Next action you recorded: ${s.nextAction || '(none)'}`,
@@ -397,7 +430,9 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
   } catch (e) {
     return { ok: false, reason: e.name === 'TimeoutError' ? 'ORIGIN took too long to answer.' : 'Could not reach the model service.' };
   }
-  const answer = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim() || '(no answer)';
+  const raw = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+  const consent = parseConsent(raw);
+  const answer = raw.replace(/^\s*APPROVE\s*\{.*$/ms, '').trim() || (consent ? 'Approved. I will start on it in my next run.' : '(no answer)');
   const cost = costOf(MODEL, data.usage || {});
   // no await between this load and save, so a run in progress can't lose it
   const now = loadState(deps.file);
@@ -405,9 +440,10 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
   const round = (n) => Math.round(n * 1e6) / 1e6;
   if (cost == null) now.ledger.unknownCostRuns++;
   else { now.ledger.spentUsd = round(now.ledger.spentUsd + cost); now.ledger.byAgent[AGENT_ID] = round((now.ledger.byAgent[AGENT_ID] || 0) + cost); }
-  now.asks = [{ at: new Date().toISOString(), q, a: answer.slice(0, 4000), costUsd: cost }, ...(now.asks || [])].slice(0, 20);
+  const approved = consent ? applyConsent(now, consent) : null;
+  now.asks = [{ at: new Date().toISOString(), q, a: answer.slice(0, 4000), costUsd: cost, approved }, ...(now.asks || [])].slice(0, 20);
   saveState(now, deps.file);
-  return { ok: true, answer, costUsd: cost, taskTitle: task?.title ?? null };
+  return { ok: true, answer, costUsd: cost, taskTitle: task?.title ?? null, approved };
 }
 
 function publicState() {

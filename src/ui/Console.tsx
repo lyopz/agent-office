@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, CornerDownLeft, TerminalSquare } from 'lucide-react';
+import { ChevronDown, ChevronUp, CornerDownLeft, Maximize2, Minimize2, TerminalSquare } from 'lucide-react';
 import { useOrigin } from '../brain/useOrigin';
 import { askOrigin } from '../brain/originLink';
 
@@ -16,6 +16,9 @@ export function Console() {
   // starts folded so the brain gets the room; the choice is remembered on this device
   const [open, setOpenState] = useState(() => { try { return localStorage.getItem('agent-office:console-open') === '1'; } catch { return false; } });
   const setOpen = (v: boolean) => { setOpenState(v); try { localStorage.setItem('agent-office:console-open', v ? '1' : '0'); } catch { /* storage unavailable */ } };
+  // the log can be made tall to read back through earlier answers; also remembered
+  const [big, setBigState] = useState(() => { try { return localStorage.getItem('agent-office:console-big') === '1'; } catch { return false; } });
+  const setBig = (v: boolean) => { setBigState(v); try { localStorage.setItem('agent-office:console-big', v ? '1' : '0'); } catch { /* storage unavailable */ } };
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -33,7 +36,7 @@ export function Console() {
   useEffect(() => {
     if (loaded.current || !status?.asks?.length) return;
     loaded.current = true;
-    setEntries(status.asks.slice(0, 5).reverse().flatMap((a) => [{ id: nextId++, type: 'user' as const, text: a.q }, { id: nextId++, type: 'answer' as const, text: a.a }]));
+    setEntries(status.asks.slice(0, 10).reverse().flatMap((a) => [{ id: nextId++, type: 'user' as const, text: a.q }, { id: nextId++, type: 'answer' as const, text: a.a }]));
   }, [status]);
 
   const run = async (q: string) => {
@@ -46,7 +49,7 @@ export function Console() {
       const r = await askOrigin(question);
       if (!r) add({ type: 'error', text: "ORIGIN's runner isn't running. Start it on your PC with npm.cmd run origin." });
       else if (!r.ok) add({ type: 'error', text: r.reason });
-      else add({ type: 'answer', text: r.answer, meta: r.costUsd == null ? 'cost unknown' : `$${r.costUsd.toFixed(4)}` });
+      else add({ type: 'answer', text: r.answer, meta: [r.costUsd == null ? 'cost unknown' : `$${r.costUsd.toFixed(4)}`, r.approved?.length ? `approved: ${r.approved.join('; ')}` : ''].filter(Boolean).join(' · ') });
     } finally { setBusy(false); }
   };
 
@@ -59,10 +62,11 @@ export function Console() {
   const badge = !checked ? { kind: 'sim', label: 'checking' } : !status ? { kind: 'off', label: 'runner off' } : !status.configured ? { kind: 'off', label: 'no API key' } : { kind: 'live', label: status.running ? 'ORIGIN working' : 'ORIGIN live' };
 
   return (
-    <section className={`console${open ? '' : ' collapsed'}`} aria-label="Ask ORIGIN">
+    <section className={`console${open ? (big ? ' big' : '') : ' collapsed'}`} aria-label="Ask ORIGIN">
       <div className="panel-h" style={{ position: 'static' }}>
         <TerminalSquare size={14} /><span className="grow">Ask ORIGIN{task ? <span className="muted"> · working on: {task.title}</span> : null}</span>
         <span className={`badge ${badge.kind}`}>{badge.label}</span>
+        {open && <button className="btn icon sm ghost" aria-label={big ? 'Make the chat log smaller' : 'Make the chat log bigger'} title={big ? 'Smaller' : 'Bigger'} onClick={() => setBig(!big)}>{big ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>}
         <button className="btn icon sm ghost" aria-label={open ? 'Collapse console' : 'Expand console'} onClick={() => setOpen(!open)}>{open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}</button>
       </div>
       {open && (

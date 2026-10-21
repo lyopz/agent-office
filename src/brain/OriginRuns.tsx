@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Check, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { Check, Play, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import { agentProposalAction, runnerStatus, setAutoAgents, syncOrigin, taskAction, type AgentProposal, type RunnerStatus, type RunnerTask } from './originLink';
-import { describeWindow } from './opportunity';
+import { branchKind, describeWindow } from './opportunity';
 import { createProposedAgent } from './skillFiles';
 
 const money = (n: number) => `$${n.toFixed(n < 1 ? 3 : 2)}`;
@@ -54,6 +54,13 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   const agentAsks = (st.agentProposals ?? []).filter((p) => p.status === 'proposed' && !st.autoAgents);
   const created = (st.agentProposals ?? []).filter((p) => p.status === 'approved' && (p.auto || st.autoAgents)).slice(-6).reverse();
   const pct = Math.min(100, (st.spentUsd / st.capUsd) * 100);
+  // one tap approves real work for a venture: it is worked as that venture, within its task budget
+  const ventures = Object.values(doc.agents).filter((a) => branchKind(doc, a.id) === 'venture');
+  const working = (id: string) => st.tasks.some((t) => t.status === 'approved' && t.kind !== 'skill-file' && t.agentId === id);
+  const letWork = (id: string) => {
+    const a = doc.agents[id];
+    void act({ action: 'add', agentId: id, title: `Get ${a.identity.name} started`, detail: `Work as ${a.identity.name}. Take the next concrete step toward making this venture earn money (${a.identity.bio || a.identity.title}). Make sure it has the skill agents it needs, then do the first piece of real work and report what you found, with sources.` }, `Approved. ${a.identity.name} works on it in ORIGIN's next run.`);
+  };
   return (
     <div className="creator-body">
       <div className="creator-context"><ShieldCheck size={16} /><span><b>{st.configured ? `Live on ${st.model}.` : `Runner connected (${st.model}), but it has no API key.`}</b> {st.maxMinutes} min every {st.everyMinutes / 60} h{st.schedule ? '' : ' (schedule off: manual runs only)'}. {st.running ? 'A run is in progress now.' : st.nextScheduledAt ? `Next run about ${new Date(st.nextScheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : ''}{st.configured ? '' : ' Runs fail until you set one.'}</span></div>
@@ -69,6 +76,10 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         Let ORIGIN and its ventures create the agents they need without asking (up to 3 a run; agents cost nothing until they work)
       </label>
       {created.length > 0 && <p className="creator-privacy">Recently created by ORIGIN: {created.map((p) => `${p.name} (for ${doc.agents[p.parentId]?.identity.name ?? p.parentId})`).join(', ')}.</p>}
+
+      {ventures.length > 0 && <><span className="creator-kicker">VENTURES</span>
+        <ul className="creator-request-log">{ventures.map((v) => <li key={v.id}><b>{v.identity.name}</b> · {working(v.id) ? 'approved and working' : 'idle'}{!working(v.id) && <> <button className="link-btn" onClick={() => letWork(v.id)}><Play size={12} /> Approve work</button></>}</li>)}</ul>
+        <p className="creator-privacy">You can also just tell ORIGIN in the console, e.g. "allow etsy store to run" or "$1 is fine": your words count as approval, inside the {money(st.capUsd)} cap.</p></>}
 
       <span className="creator-kicker">WAITING FOR YOUR APPROVAL</span>
       {proposed.length === 0 && agentAsks.length === 0 && <p className="creator-privacy">Nothing proposed right now. ORIGIN proposes one thing at a time.</p>}
