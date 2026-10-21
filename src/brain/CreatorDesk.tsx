@@ -72,6 +72,13 @@ export default function CreatorDesk() {
     return () => window.removeEventListener('agent-office:open-creator', onOpen);
   }, []);
 
+  useEffect(() => {
+    if (!tab) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setTab(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [tab]);
+
   const attachFile = async (file?: File) => {
     if (!file) return;
     if (file.size > 1_000_000) { setNotice('Choose a file under 1 MB.'); return; }

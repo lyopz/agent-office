@@ -129,3 +129,41 @@ describe('origin runner: one task at a time, agent proposals and budget watch', 
     expect(s.tasks[0]).toMatchObject({ status: 'stopped', stopReason: 'ORIGIN stopped it: costs rising, little value' });
   });
 });
+
+describe('origin runner: console questions', () => {
+  test('ORIGIN answers a question about its task at any time, on the same cap, without changing tasks', async () => {
+    write({ ...base, tasks: [{ id: 't1', title: 'Etsy demand', detail: 'check', status: 'approved', by: 'owner', createdAt: '' }] });
+    let sent: any = null;
+    const fetch = async (_u: string, init: any) => { sent = JSON.parse(init.body); return reply('About halfway.', { input_tokens: 4000, output_tokens: 200 }); };
+    const r = await runner.ask('How far along is the task?', { fetch, file, key: 'test' } as any);
+    expect(r).toMatchObject({ ok: true, answer: 'About halfway.', taskTitle: 'Etsy demand' });
+    expect(sent.tools).toBeUndefined();
+    expect(sent.system).toMatch(/Your current task: Etsy demand/);
+    const s = read();
+    expect(s.tasks[0].status).toBe('approved');
+    expect(s.ledger.spentUsd).toBeCloseTo(0.0004 + 0.0001, 6);
+    expect(s.ledger.byAgent.agent_origin).toBeCloseTo(s.ledger.spentUsd, 6);
+    expect(s.asks[0]).toMatchObject({ q: 'How far along is the task?', a: 'About halfway.' });
+  });
+
+  test('a question past the cap is refused before any call', async () => {
+    write({ ...base, ledger: { month, spentUsd: 14.99, unknownCostRuns: 0 } });
+    let calls = 0;
+    const r = await runner.ask('hi', { fetch: async () => { calls++; return reply('x', {}); }, file, key: 'test' } as any);
+    expect(r.ok).toBe(false);
+    expect(calls).toBe(0);
+  });
+
+  test('changes the owner makes during a run are kept when the run saves', async () => {
+    write({ ...base, tasks: [{ id: 't1', title: 'a', detail: '', status: 'approved', by: 'owner', createdAt: '' }, { id: 't2', title: 'b', detail: '', status: 'proposed', by: 'origin', createdAt: '' }] });
+    const fetch = async () => {
+      const mid = read(); mid.tasks[1].status = 'approved'; mid.ledger.spentUsd += 1; write(mid); // the owner approves t2 and a question is paid for mid-run
+      return reply(result({ memory: 'm', summary: 's' }), { input_tokens: 1000, output_tokens: 100 });
+    };
+    await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
+    const s = read();
+    expect(s.tasks[1].status).toBe('approved');
+    expect(s.ledger.spentUsd).toBeGreaterThan(1);
+    expect(s.tasks[0].runCosts).toHaveLength(1);
+  });
+});

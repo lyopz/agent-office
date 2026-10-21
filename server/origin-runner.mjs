@@ -216,13 +216,80 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
     if (why) stopTask(task, `Budget watch stopped it: ${why}`, record.endedAt);
     if (task.status === 'stopped') record.notify = `Stopped "${task.title}". ${task.stopReason}`;
   }
-  s.ledger.spentUsd = round(s.ledger.spentUsd + record.costUsd);
-  s.ledger.byAgent[AGENT_ID] = round((s.ledger.byAgent[AGENT_ID] || 0) + record.costUsd);
-  if (!record.costKnown) s.ledger.unknownCostRuns++;
-  s.runs = [record, ...s.runs].slice(0, 50);
-  if (trigger === 'schedule') s.lastScheduledAt = record.startedAt;
-  saveState(s, deps.file);
+  // The owner (and console questions) may have changed the state while the run worked:
+  // merge this run's results into the current file instead of overwriting it.
+  const now = loadState(deps.file);
+  rollMonth(now);
+  now.memory = s.memory; now.nextAction = s.nextAction;
+  for (const t of s.tasks) {
+    const cur = now.tasks.find((x) => x.id === t.id);
+    if (!cur) now.tasks.push(t);
+    else if (t.id === task?.id) {
+      Object.assign(cur, { spentUsd: t.spentUsd, runCosts: t.runCosts });
+      if (cur.status === 'approved' && t.status !== 'approved') Object.assign(cur, { status: t.status, stopReason: t.stopReason, stoppedAt: t.stoppedAt });
+    }
+  }
+  for (const a of s.agentProposals) if (!now.agentProposals.some((x) => x.id === a.id)) now.agentProposals.push(a);
+  now.ledger.spentUsd = round(now.ledger.spentUsd + record.costUsd);
+  now.ledger.byAgent[AGENT_ID] = round((now.ledger.byAgent[AGENT_ID] || 0) + record.costUsd);
+  if (!record.costKnown) now.ledger.unknownCostRuns++;
+  now.runs = [record, ...now.runs].slice(0, 50);
+  if (trigger === 'schedule') now.lastScheduledAt = record.startedAt;
+  saveState(now, deps.file);
   return { ok: true, run: record };
+}
+
+/** Most one console answer may cost: a short reply with ORIGIN's prompt, no tools. */
+const ASK_WORST_USD = 0.05;
+
+/**
+ * The owner's question from the console, answered by ORIGIN right away, any time,
+ * without approval. It costs one model call against the same monthly cap, uses no
+ * tools and changes nothing but the ledger and the question log.
+ */
+export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE }) {
+  const q = String(question || '').trim().slice(0, 2000);
+  if (!q) return { ok: false, reason: 'Type a question.' };
+  if (!KEY && !deps.key) return { ok: false, reason: 'ANTHROPIC_API_KEY is not set for the runner.' };
+  const s = loadState(deps.file);
+  rollMonth(s);
+  if (!s.instructions) return { ok: false, reason: 'Open the app once with the runner on so it can send ORIGIN\'s instructions.' };
+  if (remaining(s) < ASK_WORST_USD) return { ok: false, reason: `The $${CAP} monthly cap is reached, so ORIGIN can't answer until next month.` };
+  const task = s.tasks.find((t) => t.status === 'approved');
+  const recent = (s.asks || []).slice(0, 4).reverse().flatMap((a) => [{ role: 'user', content: a.q }, { role: 'assistant', content: a.a }]);
+  const context = [
+    'The owner is asking you a question in the console, outside your work window. Answer directly and briefly from what you know; you have no tools here and this does not count as a run. Do not propose tasks or agents here.',
+    `Your current task: ${task ? `${task.title}: ${task.detail} (cost so far $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} runs)` : 'none approved yet'}.`,
+    `Queued after it: ${s.tasks.filter((t) => t.status === 'approved' && t !== task).map((t) => t.title).join('; ') || 'nothing'}.`,
+    `Your notes:\n${s.memory || '(none yet)'}`,
+    `Next action you recorded: ${s.nextAction || '(none)'}`,
+    `Last run: ${s.runs[0] ? `${s.runs[0].startedAt}, ${s.runs[0].status}: ${s.runs[0].summary}` : 'none yet'}.`,
+    `Spent this month: $${s.ledger.spentUsd.toFixed(2)} of $${CAP}.`,
+  ].join('\n\n');
+  let data;
+  try {
+    const r = await deps.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': deps.key || KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: 1500, system: `${s.instructions}\n\n${context}`, messages: [...recent, { role: 'user', content: q }] }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!r.ok) return { ok: false, reason: `The model service answered ${r.status}.` };
+    data = await r.json();
+  } catch (e) {
+    return { ok: false, reason: e.name === 'TimeoutError' ? 'ORIGIN took too long to answer.' : 'Could not reach the model service.' };
+  }
+  const answer = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim() || '(no answer)';
+  const cost = costOf(MODEL, data.usage || {});
+  // no await between this load and save, so a run in progress can't lose it
+  const now = loadState(deps.file);
+  rollMonth(now);
+  const round = (n) => Math.round(n * 1e6) / 1e6;
+  if (cost == null) now.ledger.unknownCostRuns++;
+  else { now.ledger.spentUsd = round(now.ledger.spentUsd + cost); now.ledger.byAgent[AGENT_ID] = round((now.ledger.byAgent[AGENT_ID] || 0) + cost); }
+  now.asks = [{ at: new Date().toISOString(), q, a: answer.slice(0, 4000), costUsd: cost }, ...(now.asks || [])].slice(0, 20);
+  saveState(now, deps.file);
+  return { ok: true, answer, costUsd: cost, taskTitle: task?.title ?? null };
 }
 
 function publicState() {
@@ -230,7 +297,7 @@ function publicState() {
   return {
     configured: Boolean(KEY), model: MODEL, capUsd: CAP, everyMinutes: EVERY_MIN, maxMinutes: MAX_MIN, schedule: SCHEDULE,
     spentUsd: s.ledger.spentUsd, spentByAgent: s.ledger.byAgent, taskBudgetUsd: TASK_BUDGET_USD, unknownCostRuns: s.ledger.unknownCostRuns, month: s.ledger.month, running: running ? running.startedAt : null,
-    synced: Boolean(s.instructions), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, runs: s.runs.slice(0, 10),
+    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, runs: s.runs.slice(0, 10),
     // with no scheduled run yet, the next one starts within a minute
     nextScheduledAt: SCHEDULE ? new Date(s.lastScheduledAt ? Math.max(Date.now(), Date.parse(s.lastScheduledAt) + EVERY_MIN * 60_000) : Date.now() + 60_000).toISOString() : null,
   };
@@ -283,6 +350,10 @@ async function handle(req, res) {
     }
     saveState(s);
     return send(req, res, 200, { ok: true, tasks: s.tasks });
+  }
+  if (url === '/api/origin/ask') {
+    const r = await ask(body.question);
+    return send(req, res, r.ok ? 200 : 409, r);
   }
   if (url === '/api/origin/agents') {
     // the app creates the agent on approval (it owns the brain); this records the owner's decision

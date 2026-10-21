@@ -16,7 +16,7 @@ export interface RunnerRun { id: string; agentId?: string; taskId?: string | nul
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
   spentUsd: number; spentByAgent?: Record<string, number>; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
-  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; runs: RunnerRun[]; nextScheduledAt: string | null;
+  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null;
 }
 
 // in the browser the dev server forwards /api/origin; the desktop app talks to the runner directly
@@ -52,6 +52,17 @@ export async function syncOrigin(doc: OfficeDoc) {
 export async function runOrigin(doc: OfficeDoc, maxMinutes: number) {
   await syncOrigin(doc);
   return call<{ ok: boolean; reason?: string; run?: RunnerRun }>('/run', {}, (maxMinutes + 1) * 60_000);
+}
+
+export interface OriginAsk { at: string; q: string; a: string; costUsd: number | null }
+
+/** Ask ORIGIN a question from the console; it answers right away, any time, against the same cap. */
+export async function askOrigin(question: string) {
+  const r = await call<{ ok: true; answer: string; costUsd: number | null; taskTitle: string | null } | { ok: false; reason: string }>('/ask', { question }, 70_000);
+  if (!r) return null;
+  // an older runner without /ask answers 404
+  if (!r.data.ok && !('reason' in r.data && r.data.reason)) return { ok: false as const, reason: "ORIGIN's runner is out of date. Stop it and start it again with npm.cmd run origin." };
+  return r.data;
 }
 
 export async function agentProposalAction(body: { action: 'approve' | 'reject'; id: string; agentId?: string }) {
