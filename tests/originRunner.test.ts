@@ -91,8 +91,9 @@ describe('origin runner: one task at a time, agent proposals and budget watch', 
     expect(s.runs[0]).toMatchObject({ agentId: 'agent_origin', taskId: 't1' });
   });
 
-  test('ORIGIN proposes one thing at a time, and nothing while something waits for the owner', async () => {
-    write(base);
+  test('asking first: ORIGIN proposes one thing at a time, and nothing while something waits for the owner', async () => {
+    const base_ = { ...base, autoAgents: false };
+    write(base_);
     const agent = { parentId: 'agent_origin', name: 'ETSY', specialty: 'Etsy store', purpose: 'sell', skill: 'Ventures', bankSkillIds: ['skill_x'], everyMinutes: 60, maxMinutes: 5 };
     const fetch = async () => reply(result({ memory: 'm', proposedTasks: [{ title: 'a' }, { title: 'b' }], proposedAgent: agent, summary: 's' }), { input_tokens: 100, output_tokens: 10 });
     await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
@@ -102,7 +103,7 @@ describe('origin runner: one task at a time, agent proposals and budget watch', 
     await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
     s = read();
     expect(s.tasks).toHaveLength(1);
-    write(base);
+    write(base_);
     await runner.runOnce('manual', { fetch: async () => reply(result({ memory: 'm', proposedAgent: agent, summary: 's' }), { input_tokens: 100, output_tokens: 10 }), file, key: 'test' } as any);
     expect(read().agentProposals[0]).toMatchObject({ name: 'ETSY', parentId: 'agent_origin', status: 'proposed', bankSkillIds: ['skill_x'] });
   });
@@ -178,7 +179,7 @@ describe('origin runner: SKILL.md tasks', () => {
     const s = read();
     expect(s.tasks[0].status).toBe('done');
     expect(brief).toMatch(/Recurring workflows/);
-    expect(s.skillFiles[0]).toMatchObject({ agentId: 'agent_etsy', name: 'Etsy playbook', status: 'new', version: 1 });
+    expect(s.skillFiles[0]).toMatchObject({ agentId: 'agent_etsy', agentIds: ['agent_etsy'], name: 'Etsy playbook', status: 'new', version: 2 });
   });
 
   test('a task given to an agent is worked as that agent, with its synced SKILL.md', async () => {
@@ -201,4 +202,41 @@ test("the owner's tasks go before SKILL.md writing", () => {
   const t = (id: string, kind?: string) => ({ id, status: 'approved', kind });
   expect(runner.nextTask({ tasks: [t('s1', 'skill-file'), t('o1')] })).toMatchObject({ id: 'o1' });
   expect(runner.nextTask({ tasks: [t('s1', 'skill-file')] })).toMatchObject({ id: 's1' });
+});
+
+describe('origin runner: growing the brain on its own', () => {
+  const agent = (name: string) => ({ parentId: 'agent_etsy', name, specialty: name, purpose: 'help the store', skill: 'Research', bankSkillIds: [], skillFile: { name: `${name} playbook`, description: 'd', body: 'x'.repeat(300) } });
+
+  test('with auto-create on (the default) ORIGIN creates up to 3 agents a run for a venture, each with its SKILL.md', async () => {
+    write(base);
+    let brief = '';
+    const fetch = async (_u: string, init: any) => { brief = JSON.parse(init.body).messages[0].content; return reply(result({ memory: 'm', proposedAgents: ['A', 'B', 'C', 'D', 'a'].map(agent), summary: 's' }), { input_tokens: 100, output_tokens: 10 }); };
+    await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
+    expect(brief).toMatch(/GROWING THE BRAIN/);
+    const s = read();
+    expect(s.agentProposals.map((p: any) => p.name)).toEqual(['A', 'B', 'C']);
+    expect(s.agentProposals.every((p: any) => p.auto && p.status === 'proposed' && p.skillFile)).toBe(true);
+  });
+
+  test('a task waiting on the owner steps aside so other work goes on, until the owner decides', async () => {
+    write({ ...base, autoAgents: false, tasks: [{ id: 't1', title: 'grow the brain', detail: '', status: 'approved', by: 'owner', createdAt: '' }, { id: 's1', title: "Write X's SKILL.md", detail: 'Agent: X, Analyst.', status: 'approved', by: 'owner', createdAt: '', kind: 'skill-file', agentId: 'agent_x', agentName: 'X' }] });
+    await runner.runOnce('manual', { fetch: async () => reply(result({ memory: 'm', proposedAgent: agent('V'), summary: 's' }), { input_tokens: 100, output_tokens: 10 }), file, key: 'test' } as any);
+    let s = read();
+    expect(s.tasks[0].waitingOnOwner).toBe(true);
+    expect(runner.nextTask(s)).toMatchObject({ id: 's1' });
+    s.agentProposals[0].status = 'rejected'; // decided: nothing pending any more
+    expect(runner.nextTask(s)).toMatchObject({ id: 't1' });
+  });
+
+  test('agents with the same job share one SKILL.md, and early plain SKILL.md tasks are retired', async () => {
+    const req = (id: string, name: string) => ({ id, title: `Write ${name}'s SKILL.md in full detail`, detail: `Agent: ${name}, Operations Agent. Purpose: Process routine tasks.`, status: 'approved', by: 'owner', createdAt: '', kind: 'skill-file', agentId: `agent_${name}`, agentName: name });
+    write({ ...base, tasks: [{ id: 'old', title: "Write X's SKILL.md", detail: '', status: 'approved', by: 'owner', createdAt: '' }, req('a', 'OPS-01'), req('b', 'OPS-02'), { ...req('c', 'MESH'), detail: 'Agent: MESH, 3D Artist.' }] });
+    let brief = '';
+    const fetch = async (_u: string, init: any) => { brief = JSON.parse(init.body).messages[0].content; return reply(result({ memory: 'm', skillFile: { name: 'Operations playbook', description: 'd', body: 'x'.repeat(300) }, completedTaskIds: ['a'], summary: 's' }), { input_tokens: 100, output_tokens: 10 }); };
+    await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
+    expect(brief).toMatch(/1 other agents do exactly the same job \(OPS-02\)/);
+    const s = read();
+    expect(s.tasks.map((t: any) => t.status)).toEqual(['done', 'done', 'done', 'approved']);
+    expect(s.skillFiles[0].agentIds).toEqual(['agent_OPS-01', 'agent_OPS-02']);
+  });
 });

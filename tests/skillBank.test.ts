@@ -70,7 +70,8 @@ describe('each agent gets its own SKILL.md', () => {
     expect(skillFileBrief(doc, 'agent_etsy')).toMatch(/Venture: ETSY, Etsy store, created by ORIGIN/);
     const req = { id: 't', title: '', detail: '', status: 'stopped' as const, by: 'owner' as const, createdAt: '', kind: 'skill-file' as const, agentId: 'agent_etsy' };
     expect(agentsNeedingSkillFile(doc, { tasks: [{ ...req, version: SKILL_FILE_VERSION }] })).toEqual([]);
-    expect(agentsNeedingSkillFile(doc, { tasks: [req] })).toEqual(['agent_etsy']); // an old-format request doesn't count
+    expect(agentsNeedingSkillFile(doc, { tasks: [{ ...req, version: 1 }] })).toEqual(['agent_etsy']); // an old-format request doesn't count
+    expect(agentsNeedingSkillFile(doc, { tasks: [req] })).toEqual([]); // queued before versions were recorded: written in the current format
     // a thin first-version file is rewritten in the detailed format
     const old = applyOps(doc, skillFileOps(doc, 'agent_etsy', { name: 'Etsy store playbook', description: 'Running the store', body: 'Thin.' })).doc;
     expect(agentsNeedingSkillFile(old, { tasks: [] })).toEqual(['agent_etsy']);

@@ -62,10 +62,14 @@ export function costOf(model, usage) {
 
 const month = () => new Date().toISOString().slice(0, 7);
 function emptyState() {
-  return { instructions: '', memory: '', nextAction: '', tasks: [], agentProposals: [], skillFiles: [], ledger: { month: month(), spentUsd: 0, unknownCostRuns: 0, byAgent: {} }, runs: [], lastScheduledAt: null };
+  return { instructions: '', memory: '', nextAction: '', tasks: [], agentProposals: [], skillFiles: [], autoAgents: true, ledger: { month: month(), spentUsd: 0, unknownCostRuns: 0, byAgent: {} }, runs: [], lastScheduledAt: null };
 }
 export function loadState(file = FILE) {
-  try { return { ...emptyState(), ...JSON.parse(fs.readFileSync(file, 'utf8')) }; } catch { return emptyState(); }
+  let s;
+  try { s = { ...emptyState(), ...JSON.parse(fs.readFileSync(file, 'utf8')) }; } catch { return emptyState(); }
+  // an early app version sent SKILL.md requests as plain tasks; the app asks again in the proper form
+  for (const t of s.tasks) if (!t.kind && t.status === 'approved' && /^Write .+'s SKILL\.md( in full detail)?$/.test(t.title)) t.status = 'done';
+  return s;
 }
 function saveState(s, file = FILE) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -104,7 +108,14 @@ function stopTask(task, reason, at) { task.status = 'stopped'; task.stopReason =
 const remaining = (s) => Math.max(0, CAP - s.ledger.spentUsd);
 
 const newId = (p) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`;
-const pendingCount = (s) => s.tasks.filter((t) => t.status === 'proposed').length + s.agentProposals.filter((a) => a.status === 'proposed').length;
+/** Proposals the owner still has to decide. With autoAgents on, agents are created without asking, so only tasks wait. */
+const pendingCount = (s) => s.tasks.filter((t) => t.status === 'proposed').length + (s.autoAgents === false ? s.agentProposals.filter((a) => a.status === 'proposed').length : 0);
+/** How many agents ORIGIN may create (or propose) in one run. */
+const agentsPerRun = (s) => (s.autoAgents === false ? 1 : 3);
+/** The current SKILL.md format (the full ten-section playbook); the app rewrites files older than this. */
+const SKILL_FILE_VERSION = 2;
+/** Agents with the same job share one SKILL.md: their request with the agent's own name taken out. */
+const roleOf = (t) => t.detail.split(t.agentName || '\u0000').join('').replace(/,? created by [^.,]+/, '').replace(/\s+/g, ' ').trim();
 
 /** What a SKILL.md for one agent must contain. ORIGIN writes one for every agent it or the owner creates. */
 const SKILL_FILE_RULES = `A SKILL.md is the full, detailed playbook for one agent's job: specific to that agent and its business, never generic, and complete enough that the agent can do excellent work from it alone. Write it in Markdown, between 6,000 and 18,000 characters, with these sections:
@@ -122,9 +133,14 @@ const cleanSkillFile = (f) => (f && typeof f === 'object' && String(f.body || ''
   ? { name: String(f.name || '').slice(0, 80), description: String(f.description || '').slice(0, 1000), body: String(f.body).slice(0, 20_000) }
   : null);
 
-/** One task at a time: the owner's oldest approved task, and SKILL.md writing only when none is waiting. */
+/**
+ * One task at a time: the owner's oldest approved task, and SKILL.md writing only when none is ready.
+ * A task waiting on the owner's decision (a proposal it made) steps aside until that decision, so it
+ * never holds up the rest.
+ */
 export function nextTask(s) {
-  return s.tasks.find((t) => t.status === 'approved' && t.kind !== 'skill-file') || s.tasks.find((t) => t.status === 'approved') || null;
+  const ready = (t) => t.status === 'approved' && !(t.waitingOnOwner && pendingCount(s));
+  return s.tasks.find((t) => ready(t) && t.kind !== 'skill-file') || s.tasks.find(ready) || null;
 }
 
 /** An agent's instructions and SKILL.md, as the app last synced them. */
@@ -145,15 +161,17 @@ function briefFor(s, task, deadline) {
     `Your notes from earlier runs:\n${s.memory || '(none yet: this is your first real run)'}`,
     `Next action you recorded: ${s.nextAction || '(none)'}`,
     task?.kind === 'skill-file'
-      ? `Your one task this run (the owner approved it): [${task.id}] write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId}). What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions${task.version > 1 ? ' and its earlier, thinner SKILL.md (replace it with a much more detailed one)' : ''}:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}\nResearch only if it makes the playbook more specific (for example current platform rules or prices). Return it as "skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"} and list the task id in completedTaskIds.`
+      ? `Your one task this run (the owner approved it): [${task.id}] write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId})${task.sharedWith?.length ? `. ${task.sharedWith.length} other agents do exactly the same job (${task.sharedWith.join(', ')}) and will share this file, so write it for the role, not the one name` : ''}. What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions${task.version > 1 ? ' and its earlier, thinner SKILL.md (replace it with a much more detailed one)' : ''}:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}\nResearch only if it makes the playbook more specific (for example current platform rules or prices). Return it as "skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"} and list the task id in completedTaskIds.`
       : task
       ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}\nIf you finish it, list its id in completedTaskIds. If not, record in your notes exactly where you stopped; the next run continues it.\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
-      : 'The owner has not approved any task yet. Do not research. Review your notes and propose the single most valuable, cheap task for the owner to approve.',
+      : 'No approved task is ready. Do not research. Review your notes, make sure each venture has the skill agents it needs (below), and propose the single most valuable, cheap task for the owner to approve.',
     `Waiting for the owner's approval already: ${[...s.tasks.filter((t) => t.status === 'proposed').map((t) => `task "${t.title}"`), ...s.agentProposals.filter((a) => a.status === 'proposed').map((a) => `agent "${a.name}"`)].join('; ') || 'nothing'}`,
-    pendingCount(s)
-      ? 'Something is already waiting for the owner, so propose nothing new this run (leave proposedTasks and proposedAgent empty).'
-      : `You may propose at most one new task, or one new agent if the work clearly needs a lasting specialist (follow HOW TO CREATE AN AGENT and the branch rules; parentId is your own id for a venture, or an existing venture's id for a skill agent working for it). Every agent you propose comes with its own skillFile. ${SKILL_FILE_RULES}`,
-    'Finish with exactly one JSON object in a ```json block: {"memory": "your updated notes, under 4000 characters, with sources and dates", "nextAction": "...", "proposedTasks": [{"title": "...", "detail": "..."}], "proposedAgent": null or {"parentId": "...", "name": "...", "specialty": "...", "purpose": "...", "skill": "a team such as Research", "bankSkillIds": ["..."], "skillFile": {"name": "...", "description": "...", "body": "its own detailed SKILL.md"}, "everyMinutes": 120, "maxMinutes": 5, "reason": "why this window"}, "skillFile": "only for a SKILL.md task, else null", "completedTaskIds": ["..."], "stopTaskIds": [], "stopReason": "...", "notifyOwner": "only a result the owner must see, else null", "summary": "one line on what this run did"}',
+    s.autoAgents === false
+      ? (pendingCount(s)
+        ? 'Something is already waiting for the owner, so propose nothing new this run (leave proposedTasks and proposedAgents empty). If your task cannot continue until the owner decides, set "waitingOnOwner": true and the runner moves on to other work.'
+        : `You may propose at most one new task, or one new agent if the work clearly needs a lasting specialist (follow HOW TO CREATE AN AGENT and the branch rules; parentId is your own id for a venture, or an existing venture's id for a skill agent working for it). Every agent you propose comes with its own skillFile. ${SKILL_FILE_RULES}`)
+      : `GROWING THE BRAIN: the owner lets you create agents without asking; they exist as soon as you list them, cost nothing until they are given work, and the owner can delete any. Each venture should have the skill agents it needs to make money (for an Etsy store, for example: product research, listing copy and SEO, design or mockups, pricing, and ads). In proposedAgents, create up to ${agentsPerRun(s)} agents this run that a venture clearly needs and does not have yet, each with a full skillFile; parentId is the venture's id for its skill agents, or your own id for a new venture (a new venture needs a business the owner already asked for or approved). Never duplicate an agent that already exists (see THE BRAIN NOW). ${SKILL_FILE_RULES}${pendingCount(s) ? ' A task proposal is waiting for the owner, so propose no new task this run.' : ' You may also propose one new task for the owner to approve.'}`,
+    'Finish with exactly one JSON object in a ```json block: {"memory": "your updated notes, under 4000 characters, with sources and dates", "nextAction": "...", "proposedTasks": [{"title": "...", "detail": "..."}], "proposedAgents": [{"parentId": "...", "name": "...", "specialty": "...", "purpose": "...", "skill": "a team such as Research", "bankSkillIds": ["..."], "skillFile": {"name": "...", "description": "...", "body": "its own detailed SKILL.md"}, "everyMinutes": 120, "maxMinutes": 5, "reason": "why this window"}], "waitingOnOwner": false, "skillFile": "only for a SKILL.md task, else null", "completedTaskIds": ["..."], "stopTaskIds": [], "stopReason": "...", "notifyOwner": "only a result the owner must see, else null", "summary": "one line on what this run did"}',
   ].join('\n\n');
 }
 
@@ -176,6 +194,8 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
     return { ok: false, reason: `The $${CAP} monthly cap is reached ($${s.ledger.spentUsd.toFixed(2)} spent). Runs stop until next month or a new approved cap.` };
   }
   const task = nextTask(s);
+  // agents with the same job as this SKILL.md request share its file
+  if (task?.kind === 'skill-file') task.sharedWith = s.tasks.filter((x) => x !== task && x.kind === 'skill-file' && x.status === 'approved' && roleOf(x) === roleOf(task)).map((x) => x.agentName);
   const start = new Date(), deadline = new Date(start.getTime() + MAX_MIN * 60_000);
   const runLimit = Math.min(RUN_LIMIT_USD, remaining(s));
   const record = { id: `run_${start.getTime().toString(36)}`, trigger, model: MODEL, startedAt: start.toISOString(), endedAt: null, costUsd: 0, costKnown: true, calls: 0, searches: 0, status: 'running', summary: '' };
@@ -215,26 +235,34 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   if (out) {
     if (typeof out.memory === 'string') s.memory = out.memory.slice(0, 8000);
     if (typeof out.nextAction === 'string') s.nextAction = out.nextAction.slice(0, 1000);
-    // at most one new proposal per run, and none while the owner still has one to decide
+    // at most one new task proposal per run, none while the owner still has one to decide; agents up to agentsPerRun
     const t = Array.isArray(out.proposedTasks) ? out.proposedTasks[0] : null;
-    const a = out.proposedAgent && typeof out.proposedAgent === 'object' ? out.proposedAgent : null;
-    if (!pendingCount(s)) {
-      if (t?.title) s.tasks.push({ id: newId('task'), title: String(t.title).slice(0, 160), detail: String(t.detail || '').slice(0, 1000), status: 'proposed', by: 'origin', createdAt: record.endedAt });
-      else if (a?.name && a?.parentId) {
+    const agents = [...(Array.isArray(out.proposedAgents) ? out.proposedAgents : []), ...(out.proposedAgent && typeof out.proposedAgent === 'object' ? [out.proposedAgent] : [])]
+      .filter((a) => a && typeof a === 'object' && a.name && a.parentId)
+      .filter((a, i, all) => all.findIndex((b) => String(b.name).toLowerCase() === String(a.name).toLowerCase()) === i)
+      .slice(0, agentsPerRun(s));
+    const wasPending = pendingCount(s);
+    if (!wasPending && t?.title) s.tasks.push({ id: newId('task'), title: String(t.title).slice(0, 160), detail: String(t.detail || '').slice(0, 1000), status: 'proposed', by: 'origin', createdAt: record.endedAt });
+    if (s.autoAgents !== false || (!wasPending && !t?.title)) {
+      for (const a of agents) {
         const num = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Math.round(Number(v)))) : d);
         s.agentProposals.push({
           id: newId('agentp'), parentId: String(a.parentId).slice(0, 80), name: String(a.name).slice(0, 60), specialty: String(a.specialty || '').slice(0, 200),
           purpose: String(a.purpose || '').slice(0, 1000), skill: String(a.skill || 'Research').slice(0, 40),
           bankSkillIds: (Array.isArray(a.bankSkillIds) ? a.bankSkillIds : []).map(String).slice(0, 10),
           everyMinutes: num(a.everyMinutes, 15, 10_080, 240), maxMinutes: num(a.maxMinutes, 1, 60, 5), reason: String(a.reason || '').slice(0, 300),
-          skillFile: cleanSkillFile(a.skillFile), status: 'proposed', createdAt: record.endedAt,
+          skillFile: cleanSkillFile(a.skillFile), auto: s.autoAgents !== false, status: 'proposed', createdAt: record.endedAt,
         });
       }
     }
+    // a task that can't go on until the owner decides steps aside instead of holding every run
+    if (task && task.kind !== 'skill-file' && (out.waitingOnOwner === true || (pendingCount(s) > wasPending && !(out.completedTaskIds || []).includes(task.id)))) task.waitingOnOwner = true;
     const file = task?.kind === 'skill-file' ? cleanSkillFile(out.skillFile) : null;
     if (file) {
-      s.skillFiles.push({ id: newId('skillfile'), agentId: task.agentId, agentName: task.agentName, version: task.version || 1, ...file, status: 'new', createdAt: record.endedAt });
-      task.status = 'done';
+      // one file for every agent with the same job; their requests are done too
+      const same = s.tasks.filter((x) => x.kind === 'skill-file' && x.status === 'approved' && (x === task || roleOf(x) === roleOf(task)));
+      for (const x of same) x.status = 'done';
+      s.skillFiles.push({ id: newId('skillfile'), agentId: task.agentId, agentName: task.agentName, agentIds: same.map((x) => x.agentId), agentNames: same.map((x) => x.agentName), version: SKILL_FILE_VERSION, ...file, status: 'new', createdAt: record.endedAt });
     }
     // only the task this run worked on can be completed or stopped by it
     if (task && Array.isArray(out.completedTaskIds) && out.completedTaskIds.includes(task.id)) task.status = 'done';
@@ -266,7 +294,8 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
       Object.assign(cur, { spentUsd: t.spentUsd, runCosts: t.runCosts });
       if (cur.status === 'approved' && t.status === 'done') cur.status = 'done';
       if (cur.status === 'approved' && t.status !== 'approved') Object.assign(cur, { status: t.status, stopReason: t.stopReason, stoppedAt: t.stoppedAt });
-    }
+      if (t.waitingOnOwner) cur.waitingOnOwner = true;
+    } else if (t.kind === 'skill-file' && t.status === 'done' && cur.status === 'approved') cur.status = 'done'; // shared SKILL.md
   }
   for (const a of s.agentProposals) if (!now.agentProposals.some((x) => x.id === a.id)) now.agentProposals.push(a);
   for (const f of s.skillFiles) if (!now.skillFiles.some((x) => x.id === f.id)) now.skillFiles.push(f);
@@ -337,7 +366,7 @@ function publicState() {
   return {
     configured: Boolean(KEY), model: MODEL, capUsd: CAP, everyMinutes: EVERY_MIN, maxMinutes: MAX_MIN, schedule: SCHEDULE,
     spentUsd: s.ledger.spentUsd, spentByAgent: s.ledger.byAgent, taskBudgetUsd: TASK_BUDGET_USD, unknownCostRuns: s.ledger.unknownCostRuns, month: s.ledger.month, running: running ? running.startedAt : null,
-    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
+    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, autoAgents: s.autoAgents !== false, skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
     // with no scheduled run yet, the next one starts within a minute
     nextScheduledAt: SCHEDULE ? new Date(s.lastScheduledAt ? Math.max(Date.now(), Date.parse(s.lastScheduledAt) + EVERY_MIN * 60_000) : Date.now() + 60_000).toISOString() : null,
   };
@@ -399,6 +428,7 @@ async function handle(req, res) {
       if (next === 'approved' && t.status === 'stopped') { t.budgetUsd = (t.spentUsd || 0) + TASK_BUDGET_USD; t.runCosts = []; delete t.stopReason; }
       if (next === 'stopped') t.stopReason = 'You stopped it.';
       t.status = next;
+      if (t.by === 'origin') for (const x of s.tasks) delete x.waitingOnOwner; // a proposal decided
     }
     saveState(s);
     return send(req, res, 200, { ok: true, tasks: s.tasks });
@@ -406,6 +436,13 @@ async function handle(req, res) {
   if (url === '/api/origin/ask') {
     const r = await ask(body.question);
     return send(req, res, r.ok ? 200 : 409, r);
+  }
+  if (url === '/api/origin/settings') {
+    // whether ORIGIN and its ventures create agents without asking (the owner's choice)
+    const s = loadState();
+    if (typeof body.autoAgents === 'boolean') s.autoAgents = body.autoAgents;
+    saveState(s);
+    return send(req, res, 200, { ok: true, autoAgents: s.autoAgents });
   }
   if (url === '/api/origin/skillfiles') {
     // the app saved the file to the skill bank and gave it to the agent
@@ -423,6 +460,7 @@ async function handle(req, res) {
     const next = { approve: 'approved', reject: 'rejected' }[body.action];
     if (!p || !next || p.status !== 'proposed') return send(req, res, 400, { error: 'unknown proposal or action' });
     p.status = next; p.agentId = typeof body.agentId === 'string' ? body.agentId : null;
+    for (const t of s.tasks) delete t.waitingOnOwner; // the owner decided: blocked tasks can go on
     saveState(s);
     return send(req, res, 200, { ok: true, agentProposals: s.agentProposals });
   }

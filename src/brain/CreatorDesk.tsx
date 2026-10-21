@@ -8,6 +8,7 @@ import OriginRuns from './OriginRuns';
 import SkillBank, { BankSkillPicker } from './SkillBank';
 import { brainMap, syncOrigin } from './originLink';
 import { useSkillFiles } from './skillFiles';
+import { useOrigin } from './useOrigin';
 
 type DeskTab = 'ideas' | 'agent' | 'requests' | 'runs' | 'bank' | 'tutorial';
 const TABS: DeskTab[] = ['ideas', 'agent', 'requests', 'runs', 'bank', 'tutorial'];
@@ -42,6 +43,9 @@ export default function CreatorDesk() {
   const [window_, setWindow] = useState<RunWindow>(suggestedWindow('Research'));
   const [agentSkills, setAgentSkills] = useState<string[]>([]);
   useSkillFiles();
+  // what waits for the owner in ORIGIN runs, shown on its button since notifications are off
+  const runner = useOrigin((st) => st.status);
+  const waiting = (runner?.tasks.filter((t) => t.status === 'proposed').length ?? 0) + (runner?.agentProposals?.filter((p) => p.status === 'proposed' && !(p.auto && runner.autoAgents)).length ?? 0);
   // ORIGIN's rules come from the app: bring an older save up to date (new rules, the budget watch skill) once
   useEffect(() => {
     const d = useStore.getState().doc;
@@ -140,7 +144,7 @@ export default function CreatorDesk() {
         <span className="creator-live"><i /> {leaderName} · OWNER-LED</span>
         <button className="creator-action" onClick={() => { setTab('ideas'); setNotice(''); }}><Plus size={14} /> Add idea <span className="creator-count">{pending}</span></button>
         <button className="creator-action" onClick={() => { setTab('agent'); pickParent(null); setNotice(''); }}><GitBranch size={14} /> Start a venture</button>
-        <button className="creator-action" onClick={() => { setTab('runs'); setNotice(''); }}><Sparkles size={14} /> {leaderName} runs</button>
+        <button className="creator-action" onClick={() => { setTab('runs'); setNotice(''); }}><Sparkles size={14} /> {leaderName} runs {waiting > 0 && <span className="creator-count" title="Waiting for your approval">{waiting}</span>}</button>
         <button className="creator-action" onClick={() => { setTab('bank'); setNotice(''); }}><Library size={14} /> Skill bank <span className="creator-count">{doc.skillBank.length}</span></button>
         <button className="creator-action" onClick={() => { setTab('requests'); setRequestFrom(null); setNotice(''); }}><Plus size={14} /> Skill requests <span className="creator-count">{openRequests}</span></button>
         {needsSetup && <button className="creator-action" onClick={setupOrigin} title="Give ORIGIN your Opportunity Research & Builder prompt and starting memory"><Sparkles size={14} /> {isOpportunityOrigin(doc) ? 'Update Opportunity agent rules' : 'Set up Opportunity agent'}</button>}
@@ -170,7 +174,7 @@ export default function CreatorDesk() {
           </div>}
 
           {tab === 'agent' && <div className="creator-body">
-            <div className="creator-context"><ShieldCheck size={16} /><span>This builds the agent from your inputs and the bank skills you pick. {leaderName} can also propose agents from its runs; those wait for you in {leaderName} runs. Nothing is added until you choose <b>Approve & add agent</b>.</span></div>
+            <div className="creator-context"><ShieldCheck size={16} /><span>This builds the agent from your inputs and the bank skills you pick. {leaderName} and its ventures also create the agents they need in their runs (you can switch that to ask-first in {leaderName} runs).</span></div>
             <div className="creator-agent-grid">
               <label className="creator-field"><span>Agent name</span><input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="e.g. SIGNAL" /></label>
               <label className="creator-field"><span>{kind === 'venture' ? 'Venture' : 'Specialty'}</span><input value={agentRole} onChange={(e) => setAgentRole(e.target.value)} placeholder={kind === 'venture' ? 'e.g. Roblox development' : 'e.g. Roblox map modeller'} /></label>

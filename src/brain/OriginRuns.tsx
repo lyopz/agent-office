@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Check, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useStore } from '../store/store';
-import { agentProposalAction, runnerStatus, syncOrigin, taskAction, type AgentProposal, type RunnerStatus, type RunnerTask } from './originLink';
-import { branchAgentOps, describeWindow } from './opportunity';
-import { skillFileId, skillFileUpsert } from './skillFiles';
-import type { DocOp } from '../engine/ops';
+import { agentProposalAction, runnerStatus, setAutoAgents, syncOrigin, taskAction, type AgentProposal, type RunnerStatus, type RunnerTask } from './originLink';
+import { describeWindow } from './opportunity';
+import { createProposedAgent } from './skillFiles';
 
 const money = (n: number) => `$${n.toFixed(n < 1 ? 3 : 2)}`;
 
@@ -28,15 +27,9 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   };
 
   const approveAgent = async (p: AgentProposal) => {
-    const d = useStore.getState().doc;
-    const id = `agent_${p.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'new'}_${Date.now().toString(36)}`;
-    const { ops, error } = branchAgentOps(d, p.parentId, { id, name: p.name, specialty: p.specialty || p.skill, purpose: p.purpose, skill: p.skill, window: { everyMinutes: p.everyMinutes, maxMinutes: p.maxMinutes, setBy: 'origin', reason: p.reason || 'Proposed by ORIGIN.' }, bankSkillIds: p.bankSkillIds.filter((k) => d.skillBank.some((x) => x.id === k)) });
-    // the agent's own SKILL.md, written by ORIGIN with the proposal, goes to the bank with it
-    const bank = p.bankSkillIds.filter((k) => d.skillBank.some((x) => x.id === k));
-    const own: DocOp[] = p.skillFile ? [skillFileUpsert(d, id, p.name, p.skillFile), { op: 'agent.setBankSkills', id, skillIds: [...bank, skillFileId(id)] }] : [];
-    const r = error ? null : useStore.getState().commit([...ops, ...own], `Approve agent: ${p.name}`);
-    if (!r?.ok) { onNotice(`Couldn't add ${p.name}: ${error ?? r?.errors.join(' · ')}. Reject it, or fix the brain and try again.`); return; }
-    await act(() => agentProposalAction({ action: 'approve', id: p.id, agentId: id }), `${p.name} is now a branch of ${d.agents[p.parentId]?.identity.name}.`);
+    const r = await createProposedAgent(p);
+    onNotice(r.ok ? r.message : `${r.message}. Reject it, or fix the brain and try again.`);
+    void refresh();
   };
   const spent = (t: RunnerTask) => `${money(t.spentUsd ?? 0)} of ${money(t.budgetUsd ?? st?.taskBudgetUsd ?? 1.5)}${t.runCosts?.length ? ` over ${t.runCosts.length} run${t.runCosts.length === 1 ? '' : 's'}` : ''}`;
 
@@ -57,7 +50,9 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   // the runner's order: your tasks first, oldest first, then SKILL.md writing
   const approved = st.tasks.filter((t) => t.status === 'approved').sort((a, b) => Number(a.kind === 'skill-file') - Number(b.kind === 'skill-file'));
   const stopped = st.tasks.filter((t) => t.status === 'stopped').slice(-5);
-  const agentAsks = (st.agentProposals ?? []).filter((p) => p.status === 'proposed');
+  // with auto-create on, ORIGIN's agents are added for you; only ones made while you were asked first still wait
+  const agentAsks = (st.agentProposals ?? []).filter((p) => p.status === 'proposed' && !(p.auto && st.autoAgents));
+  const created = (st.agentProposals ?? []).filter((p) => p.status === 'approved' && p.auto).slice(-6).reverse();
   const pct = Math.min(100, (st.spentUsd / st.capUsd) * 100);
   return (
     <div className="creator-body">
@@ -68,6 +63,12 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
       </div>
 
       {st.spentByAgent && Object.keys(st.spentByAgent).length > 0 && <p className="creator-privacy">This month by agent (one key, one cap): {Object.entries(st.spentByAgent).map(([id, usd]) => `${doc.agents[id]?.identity.name ?? id} ${money(usd)}`).join(' · ')}</p>}
+
+      <label className="creator-privacy" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input type="checkbox" checked={st.autoAgents !== false} onChange={(e) => void act(() => setAutoAgents(e.target.checked), e.target.checked ? 'ORIGIN and its ventures now create the agents they need, up to 3 a run, each with its SKILL.md.' : 'ORIGIN will ask you before creating agents.')} />
+        Let ORIGIN and its ventures create the agents they need without asking (up to 3 a run; agents cost nothing until they work)
+      </label>
+      {created.length > 0 && <p className="creator-privacy">Recently created by ORIGIN: {created.map((p) => `${p.name} (for ${doc.agents[p.parentId]?.identity.name ?? p.parentId})`).join(', ')}.</p>}
 
       <span className="creator-kicker">WAITING FOR YOUR APPROVAL</span>
       {proposed.length === 0 && agentAsks.length === 0 && <p className="creator-privacy">Nothing proposed right now. ORIGIN proposes one thing at a time.</p>}
