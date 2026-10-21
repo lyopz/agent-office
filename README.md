@@ -129,52 +129,38 @@ Named versions and preferences stay in the browser's storage. In the desktop app
 
 ## Desktop app
 
+The desktop app is the easiest way to run The Brain on Windows. One double-click opens the app, starts ORIGIN's runner in the background (unless one is already running), and saves everything as files on this PC.
+
+```powershell
+cd C:\Users\edpfl\agent-office
+npm.cmd install
+npm.cmd run shortcut
+```
+
+`npm run shortcut` puts a **The Brain** shortcut with the app's icon on the desktop and in the Start menu. It opens the app from this folder, so updates to the folder take effect the next time it opens: if the source is newer than the last build, the app rebuilds itself first ("Updating The Brain…").
+
 | Command | What it does |
 |---|---|
+| `npm run shortcut` | Adds the desktop and Start menu shortcuts (Windows). |
 | `npm run desktop` | Builds the app and opens it in Electron. |
-| `npm run desktop:dist` | Makes an installer named **Neural Command Campus** in `release/`: NSIS on Windows, DMG on macOS, AppImage on Linux. electron-builder is configured in the `build` field of `package.json` and uses the icons in `build/`. |
+| `npm run desktop:dist` | Makes an installer named **The Brain** in `release/`: NSIS on Windows (with desktop and Start menu shortcuts), DMG on macOS, AppImage on Linux. An installed copy keeps ORIGIN's runner data in its own data folder. |
 | `npm run desktop:dev` | Opens the desktop shell on the Vite dev server at `http://localhost:5173`, or on the local URL in `OFFICE_DEV_SERVER_URL`. |
 
-- **Saves** live in `<userData>/saves/` as `current.json`, `backup.json` and any `damaged-*.json` files. `userData` is the app's data folder for your user account:
-
-  | System | Folder |
-  |---|---|
-  | Windows | `%APPDATA%\Neural Command Campus` |
-  | macOS | `~/Library/Application Support/Neural Command Campus` |
-  | Linux | `~/.config/Neural Command Campus` |
-
-- **Bridge.** `desktop/preload.cjs` exposes one object, `window.officeDesktop`, with five calls: `saves.read()`, `saves.readBackup()`, `saves.write(text)`, `saves.keepDamaged(text)` and `saves.info()`.
-  - The main process (`desktop/main.cjs` and `desktop/saveStore.cjs`) does all the file work, with fixed file names.
-  - The page can't pass a path, read any other file, or see environment variables.
-  - When the bridge is there, the app saves to files (`FileRepository`). Otherwise it uses `localStorage`.
-- **Security.**
-  - The window runs with `contextIsolation` and `sandbox` on, and `nodeIntegration` off.
-  - The built app is served from a private `app://campus/` scheme with a strict Content-Security-Policy. Only the app's own scripts run, and no remote content loads, so the web fonts fall back to fonts on your computer. Network access is limited to `localhost`, for ORIGIN's runner.
-  - Navigation away from the app is blocked, new windows are refused, and http(s) links open in your browser.
-  - Every permission request except notifications is denied.
-  - Launching the app a second time focuses the window that is already open.
+- **Saves** are files in `%APPDATA%\The Brain\saves` (`current.json`, `backup.json`, any `damaged-*.json`). They're written shortly after every change and whenever one of ORIGIN's tasks finishes. Saves from the old name (`%APPDATA%\Neural Command Campus`) are copied over once.
+- **ORIGIN's runner** starts with the app and stops when it closes. It reads the API key saved by `npm run set-key` (never the app), keeps its state in `origin-data/`, and writes its output to `origin-data/runner.log`.
+- **Bridge.** `desktop/preload.cjs` exposes one object, `window.officeDesktop`, with five calls: `saves.read()`, `saves.readBackup()`, `saves.write(text)`, `saves.keepDamaged(text)` and `saves.info()`. The main process does all the file work, with fixed file names. The page can't pass a path, read any other file, or see environment variables.
+- **Security.** The window runs with `contextIsolation` and `sandbox` on and `nodeIntegration` off, from a private `app://campus/` scheme with a strict Content-Security-Policy. Network access is limited to `localhost`, for ORIGIN's runner. Navigation away from the app is blocked, new windows are refused, and http(s) links open in your browser.
 
 ## Logo
 
-The Neural Command Campus logo shows an agent's head inside a rounded badge. The head has a visor, an antenna node, a neural link between the eyes and a circuit-trace mouth. It uses three colours from the app palette:
-
-- panel black, `#050a08`
-- signal green, `#39ff88` (`--green-5`)
-- data blue, `#4cc9ff` (`--blue-5`)
+The Brain's logo is a glowing blue brain-circuit mark on a dark rounded badge, the same mark as in the top bar.
 
 | File | Use |
 |---|---|
-| `src/brand/Logo.tsx` | `LogoMark`, the logo on its own (pass `simple` below about 24 px), and `LogoLockup`, the logo with "Neural Command Campus" as used in the top bar. |
-| `public/logo.svg` | The full logo. |
-| `public/favicon.svg` | A simpler version for 16–32 px: no thin lines, and larger eyes and antenna node. |
+| `public/logo.svg` | The full logo, with glow. |
+| `public/favicon.svg` | A simpler version for small sizes. |
 | `build/icon.png` | The 512 px app icon, rendered from `logo.svg`. |
-| `build/icon.ico` | The Windows icon, with PNG images at 16 and 32 px (from `favicon.svg`) and at 48 and 256 px (from `logo.svg`). |
-
-To change the logo:
-
-1. Edit both SVG files and `Logo.tsx`.
-2. Re-render the PNGs with any SVG rasterizer. The current ones were rendered with headless Chromium.
-3. Pack the 16, 32, 48 and 256 px images into the `.ico`.
+| `build/icon.ico` | The Windows icon (256, 48, 32 and 16 px). |
 
 ## Credentials
 

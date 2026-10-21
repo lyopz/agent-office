@@ -6,7 +6,6 @@ import { BusinessPanels } from './Business';
 export function Dashboard() {
   const doc = useStore((s) => s.doc);
   const rt = useStore((s) => s.runtime);
-  const prefs = useStore((s) => s.prefs);
   const { runRuntimeOps } = useStore.getState();
   const [evFilter, setEvFilter] = useState('all');
   const tasks = Object.values(rt.tasks);
@@ -47,7 +46,7 @@ export function Dashboard() {
       <div className="card span-4">
         <h4>System health</h4>
         <div className="kv" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 4, fontSize: 'var(--fs-sm)' }}>
-          <span>Autosave</span><span>{prefs.autosave ? 'on' : 'off'}</span>
+          <span>Autosave</span><span>always on, local</span>
         </div>
       </div>
 

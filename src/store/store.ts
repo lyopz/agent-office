@@ -137,7 +137,7 @@ export const useStore = create<State>((set, get) => {
   const prefs = { ...DEFAULT_PREFS, ...loaded };
   // office-era preferences
   for (const k of ['characterStyle', 'hqView', 'viewMode', 'aiProvider', 'autoApplySafe', 'demoTasks']) delete (prefs as Record<string, unknown>)[k];
-  // autosave runs on a 60 s interval (useAutosave in ui/SaveStatus.tsx), not on every change
+  // autosave (useAutosave in ui/SaveStatus.tsx) saves shortly after each change and on a 60 s interval
 
   const setDoc = (doc: OfficeDoc, patch: Partial<State> = {}) => {
     const runtime = cloneRuntime(get().runtime);

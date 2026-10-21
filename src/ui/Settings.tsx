@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { useStore } from '../store/store';
-import { Section, Toggle } from './primitives';
+import { Section } from './primitives';
 import { ThemeEditor } from './ThemeEditor';
 
 const TABS = [['general', 'General'], ['theme', 'Theme & colours']] as const;
@@ -20,14 +19,11 @@ export function Settings() {
 }
 
 function General() {
-  const prefs = useStore((s) => s.prefs);
-  const { setPrefs } = useStore.getState();
   return (
     <div className="dash">
       <div className="card span-6">
         <h4>Persistence</h4>
-        <Toggle label="Autosave agents, knowledge and tasks" checked={prefs.autosave} onChange={(autosave) => setPrefs({ autosave })} />
-        <p className="note" style={{ marginTop: 8 }}>Data is stored in this browser (localStorage) behind a repository interface, so a server database can replace it. Saved and exported files are schema-validated and migrated on load.</p>
+        <p className="note">Everything saves on this computer, always: shortly after every change and whenever one of ORIGIN's tasks finishes. In the desktop app saves are files in its data folder; in a browser they stay in that browser. ORIGIN's own runs, tasks and spend are saved by its runner in origin-data.</p>
       </div>
       <div className="card span-6">
         <h4>Keyboard shortcuts</h4>

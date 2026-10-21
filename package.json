@@ -16,7 +16,8 @@
     "set-key": "node server/set-key.mjs",
     "desktop": "npm run build && electron .",
     "desktop:dev": "node desktop/dev.cjs",
-    "desktop:dist": "npm run build && electron-builder"
+    "desktop:dist": "npm run build && electron-builder",
+    "shortcut": "powershell -NoProfile -ExecutionPolicy Bypass -File desktop/make-shortcut.ps1"
   },
   "dependencies": {
     "immer": "^10.1.1",
@@ -43,7 +44,7 @@
     "vitest": "^2.1.4"
   },
   "build": {
-    "appId": "app.neuralcommandcampus.desktop",
+    "appId": "app.thebrain.desktop",
     "productName": "The Brain",
     "directories": {
       "output": "release",
@@ -54,6 +55,8 @@
       "desktop/**/*",
       "build/icon.png",
       "package.json",
+      "server/**/*",
+      "build/icon.ico",
       "!node_modules/**/*"
     ],
     "win": {
@@ -78,7 +81,10 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "The Brain"
     }
   }
 }

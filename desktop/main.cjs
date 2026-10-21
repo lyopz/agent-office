@@ -1,5 +1,7 @@
 'use strict';
-// Desktop shell for Neural Command Campus.
+// Desktop app for The Brain. It also starts ORIGIN's runner (server/origin-runner.mjs) in the
+// background, so one double-click on the desktop shortcut is all it takes, and when run from
+// the app folder it rebuilds the app first if the source changed since the last build.
 //
 // Security posture: the window runs the built app from a private `app://campus/` scheme (or, for
 // development, the local Vite server named by OFFICE_DEV_SERVER_URL). The renderer has no Node:
@@ -9,15 +11,22 @@
 // only `window.officeDesktop.saves`, whose file IO happens here with fixed file names under
 // <userData>/saves. No environment variables or secrets are passed to the renderer.
 const { app, BrowserWindow, ipcMain, protocol, session, shell, Menu } = require('electron');
+const { spawn } = require('node:child_process');
+const http = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs');
 const { createSaveStore } = require('./saveStore.cjs');
 
-const APP_NAME = 'Neural Command Campus';
+const APP_NAME = 'The Brain';
+// saves from before the rename live under this name; they are copied over once
+const OLD_APP_NAME = 'Neural Command Campus';
 const SCHEME = 'app';
 const HOST = 'campus';
 const APP_ORIGIN = `${SCHEME}://${HOST}`;
-const DIST = path.resolve(__dirname, '..', 'dist');
+const ROOT = path.resolve(__dirname, '..');
+const DIST = path.join(ROOT, 'dist');
+const RUNNER = path.join(ROOT, 'server', 'origin-runner.mjs');
+const RUNNER_PORT = Number(process.env.ORIGIN_PORT || 8788);
 
 /** Only a local Vite dev server may be loaded instead of the built files. */
 function devServerUrl() {
@@ -110,6 +119,67 @@ function hardenSession() {
   ses.setPermissionCheckHandler((_wc, permission) => permission === 'notifications');
 }
 
+/** Saves made before the app was renamed: copy them into the new data folder once, never over newer ones. */
+function adoptOldSaves() {
+  const now = path.join(app.getPath('userData'), 'saves');
+  const old = path.join(app.getPath('appData'), OLD_APP_NAME, 'saves');
+  try {
+    if (fs.existsSync(path.join(now, 'current.json')) || !fs.existsSync(old)) return;
+    fs.mkdirSync(now, { recursive: true });
+    for (const f of fs.readdirSync(old)) if (f.endsWith('.json')) fs.copyFileSync(path.join(old, f), path.join(now, f));
+  } catch (e) { console.warn(`Could not copy the old saves: ${e && e.message}`); }
+}
+
+// Run a Node script with Electron's own Node, so nothing else needs to be installed.
+const runNode = (script, args, opts) => spawn(process.execPath, [script, ...args], { ...opts, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', ...(opts && opts.env) }, windowsHide: true });
+
+/** Newest modification time under a folder (or of a file). */
+function newest(p) {
+  try {
+    const st = fs.statSync(p);
+    if (!st.isDirectory()) return st.mtimeMs;
+    return fs.readdirSync(p).reduce((m, f) => Math.max(m, newest(path.join(p, f))), 0);
+  } catch { return 0; }
+}
+
+/** From the app folder (not an installed copy), rebuild dist/ when the source is newer than the last build. */
+function buildIfStale() {
+  const vite = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
+  if (app.isPackaged || DEV_ORIGIN || !fs.existsSync(vite)) return Promise.resolve(true);
+  const built = newest(path.join(DIST, 'index.html'));
+  const source = Math.max(newest(path.join(ROOT, 'src')), newest(path.join(ROOT, 'public')), newest(path.join(ROOT, 'index.html')));
+  if (built && built >= source) return Promise.resolve(true);
+  const splash = new BrowserWindow({ width: 420, height: 160, frame: false, resizable: false, backgroundColor: '#03060b', show: true, webPreferences: { sandbox: true, contextIsolation: true } });
+  void splash.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent('<body style="margin:0;display:grid;place-items:center;height:100vh;background:#03060b;color:#9beaff;font:15px system-ui">Updating The Brain…</body>')}`);
+  return new Promise((resolve) => {
+    const child = runNode(vite, ['build'], { cwd: ROOT, stdio: 'ignore' });
+    child.on('exit', (code) => { splash.destroy(); resolve(code === 0 || fs.existsSync(path.join(DIST, 'index.html'))); });
+    child.on('error', () => { splash.destroy(); resolve(fs.existsSync(path.join(DIST, 'index.html'))); });
+  });
+}
+
+/** Is a runner already answering (for example one started by hand with npm run origin)? */
+function runnerUp() {
+  return new Promise((resolve) => {
+    const req = http.get({ host: '127.0.0.1', port: RUNNER_PORT, path: '/api/origin/status', timeout: 1500 }, (res) => { res.resume(); resolve(true); });
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.on('error', () => resolve(false));
+  });
+}
+
+let runner = null;
+/** Start ORIGIN's runner in the background unless one is already running. Its output goes to origin-data/runner.log. */
+async function startRunner() {
+  if (!fs.existsSync(RUNNER) || await runnerUp()) return;
+  // from the app folder the runner keeps its state in <app folder>/origin-data, as with npm run origin
+  const dataDir = app.isPackaged ? path.join(app.getPath('userData'), 'origin-data') : path.join(ROOT, 'origin-data');
+  fs.mkdirSync(dataDir, { recursive: true });
+  const log = fs.openSync(path.join(dataDir, 'runner.log'), 'a');
+  runner = runNode(RUNNER, [], { cwd: app.isPackaged ? dataDir : ROOT, stdio: ['ignore', log, log], env: { ORIGIN_DATA_DIR: dataDir } });
+  runner.on('exit', () => { runner = null; });
+}
+const stopRunner = () => { if (runner) { try { runner.kill(); } catch { /* already gone */ } runner = null; } };
+
 let saves = null;
 function registerSaveIpc() {
   saves = createSaveStore(path.join(app.getPath('userData'), 'saves'));
@@ -128,7 +198,7 @@ function registerSaveIpc() {
 }
 
 function createWindow() {
-  const icon = path.resolve(__dirname, '..', 'build', 'icon.png');
+  const icon = path.join(ROOT, 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
   const win = new BrowserWindow({
     title: APP_NAME,
     width: 1440,
@@ -164,6 +234,9 @@ function createWindow() {
 }
 
 app.setName(APP_NAME);
+// saves live in <AppData>/The Brain/saves, whatever folder or copy the app was started from
+app.setPath('userData', path.join(app.getPath('appData'), APP_NAME));
+if (process.platform === 'win32') app.setAppUserModelId('app.thebrain.desktop');
 // one window, one writer: a second launch focuses the first instead of racing it on the save files
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -173,9 +246,12 @@ if (!app.requestSingleInstanceLock()) {
     contents.on('will-navigate', (e, url) => { if (!isAppUrl(url)) e.preventDefault(); });
     contents.setWindowOpenHandler(({ url }) => { openExternally(url); return { action: 'deny' }; });
   });
-  app.whenReady().then(() => {
-    if (!DEV_ORIGIN && !fs.existsSync(path.join(DIST, 'index.html'))) console.warn('dist/index.html is missing: run `npm run build` first (or use `npm run desktop`).');
+  app.whenReady().then(async () => {
     if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
+    adoptOldSaves();
+    void startRunner();
+    await buildIfStale();
+    if (!DEV_ORIGIN && !fs.existsSync(path.join(DIST, 'index.html'))) console.warn('dist/index.html is missing: run `npm run build` first (or use `npm run desktop`).');
     serveApp();
     hardenSession();
     registerSaveIpc();
@@ -183,4 +259,5 @@ if (!app.requestSingleInstanceLock()) {
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+  app.on('will-quit', stopRunner);
 }
