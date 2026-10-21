@@ -1272,6 +1272,8 @@ function readInbox() {
     try {
       const req = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (req?.type === 'skills') { const s = loadState(); const r = queueSkills(s, req); saveState(s); console.log(`[origin] inbox ${f}: ${r.files.length} SKILL.md, ${r.bank.length} bank skills${r.unknown.length ? `; not found: ${r.unknown.join(', ')}` : ''}`); }
+      // a task the owner wrote down for the command center: it becomes the focus, for the named agent when one is given
+      else if (req?.type === 'task' && req.title) { const s = loadState(); const who = req.agent ? resolveAgents(s, [req.agent]) : { ids: [] }; const t = addFocusTask(s, { title: String(req.title), detail: String(req.detail || ''), agentId: who.ids[0] ?? null, count: Number.isFinite(req.count) ? req.count : itemCount(req.title) }); saveState(s); console.log(`[origin] inbox ${f}: focus task ${t ? `"${t.title}"${who.ids[0] ? ` for ${who.ids[0]}` : ''}` : 'not added'}`); if (t) setTimeout(startFocus, 1000); }
     } catch (e) { console.error(`[origin] inbox ${f}: ${e.message}`); }
     try { fs.renameSync(file, `${file}.done`); } catch { /* leave it */ }
   }

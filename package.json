@@ -25,6 +25,7 @@
     "shortcut": "powershell -NoProfile -ExecutionPolicy Bypass -File desktop/make-shortcut.ps1"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "immer": "^10.1.1",
     "kokoro-js": "^1.2.1",
     "lucide-react": "^0.453.0",

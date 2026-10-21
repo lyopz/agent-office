@@ -12,8 +12,8 @@ export const CANVA_MCP = process.env.CANVA_MCP_URL || 'https://mcp.canva.com/mcp
 const FILE = () => path.join(secretsDir(), 'canva.json');
 const PROTOCOL = '2025-06-18';
 
-/** The Canva tools agents may use: make, check and export designs. Nothing that shares, deletes, comments or browses the owner's account. */
-export const CANVA_ALLOWED = ['create-design', 'get-create-design-async-job', 'generate-design', 'create-design-from-candidate', 'generate-image', 'get-generate-image-job', 'remove-background', 'get-export-formats', 'export-design'];
+/** The Canva tools agents may use: open a design the owner linked, make, check and export designs. Nothing that shares, deletes, comments or browses the owner's account. */
+export const CANVA_ALLOWED = ['resolve-shortlink', 'get-design', 'create-design', 'get-create-design-async-job', 'generate-design', 'create-design-from-candidate', 'generate-image', 'get-generate-image-job', 'remove-background', 'get-export-formats', 'export-design'];
 /** Calls that spend the owner's Canva AI credits. */
 export const CANVA_AI = ['create-design', 'generate-design', 'generate-image'];
 export const toolName = (canvaName) => `canva_${canvaName.replace(/-/g, '_')}`;

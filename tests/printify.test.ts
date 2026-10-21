@@ -1,18 +1,30 @@
 // Printify for the agents: designs and products are made unpublished; only the owner publishes.
 import { describe, expect, test } from 'vitest';
-import { PRINTIFY_TOOLS, runPrintifyTool } from '../server/printify.mjs';
+import { PRINTIFY_TOOLS, runPrintifyTool, svgToPng } from '../server/printify.mjs';
 
 const ok = (data: unknown) => ({ ok: true, status: 200, json: async () => data });
 
 describe('printify', () => {
-  test('an SVG design is uploaded as base64 contents with the token and a user agent', async () => {
+  const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 540"><text x="225" y="300" font-family="Arial, sans-serif" font-size="90" text-anchor="middle" fill="#112">JERSEY AVE</text></svg>';
+
+  test('an SVG design with text is rendered to a print-size PNG and uploaded with the token and a user agent', async () => {
     const seen: any[] = [];
     const fetch = async (url: string, init: any) => { seen.push({ url, init }); return ok({ id: 'img1', width: 4500, height: 5400 }); };
-    const r = await runPrintifyTool('printify_upload_design', { file_name: 'cat', svg: '<svg/>' }, { config: { token: 'tok', shopId: 7 }, fetch });
-    expect(JSON.parse(r.content)).toMatchObject({ image_id: 'img1' });
+    const r = await runPrintifyTool('printify_upload_design', { file_name: 'cat.svg', svg: SVG }, { config: { token: 'tok', shopId: 7 }, fetch });
+    expect(JSON.parse(r.content)).toMatchObject({ image_id: 'img1', rendered: 'PNG 4500x5400 from your SVG' });
     expect(seen[0].url).toBe('https://api.printify.com/v1/uploads/images.json');
     expect(seen[0].init.headers).toMatchObject({ authorization: 'Bearer tok', 'user-agent': 'TheBrain/1.0' });
-    expect(JSON.parse(seen[0].init.body)).toEqual({ file_name: 'cat.svg', contents: Buffer.from('<svg/>').toString('base64') });
+    const body = JSON.parse(seen[0].init.body);
+    expect(body.file_name).toBe('cat.png');
+    expect(body.contents.startsWith('iVBOR')).toBe(true); // a PNG
+    expect(Buffer.from(body.contents, 'base64').length).toBeGreaterThan(5000); // the lettering is in it, not a blank canvas
+  });
+
+  test('svgToPng keeps an SVG already at print size as it is, and refuses markup that is not an SVG', async () => {
+    const big = await svgToPng(SVG.replace('viewBox="0 0 450 540"', 'viewBox="0 0 4500 5400"'));
+    expect(big).toMatchObject({ width: 4500, height: 5400 });
+    const r = await runPrintifyTool('printify_upload_design', { svg: 'hello' }, { config: { token: 'tok', shopId: 7 }, fetch: async () => ok({}) });
+    expect(r.isError).toBe(true);
   });
 
   test('a product is created in the chosen shop with the price in cents, never published', async () => {

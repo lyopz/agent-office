@@ -8,6 +8,25 @@ import path from 'node:path';
 import { secretsDir } from './key-file.mjs';
 
 const API = 'https://api.printify.com/v1';
+
+/** The print width an SVG is rendered at when it is smaller: Printify's shirt print area is about 4500 px wide. */
+const PRINT_WIDTH = 4500;
+let resvg = null;
+/**
+ * Render an SVG to a PNG for Printify, which rejects SVGs with text in them (its upload service
+ * answers 400). Rendered here with the PC's own fonts, so lettering comes out as the agent wrote it.
+ * Returns null when the renderer is not installed (the SVG is then sent as it is).
+ */
+export async function svgToPng(svg, deps = {}) {
+  try {
+    resvg ??= deps.resvg ?? (await import('@resvg/resvg-js')).Resvg;
+  } catch { return null; }
+  const vb = String(svg).match(/viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)/i);
+  const w = Number(svg.match(/<svg[^>]*\swidth\s*=\s*["']?([\d.]+)/i)?.[1]) || Number(vb?.[1]) || 0;
+  const r = new resvg(String(svg), { fitTo: w >= PRINT_WIDTH ? { mode: 'original' } : { mode: 'width', value: PRINT_WIDTH }, font: { loadSystemFonts: true, defaultFontFamily: 'Arial' }, background: 'rgba(0,0,0,0)' });
+  const png = r.render();
+  return { png: Buffer.from(png.asPng()), width: png.width, height: png.height };
+}
 const FILE = () => path.join(secretsDir(), 'printify.json');
 
 export function printifyConfig() {
@@ -63,11 +82,15 @@ const tools = {
     return { variants: (v.variants || []).slice(0, 120).map((x) => ({ id: x.id, title: x.title, placeholders: (x.placeholders || []).map((p) => p.position) })) };
   },
   async printify_upload_design(input, deps) {
-    const name = String(input.file_name || 'design.svg').replace(/[^\w.-]/g, '_').slice(0, 80);
-    const body = input.svg ? { file_name: name.endsWith('.svg') ? name : `${name}.svg`, contents: Buffer.from(String(input.svg)).toString('base64') } : input.url ? { file_name: name, url: String(input.url) } : null;
-    if (!body) throw new Error('Give either svg (the full SVG markup of the design) or url (a public image link).');
+    const name = String(input.file_name || 'design.svg').replace(/[^\w.-]/g, '_').replace(/\.(svg|png)$/i, '').slice(0, 76) || 'design';
+    if (!input.svg && !input.url) throw new Error('Give either svg (the full SVG markup of the design) or url (a public image link).');
+    if (input.svg && !/<svg[\s>]/i.test(String(input.svg))) throw new Error('svg must be the full SVG markup, starting with <svg.');
+    // an SVG goes up as a PNG (Printify refuses SVG text); the SVG itself is kept in the owner's gallery by the runner
+    const png = input.svg ? await svgToPng(String(input.svg), deps).catch((e) => { throw new Error(`The SVG could not be rendered: ${e.message}`); }) : null;
+    const body = png ? { file_name: `${name}.png`, contents: png.png.toString('base64') }
+      : input.svg ? { file_name: `${name}.svg`, contents: Buffer.from(String(input.svg)).toString('base64') } : { file_name: name, url: String(input.url) };
     const img = await pf('/uploads/images.json', { deps, method: 'POST', body });
-    return { image_id: img.id, width: img.width, height: img.height, preview: img.preview_url };
+    return { image_id: img.id, width: img.width, height: img.height, preview: img.preview_url, ...(png ? { rendered: `PNG ${png.width}x${png.height} from your SVG` } : {}) };
   },
   async printify_create_product(input, deps) {
     const shop = await shopId(deps);
@@ -96,7 +119,7 @@ export const PRINTIFY_TOOLS = [
   { name: 'printify_find_product_type', description: 'Search the Printify catalog for a product type (blueprint), e.g. "mug 11oz", "unisex t-shirt", "poster".', input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
   { name: 'printify_providers', description: 'Print providers that make a blueprint, with their country.', input_schema: { type: 'object', properties: { blueprint_id: { type: 'integer' } }, required: ['blueprint_id'] } },
   { name: 'printify_variants', description: 'Sizes and colors (variant ids) a provider offers for a blueprint, and the print positions.', input_schema: { type: 'object', properties: { blueprint_id: { type: 'integer' }, print_provider_id: { type: 'integer' } }, required: ['blueprint_id', 'print_provider_id'] } },
-  { name: 'printify_upload_design', description: 'Upload a design to Printify. Either write the design yourself as complete SVG markup (typography, simple vector art; size it for print, e.g. 4500x5400 for shirts) in "svg", or give a public image "url". Returns image_id.', input_schema: { type: 'object', properties: { file_name: { type: 'string' }, svg: { type: 'string' }, url: { type: 'string' } } } },
+  { name: 'printify_upload_design', description: 'Upload a design to Printify. Either write the design yourself as complete SVG markup (typography with <text> is fine, simple vector art; size it for print, e.g. viewBox 0 0 4500 5400 for shirts, transparent background) in "svg", or give a public image "url". The runner renders SVG to a print-size PNG before uploading. Returns image_id.', input_schema: { type: 'object', properties: { file_name: { type: 'string' }, svg: { type: 'string' }, url: { type: 'string' } } } },
   { name: 'printify_create_product', description: "Create a product in the owner's Printify shop from an uploaded design. It is NOT published: it waits in Printify until the owner approves it. Use a researched price, an SEO title, a full description and 13 tags.", input_schema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, blueprint_id: { type: 'integer' }, print_provider_id: { type: 'integer' }, variant_ids: { type: 'array', items: { type: 'integer' } }, price_usd: { type: 'number' }, image_id: { type: 'string' }, position: { type: 'string', description: 'usually front' }, scale: { type: 'number' }, tags: { type: 'array', items: { type: 'string' }, maxItems: 13 } }, required: ['title', 'description', 'blueprint_id', 'print_provider_id', 'variant_ids', 'price_usd', 'image_id'] } },
   { name: 'printify_my_products', description: "The products already in the owner's Printify shop and whether each is published.", input_schema: { type: 'object', properties: { limit: { type: 'integer' } } } },
   { name: 'printify_request_publish', description: "Ask the owner to publish a finished product to their Etsy shop. You cannot publish; the owner approves each one in the app. Say why it should sell in one or two sentences.", input_schema: { type: 'object', properties: { product_id: { type: 'string' }, title: { type: 'string' }, why: { type: 'string' } }, required: ['product_id', 'title'] } },
