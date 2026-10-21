@@ -61,3 +61,17 @@ describe('built-in skills', () => {
     expect(builtinSkillsFor({ ...doc.agents.agent_design, identity: { ...doc.agents.agent_design.identity, title: 'Meme trend designer' } })).toEqual([MEME_DESIGN_ID, TREND_SCOUT_ID]);
   });
 });
+
+describe('the Ad strategy playbook', () => {
+  test('an ads agent gets Ad strategy; the playbook has the ten sections and the inexpensive-reach rules', async () => {
+    const { AD_ROLE, AD_STRATEGY_ID, AD_STRATEGY_SKILL, builtinSkillsForRole } = await import('../src/brain/builtinSkills');
+    expect(builtinSkillsForRole('Ads & Reach inexpensive-reach ads and marketing')).toEqual([AD_STRATEGY_ID]);
+    expect(builtinSkillsForRole('Pricing unit economics')).toEqual([]);
+    expect(AD_ROLE.test('Growth marketing')).toBe(true);
+    expect(AD_STRATEGY_SKILL.instructions.length).toBeGreaterThan(5000);
+    for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) expect(AD_STRATEGY_SKILL.instructions).toMatch(new RegExp(`\\n## ${n}\\. `));
+    expect(AD_STRATEGY_SKILL.instructions).toMatch(/Organic before paid/);
+    expect(AD_STRATEGY_SKILL.instructions).toMatch(/ad_save/);
+    expect(creatorBrain().skillBank.map((k) => k.id)).toContain(AD_STRATEGY_ID);
+  });
+});

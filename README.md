@@ -220,3 +220,23 @@ Agents check TikTok, Instagram and Pinterest trends from public sources only: th
 ## Built-in playbooks: Meme shirt design and Trend scouting
 
 Two bank skills written from the owner's own meme-design playbook (`src/brain/builtinSkills.ts`) are in every brain and attached by role: an agent whose name or title says design, mockup, graphic, artwork, illustration or Canva gets **Meme shirt design**; one that says trend, scout, meme, viral or social media gets **Trend scouting**. New agents get them on creation; older brains get them the next time the creator desk opens (`originOutdated`). A copy the owner edits in the bank (tag `owner-edited`) is never overwritten. The design playbook keeps the anti-slop directive, the word-poetry methods, the font lists (Windows fonts for SVG, Google Fonts for Canva), the owner's reference gallery in words, and this brain's rules: original only, trademark search, the "fih" style, five designs waiting per ask. The trend playbook keeps the scouting signals, the 35-point rubric, the meme-family method, the decline and revival rules, and the public-sources-only rule. Every brief also lists the designs the owner declined in the last 30 days so no agent remakes one.
+
+## More brains
+
+**Brains** (top bar) is the brain universe: every brain you started, floating together, the open one in the middle. **Start new brain** grows one with JARVIS as its core and every skill the other brains learned; brains that share skills are joined by nerves from their stems. Click a brain to open it; only the open brain's agents run, the others wait with their tasks. Each brain is a hologram in the colour you picked for it (Colour button in the brain toolbar).
+
+## Charts and Ads
+
+**Charts** shows sales per day, earned against spent per branch, top products, designs, ads and this month's budgets, from what the runner recorded (sales come from Printify's orders; **Pull latest sales** fetches them now). **Ads** lists the clothing you approved and listed; **Make ads** has the ads agent write ads for inexpensive reach (short-video hooks and shot lists, Pinterest pins, captions, small Etsy Ads tests), each waiting for your Yes or No. Nothing is posted or paid for by the app: an approved ad is saved in `origin-data/ads` and you post it yourself. **Create the ads agent** adds one under your store venture with the built-in Ad strategy playbook; its first task is to find the cheapest way to reach buyers.
+
+## Trend sources and connectors
+
+Always on, free: Google Trends, the Imgflip and Reddit meme databases (`trends_memes`: formats and jokes, never the images) and public-domain images. Optional, with your own accounts: `npm run set-instagram` (hashtag search through a Meta app with Instagram Public Content Access, 30 hashtags a week) and `npm run set-pinterest` (Pinterest trends and pin search for ideas). Tokens stay in `%APPDATA%\the-brain\`. TikTok has no API for small sellers, so TikTok trends come from fresh public roundups found with web search.
+
+## Design sources (memez)
+
+The scouts save images they find online into `origin-data/memez` with the source page and licence recorded: a public-domain or CC0 image can go on a shirt, anything else is reference only (the designers take the joke and remake it). Link your own folders in Approvals, Design style: your files are yours to print. Declining a design made from a saved image deletes that one image.
+
+## Your skill library (degen-skill)
+
+JARVIS hands out the skills in `lyopz/degen-skill` to the agents whose job they fit, design first (`skills_degen`: list, read, give), and the skill bank has **Hand out library skills by role**. The library is read from a `degen-skill` clone next to the app or in your home folder (or `DEGEN_SKILLS_DIR`), else from GitHub; it is never written to. A skill you edited in the bank is never overwritten.

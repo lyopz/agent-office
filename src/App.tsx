@@ -7,6 +7,9 @@ import { ProfileDrawer } from './ui/ProfileDrawer';
 import { Dashboard } from './ui/Dashboard';
 import { Settings } from './ui/Settings';
 import { Approvals } from './ui/Approvals';
+import { Charts } from './ui/Charts';
+import { Ads } from './ui/Ads';
+import BrainUniverse from './brain/BrainUniverse';
 import { ConfirmDialog } from './ui/primitives';
 import { useShortcuts } from './ui/actions';
 import { useApplyTheme } from './ui/ThemeEditor';
@@ -41,7 +44,10 @@ export function App() {
         </main>
       )}
       {page === 'dashboard' && <main className="page view-fade" key="dashboard"><Dashboard /></main>}
+      {page === 'universe' && <main className="brain-stage view-fade" key="universe"><BrainUniverse /></main>}
+      {page === 'charts' && <main className="page view-fade" key="charts"><Charts /></main>}
       {page === 'approvals' && <main className="page view-fade" key="approvals"><Approvals /></main>}
+      {page === 'ads' && <main className="page view-fade" key="ads"><Ads /></main>}
       {page === 'settings' && <main className="page view-fade" key="settings"><Settings /></main>}
       <div>
         <Console />

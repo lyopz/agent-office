@@ -70,12 +70,14 @@ export function ownSkillFileOps(doc: OfficeDoc, agentId: string, agentName: stri
 export const bankSkillId = (key: string) => `skill_${key}`;
 
 /** The ops that save a shared skill JARVIS wrote to the bank and give it to each of its agents. */
-export function bankSkillOps(doc: OfficeDoc, f: { skillKey?: string; skillName?: string; name: string; description: string; body: string; version?: number; agentIds?: string[] }): DocOp[] {
+export function bankSkillOps(doc: OfficeDoc, f: { skillKey?: string; skillName?: string; name: string; description: string; body: string; version?: number; agentIds?: string[]; tags?: string[] }): DocOp[] {
   const id = bankSkillId(f.skillKey || f.name.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
   const base = (f.skillName || f.name).trim();
   // bank names are unique: a different skill with the same name keeps it, and this one says who wrote it
   const name = (doc.skillBank.some((k) => k.id !== id && k.name.toLowerCase() === base.toLowerCase()) ? `${base} (JARVIS)` : base).slice(0, 80);
-  const ops: DocOp[] = [{ op: 'skillBank.upsert', skill: { id, name, description: f.description || base, instructions: f.body, tags: ['bank-skill', `skill-file-v${f.version ?? 1}`] } }];
+  // a skill the owner edited in the bank keeps their text; it is only attached to more agents
+  const have = doc.skillBank.find((k) => k.id === id);
+  const ops: DocOp[] = have?.tags.includes('owner-edited') ? [] : [{ op: 'skillBank.upsert', skill: { id, name, description: f.description || base, instructions: f.body, tags: [...new Set(['bank-skill', `skill-file-v${f.version ?? 1}`, ...(f.tags ?? [])])] } }];
   for (const agentId of f.agentIds ?? []) {
     const a = doc.agents[agentId];
     if (a) ops.push({ op: 'agent.setBankSkills', id: agentId, skillIds: [...new Set([...(a.bankSkills ?? []), id])] });

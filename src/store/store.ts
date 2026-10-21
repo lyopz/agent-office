@@ -13,6 +13,8 @@ import { ORIGIN_ID } from '../brain/opportunity';
 import { createRepository, type LoadResult, type OfficeRepository, type Preferences, type SaveResult } from '../persistence/repository';
 import { exportOffice, parseOffice } from '../model/schema';
 import { withBrainTheme } from '../model/themes';
+import { librarySkillBanks, listBrains, putBrain, removeBrain, takeBrain, type BrainSummary } from '../persistence/brains';
+import { sharedSkillOps } from '../brain/brainUniverse';
 
 export type Selection = { kind: 'none' } | { kind: 'agent'; id: string };
 
@@ -43,7 +45,7 @@ interface State {
   selection: Selection;
   profileAgentId: string | null;
   profileTab: string;
-  page: 'office' | 'dashboard' | 'approvals' | 'settings';
+  page: 'office' | 'universe' | 'dashboard' | 'charts' | 'approvals' | 'ads' | 'settings';
 
   commit(ops: DocOp[], label: string, opts?: { silent?: boolean }): CommitResult;
   dryRun(ops: DocOp[]): CommitResult;
@@ -70,6 +72,14 @@ interface State {
   exportText(): string;
   /** Start a fresh brain with only JARVIS. */
   newBrain(): void;
+  /** The other brains the owner started, kept in the brain library while this one is open. */
+  brains: BrainSummary[];
+  refreshBrains(): void;
+  /** Keep the open brain in the library and start a new one that already knows the other brains' skills. */
+  startNewBrain(name?: string): boolean;
+  /** Keep the open brain in the library and open another one from it. */
+  switchBrain(id: string): boolean;
+  deleteBrain(id: string): boolean;
 }
 
 export const repo: OfficeRepository = createRepository();
@@ -338,6 +348,42 @@ export const useStore = create<State>((set, get) => {
       const rt = emptyRuntime(); syncRuntime(doc, rt);
       set({ runtime: rt });
       setDoc(doc, { past: [...get().past, { doc: prev, label: 'New brain' }].slice(-100), future: [], selection: { kind: 'none' }, page: 'office' });
+    },
+    brains: (() => { try { return listBrains(); } catch { return []; } })(),
+    refreshBrains() { try { set({ brains: listBrains() }); } catch { /* storage unavailable */ } },
+    startNewBrain(name) {
+      const { doc: prev, runtime } = get();
+      try { putBrain(prev, { tasks: runtime.tasks }); } catch (e) { get().notify((e as Error).message, 'error'); return false; }
+      // the sample brain is frozen, so the new brain is a copy with its own id and name
+      const doc = { ...creatorBrain(), id: `brain_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name: (name ?? '').trim() || `Brain ${listBrains().length + 1}` };
+      // a new brain grows from what the other brains learned
+      const grown = applyOps(doc, sharedSkillOps(doc, [{ brainId: prev.id, brainName: prev.name, skills: prev.skillBank ?? [] }, ...librarySkillBanks()]));
+      const rt = emptyRuntime(); syncRuntime(grown.doc, rt);
+      log(rt, { kind: 'system', agentId: null, simulated: false, message: `Started the brain “${doc.name}” with JARVIS and ${grown.doc.skillBank.length} skills from the other brains.` });
+      set({ runtime: rt });
+      setDoc(grown.doc, { past: [...get().past, { doc: prev, label: 'Start new brain' }].slice(-100), future: [], selection: { kind: 'none' }, page: 'universe', brains: listBrains() });
+      get().save();
+      return true;
+    },
+    switchBrain(id) {
+      const { doc: prev, runtime } = get();
+      if (id === prev.id) return true;
+      let target;
+      try { target = takeBrain(id); } catch (e) { get().notify((e as Error).message, 'error'); return false; }
+      if (!target) { get().notify('That brain is not in the library any more.', 'warn'); return false; }
+      try { putBrain(prev, { tasks: runtime.tasks }); } catch (e) { try { putBrain(target.doc, target.runtime); } catch { /* keep going */ } get().notify((e as Error).message, 'error'); return false; }
+      // what the other brains learned since this one was last open
+      const grown = applyOps(target.doc, sharedSkillOps(target.doc, [{ brainId: prev.id, brainName: prev.name, skills: prev.skillBank ?? [] }, ...librarySkillBanks()]));
+      get().loadDoc(grown.doc, `Open brain “${target.name}”`, target.runtime ?? {});
+      set({ brains: listBrains() });
+      get().save();
+      return true;
+    },
+    deleteBrain(id) {
+      let ok = false;
+      try { ok = removeBrain(id); } catch (e) { get().notify((e as Error).message, 'error'); return false; }
+      set({ brains: listBrains() });
+      return ok;
     },
   };
 });

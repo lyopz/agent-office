@@ -224,8 +224,16 @@ test("the owner's tasks go before SKILL.md writing", () => {
 describe('origin runner: growing the brain on its own', () => {
   const agent = (name: string) => ({ parentId: 'agent_etsy', name, specialty: name, purpose: 'help the store', skill: 'Research', bankSkillIds: [], skillFile: { name: `${name} playbook`, description: 'd', body: 'x'.repeat(300) } });
 
-  test('with auto-create on (the default) ORIGIN creates up to 3 agents a run for a venture, each with its SKILL.md', async () => {
-    write(base);
+  test('an older state that let JARVIS create agents freely now needs the owner for every agent', () => {
+    write({ ...base, autoAgents: true });
+    const s = runner.loadState(file);
+    expect(s.autoAgents).toBe(false);
+    expect(s.agentPolicy).toBe(2);
+    expect(runner.loadState(file).autoAgents).toBe(false);
+  });
+
+  test('with auto-create turned on by the owner, ORIGIN creates up to 3 agents a run for a venture, each with its SKILL.md', async () => {
+    write({ ...base, autoAgents: true, agentPolicy: 2 });
     let brief = '';
     const fetch = async (_u: string, init: any) => { brief = JSON.parse(init.body).messages[0].content; return reply(result({ memory: 'm', proposedAgents: ['A', 'B', 'C', 'D', 'a'].map(agent), summary: 's' }), { input_tokens: 100, output_tokens: 10 }); };
     await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
@@ -433,6 +441,25 @@ describe('origin runner: trends and free-to-use images', () => {
     const fetch = async () => { n++; return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'd1', name: 'design_save', input: { svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>', title: 'Rose tee', assets: [{ title: 'Rosa gallica', page: 'https://commons/Rose', licence: 'Public domain' }] } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
     await runner.runOnce('manual', { fetch, file, key: 'test', etsy: { tools: [{ name: 'design_save', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }) } } as any);
     expect(read().designs[0]).toMatchObject({ title: 'Rose tee', assets: [{ title: 'Rosa gallica', page: 'https://commons/Rose', licence: 'Public domain' }] });
+  });
+});
+
+describe('origin runner: more than one brain', () => {
+  test("switching brains parks the other brain's tasks instead of stopping them, and only the open brain's tasks run", () => {
+    const s: any = { ...base, brainId: 'b1', brains: { b1: { name: 'Store brain', agents: [{ id: 'a1', name: 'Designer' }] } }, agents: [{ id: 'a1', name: 'Designer' }],
+      tasks: [{ id: 't1', title: 'Store work', detail: '', status: 'approved', by: 'owner', agentId: 'a1', brainId: 'b1', createdAt: '' }] };
+    // the owner opens a second brain with its own agent
+    s.brainId = 'b2'; s.brains.b2 = { name: 'Music brain', agents: [{ id: 'm1', name: 'Mixer' }] }; s.agents = [{ id: 'm1', name: 'Mixer' }];
+    expect(runner.pruneGone(s, 'now')).toBe(0);
+    expect(s.tasks[0].status).toBe('approved');
+    expect(runner.nextTask(s)).toBeNull();
+    s.tasks.push({ id: 't2', title: 'Music work', detail: '', status: 'approved', by: 'owner', agentId: 'm1', brainId: 'b2', createdAt: '' });
+    expect(runner.nextTask(s)).toMatchObject({ id: 't2' });
+    expect(runner.pickTasks(s).map((t: any) => t.id)).toEqual(['t2']);
+    // back in the first brain, its task is ready again; a legacy task without a brain runs anywhere
+    s.brainId = 'b1'; s.agents = [{ id: 'a1', name: 'Designer' }];
+    expect(runner.nextTask(s)).toMatchObject({ id: 't1' });
+    expect(runner.inBrain(s, { })).toBe(true);
   });
 });
 
@@ -793,5 +820,53 @@ describe('origin runner: the owner\'s Yes and No reach Printify', () => {
     await runner.discardProduct(s, r, { deleteProduct: async (shop: any, id: string) => { gone.push(`${shop}:${id}`); } });
     expect(gone).toEqual(['7:prod2']);
     expect(r).toMatchObject({ status: 'deleted', printify: 'product deleted from Printify' });
+  });
+});
+
+describe('ads for approved products', () => {
+  const withProduct = () => ({ ...base, agents: [{ id: 'agent_ads', name: 'Ads & Reach', title: 'ads' }], designs: [{ id: 'design_1', kind: 'png', title: 'fih', status: 'published', productId: 'p1', agentId: 'agent_d', agentName: 'Design', at: '2026-10-21T00:00:00Z' }], publishRequests: [{ id: 'pub_1', productId: 'p1', designId: 'design_1', title: 'fih shirt', status: 'published', priceUsd: 24, agentId: 'agent_d', agentName: 'Design', at: '2026-10-21T00:00:00Z' }], tasks: [{ id: 'task_ads', title: 'Make ads for "fih shirt"', detail: '', status: 'approved', by: 'owner', agentId: 'agent_ads', createdAt: '2026-10-21T00:00:00Z' }], skillFiles: [], agentProposals: [], progressLog: [] });
+
+  test('an ad is saved for an approved product only, five per ask, and the owner decides', () => {
+    const s: any = withProduct();
+    const task = s.tasks[0];
+    expect(runner.adTask(task)).toBe(true);
+    expect(runner.adTask({ title: 'Research Etsy prices', detail: '' })).toBe(false);
+    expect(runner.adsBrief(s, task)).toMatch(/APPROVED PRODUCTS\): "fih shirt" \(product_id p1, design design_1, \$24\)/);
+    expect(runner.saveAd(s, task, { product_id: 'nope', channel: 'tiktok', headline: 'h', primary_text: 't' }, null).isError).toBe(true);
+    for (let i = 0; i < 5; i++) expect(runner.saveAd(s, task, { product_id: 'p1', channel: 'tiktok', format: 'short_video', headline: `hook ${i}`, primary_text: 'text', hashtags: ['#fih', 'fishshirt'], cta: 'link in bio', script: '1. shirt\n2. fish', cost_note: '$0 organic' }, null).isError).toBe(false);
+    const sixth = runner.saveAd(s, task, { product_id: 'p1', channel: 'pinterest', headline: 'h', primary_text: 't' }, null);
+    expect(sixth.isError).toBe(true);
+    expect(sixth.content).toMatch(/waitingOnOwner/);
+    expect(s.ads).toHaveLength(5);
+    expect(s.ads[0]).toMatchObject({ channel: 'tiktok', hashtags: ['fih', 'fishshirt'], designId: 'design_1', agentName: 'Ads & Reach', status: 'waiting' });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ads-'));
+    const yes = runner.decideAd(s, s.ads[0].id, 'approve', { dir });
+    expect(yes.ok).toBe(true);
+    expect(s.ads[0].status).toBe('approved');
+    expect(fs.readFileSync(path.join(dir, `${s.ads[0].id}.md`), 'utf8')).toMatch(/## Hook\nhook 0\n/);
+    expect(runner.decideAd(s, s.ads[1].id, 'reject', { dir }).ok).toBe(true);
+    expect(s.ads[1].status).toBe('rejected');
+    expect(runner.decideAd(s, 'ad_missing', 'reject', { dir }).status).toBe(404);
+    expect(runner.adMarkdown(s.ads[0])).toMatch(/Channel: tiktok · short_video/);
+  });
+});
+
+describe('the skill library handed out by role', () => {
+  test('every agent gets the library skills its role fits, once; designers first', async () => {
+    process.env.DEGEN_SKILLS_DIR = '/home/claude/degen-skill';
+    if (!fs.existsSync('/home/claude/degen-skill/skills')) return;
+    const s: any = { ...base, agents: [{ id: 'agent_d', name: 'Mockup & Design', title: 'shirt graphics' }, { id: 'agent_p', name: 'Pricing', title: 'unit economics' }, { id: 'agent_t', name: 'Trend Scout', title: 'rising meme phrases' }], skillFiles: [], tasks: [] };
+    const r = await runner.distributeDegen(s);
+    expect(r.errors).toEqual([]);
+    expect(r.given.map((g) => g.skill)).toEqual(['design', 'brand', 'banner-design', 'design-system', 'idea-refine', 'llm-council']);
+    expect(r.given[0].agents).toEqual(['Mockup & Design']);
+    const file = s.skillFiles.find((f: any) => f.skillKey === 'degen_design');
+    expect(file).toMatchObject({ bank: true, from: 'degen', skillName: 'Design (degen)', agentIds: ['agent_d'], status: 'new' });
+    expect(file.body.length).toBeGreaterThan(1000);
+    expect(s.degenGiven.degen_design).toEqual(['agent_d']);
+    // a second pass gives nothing new
+    const again = await runner.distributeDegen(s);
+    expect(again.given).toEqual([]);
+    expect(s.skillFiles.filter((f: any) => f.skillKey === 'degen_design')).toHaveLength(1);
   });
 });

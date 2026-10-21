@@ -5,10 +5,10 @@
 // owner tops up: the monthly cap, funds added to it, the image and Canva limits, and per-branch
 // budgets. Everything comes from JARVIS's runner (useOrigin); nothing is simulated.
 import { useMemo, useState } from 'react';
-import { BadgeCheck, Check, CircleDollarSign, Images, Palette, Plus, Repeat, X } from 'lucide-react';
+import { BadgeCheck, Check, CircleDollarSign, FolderOpen, Images, Palette, Plus, Repeat, Trash2, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import { useOrigin } from '../brain/useOrigin';
-import { designDecision, designUrl, mockupUrl, publishDecision, runnerStatus, setBudgets, setDesignStyle, type DesignEntry, type PublishRequest, type RunnerStatus } from '../brain/originLink';
+import { designDecision, designUrl, mockupUrl, publishDecision, runnerStatus, setBudgets, setDesignStyle, sourceAction, type DesignEntry, type PublishRequest, type RunnerStatus } from '../brain/originLink';
 import { ORIGIN_ID } from '../brain/opportunity';
 import { usd } from './Dashboard';
 
@@ -74,7 +74,7 @@ export function Approvals() {
               <RunnerImage load={designUrl} id={d.id} alt={d.title} />
               <figcaption>
                 <b>{d.title}</b>
-                <span>{d.agentName} · {when(d.at)}{d.source === 'canva' ? ' · Canva' : d.kind === 'svg' ? ' · SVG' : ' · image'}</span>
+                <span>{d.agentName} · {when(d.at)}{d.source === 'canva' ? ' · Canva' : d.source === 'caption' ? ' · captioned image' : d.kind === 'svg' ? ' · SVG' : ' · image'}</span>
                 {d.assets?.length ? <span className="small muted">Uses {d.assets.map((x, i) => <span key={i}>{i ? ', ' : ''}{x.page ? <a href={x.page} target="_blank" rel="noreferrer">{x.title || 'an image'}</a> : (x.title || 'an image')}{x.licence ? ` (${x.licence})` : ''}</span>)}</span> : null}
                 <div className="approval-actions">
                   <button className="btn sm danger" disabled={busy === d.id} onClick={() => void decide(d, 'reject')}><X size={13} /> No</button>
@@ -140,7 +140,43 @@ function DesignStyle({ st, onDone }: { st: RunnerStatus; onDone: () => void }) {
       <label className="small" htmlFor="design-style-note">Your own notes, in your words <small>{d.at ? `last changed ${when(d.at)}` : 'none yet'}</small></label>
       <textarea id="design-style-note" rows={3} value={value} maxLength={2000} placeholder='e.g. "more animals, fewer food jokes", "navy and cream only", "add a tiny crown on everything"' onChange={(e) => setNote(e.target.value)} style={{ width: '100%' }} />
       <div className="approval-actions"><button className="btn sm primary" disabled={busy || note == null || note === d.note} onClick={() => void save()}><Check size={13} /> Save</button></div>
+      <DesignSources st={st} onDone={onDone} />
     </section>
+  );
+}
+
+/** The folders on the owner's PC the designers may draw from: memez (what the scouts save) and the owner's own linked folders. */
+function DesignSources({ st, onDone }: { st: RunnerStatus; onDone: () => void }) {
+  const [path, setPath] = useState('');
+  const [label, setLabel] = useState('');
+  const [busy, setBusy] = useState(false);
+  const notify = (t: string, level?: 'warn') => useStore.getState().notify(t, level);
+  const act = async (body: Parameters<typeof sourceAction>[0], done: string) => {
+    setBusy(true);
+    const r = await sourceAction(body);
+    setBusy(false);
+    notify(!r ? 'The runner did not answer.' : r.ok ? done : (r.error ?? 'That did not work.'), r?.ok ? undefined : 'warn');
+    if (r?.ok) { setPath(''); setLabel(''); onDone(); }
+  };
+  const sources = st.sources ?? [];
+  const usable = (u: string) => (u === 'print' ? 'can go on a shirt (public domain)' : u === 'owner' ? 'your own file: yours to print' : 'reference only: the joke, not the picture');
+  return (
+    <div className="design-sources">
+      <h4><FolderOpen size={13} /> Design sources <span className="count">folders on your PC the designers may use</span></h4>
+      <p className="small muted">The scouts save images they find online into <b>memez</b> with the source and licence recorded: a public-domain or CC0 image can go on a shirt; anything else is reference only (the designers take the joke and remake it). Link your own folders too: your files are yours to print. Declining a design made from a saved image deletes that one image.</p>
+      <ul className="creator-request-log">
+        {sources.map((f) => <li key={f.id}>
+          <b>{f.label}</b> <span className="small muted">{f.path}{!f.exists ? ' (not there yet)' : ''} · {f.files} image{f.files === 1 ? '' : 's'}{f.files ? `: ${f.printable} printable, ${f.reference} reference` : ''}</span>
+          {!f.builtin && <> <button className="link-btn" disabled={busy} onClick={() => void act({ action: 'remove', id: f.id }, `Unlinked ${f.label}; the files stay on your PC.`)}>unlink</button></>}
+          {f.recent.length > 0 && <ul className="small">{f.recent.map((x) => <li key={x.ref}>{x.title ?? x.name} <span className="muted">· {usable(x.usable)}{x.savedBy ? ` · saved by ${x.savedBy}` : ''}</span> {x.savedBy && <button className="link-btn" disabled={busy} onClick={() => void act({ action: 'delete', file: x.ref }, `Deleted ${x.name}.`)}><Trash2 size={11} /> delete</button>}</li>)}</ul>}
+        </li>)}
+      </ul>
+      <form className="row wrap" onSubmit={(e) => { e.preventDefault(); if (path.trim()) void act({ action: 'add', path: path.trim(), label: label.trim() || undefined }, `Linked ${label.trim() || path.trim()}. The designers see its files from their next run.`); }}>
+        <input value={path} onChange={(e) => setPath(e.target.value)} placeholder="Full path of a folder on this PC, e.g. C:\Users\edpfl\Pictures\shirt ideas" aria-label="Folder path" style={{ flex: 1, minWidth: 220 }} />
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Name (optional)" aria-label="Folder name" maxLength={60} style={{ width: 140 }} />
+        <button className="btn sm" type="submit" disabled={busy || !path.trim()}><Plus size={13} /> Link folder</button>
+      </form>
+    </div>
   );
 }
 

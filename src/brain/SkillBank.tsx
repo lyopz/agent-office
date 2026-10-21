@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { degenAction } from './originLink';
 import { Check, Download, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { BankSkill } from '../model/types';
@@ -85,6 +86,9 @@ export default function SkillBank({ onNotice }: { onNotice: (text: string) => vo
   return (
     <div className="creator-body">
       <p className="creator-privacy">Every agent JARVIS or your ideas create also gets its own SKILL.md: JARVIS writes a detailed playbook for that agent's job in its next runs (one at a time), and it lands here, given to that agent. Add the skills your agents can use. When {doc.agents[ORIGIN_ID]?.identity.name ?? 'JARVIS'} or a venture creates an agent, it picks the skills that agent needs from this bank, so a research agent gets research skills and an Etsy store venture can build its own helpers. Only JARVIS runs live for now; every skill it has goes into its next run.</p>
+
+      <span className="creator-kicker">YOUR SKILL LIBRARY (degen-skill)</span>
+      <p className="creator-privacy">Your own library of ready-made skills (lyopz/degen-skill) can be handed to the agents whose job each one fits, design skills first: designers get design, brand, banner design and design systems; research agents get idea refining and the council; ads agents get brand and banner design. JARVIS can do it in its runs (skills_degen) and you can do it now. A skill you edited here is never overwritten. <button className="link-btn" onClick={() => void (async () => { const r = await degenAction('distribute'); onNotice(!r ? 'The runner did not answer.' : !r.ok ? (r.error ?? 'The library could not be read.') : r.given?.length ? `Given: ${r.given.map((g) => `${g.skill} → ${g.agents.join(', ')}`).join('; ')}. They land in the bank in a moment.` : 'Every agent already has the library skills that fit its role.'); })()}>Hand out library skills by role</button></p>
 
       <span className="creator-kicker">IN THE BANK ({doc.skillBank.length})</span>
       {doc.skillBank.length === 0 && <p className="creator-privacy">Nothing yet.</p>}

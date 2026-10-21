@@ -19,12 +19,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readKey } from './key-file.mjs';
 import { ETSY_TOOLS, authUrl, etsyPublic, finishAuth, runEtsyTool } from './etsy.mjs';
-import { PRINTIFY_TOOLS, archiveUpload, deleteProduct, printifyConfig, printifyPublic, listOrders, productPreview, publishProduct, runPrintifyTool, uploadImage } from './printify.mjs';
+import { PRINTIFY_TOOLS, archiveUpload, deleteProduct, printifyConfig, printifyPublic, listOrders, productPreview, publishProduct, runPrintifyTool, svgToPng, uploadImage } from './printify.mjs';
+import { CAPTION_TOOL, captionImage } from './caption.mjs';
 import { moneyByAgent, salesFromOrders } from './money.mjs';
 import { IMAGE_TOOL, generateImage, imageWorstUsd, openaiPublic } from './openai-images.mjs';
 import { CANVA_AI, callCanva, canvaFiles, canvaName, canvaPublic, canvaText, canvaTools, connectInProgress, forgetCanva, startConnect } from './canva.mjs';
 import { voicePublic, voiceRoute } from './openai-voice.mjs';
-import { COPYRIGHT_RULES, TREND_SOURCES, TREND_TOOLS, runTrendTool, trendTask } from './trends.mjs';
+import { COPYRIGHT_RULES, runTrendTool, trendSources, trendTask, trendTools, trendsPublic } from './trends.mjs';
+import { DEGEN_TOOL, degenBankSkill, degenCatalog, degenSkill, degenSkillsForRole } from './degen-skills.mjs';
+import { SOURCE_TOOLS, addSourceFolder, deleteSourceFile, readSourceFile, removeSourceFolder, runSourceTool, sourceFolders, sourcesBrief, sourcesPublic } from './sources.mjs';
 import { DESIGN_STYLE, cleanStyleNote, styleGuide } from './design-style.mjs';
 
 const PORT = Number(process.env.ORIGIN_PORT || 8788);
@@ -38,6 +41,7 @@ const LISTING_FEE_USD = 0.2;
 const BUDGET_LOG_KEEP = 100;
 /** Designs waiting for the owner's Yes or No at once, per ask: the limit on images an ask may make. */
 const DESIGNS_PER_ASK = 5;
+const ADS_PER_ASK = 5, ADS_KEEP = 300;
 const EVERY_MIN = Number(process.env.ORIGIN_EVERY_MIN || 30);
 /** Agents working at once in one run (each on its own task), and work rounds per task in one run. */
 const PARALLEL = Number(process.env.ORIGIN_PARALLEL || 3);
@@ -94,16 +98,24 @@ export function costOf(model, usage) {
 
 const month = () => new Date().toISOString().slice(0, 7);
 function emptyState() {
-  return { instructions: '', memory: '', nextAction: '', tasks: [], agentProposals: [], skillFiles: [], progressLog: [], autoAgents: true, autoTasks: true, ledger: { month: month(), spentUsd: 0, unknownCostRuns: 0, byAgent: {} }, runs: [], lastScheduledAt: null };
+  return { instructions: '', memory: '', nextAction: '', tasks: [], agentProposals: [], skillFiles: [], progressLog: [], autoAgents: false, agentPolicy: 2, autoTasks: true, ledger: { month: month(), spentUsd: 0, unknownCostRuns: 0, byAgent: {} }, runs: [], lastScheduledAt: null };
 }
 export function loadState(file = FILE) {
   let s;
-  try { s = { ...emptyState(), ...JSON.parse(fs.readFileSync(file, 'utf8')) }; } catch { return emptyState(); }
+  let raw;
+  try { raw = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return emptyState(); }
+  // since policy 2 (October 2026) agents are made only with the owner's approval; the owner can turn auto-create back on in the app
+  if (raw.agentPolicy !== 2) { raw.autoAgents = false; raw.agentPolicy = 2; }
+  s = { ...emptyState(), ...raw };
   // an early app version sent SKILL.md requests as plain tasks; the app asks again in the proper form
   for (const t of s.tasks) if (!t.kind && t.status === 'approved' && /^Write .+'s SKILL\.md( in full detail)?$/.test(t.title)) t.status = 'done';
   return s;
 }
+/** A task belongs to the brain that was open when it was made; only the open brain's tasks run. */
+export const inBrain = (s, t) => !t.brainId || !s.brainId || t.brainId === s.brainId;
 function saveState(s, file = FILE) {
+  // a task made while a brain is open belongs to that brain (older tasks join the brain open now)
+  if (s.brainId) for (const t of s.tasks) if (!t.brainId) t.brainId = s.brainId;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
@@ -252,7 +264,7 @@ const cleanSkillFile = (f) => (f && typeof f === 'object' && String(f.body || ''
 export function nextTask(s) {
   // a SKILL.md request for an agent that isn't in the open brain waits until that brain is open again
   const known = (t) => t.kind !== 'skill-file' || !(s.agents || []).length || s.agents.some((a) => a.id === t.agentId);
-  const ready = (t) => t.status === 'approved' && !(t.waitingOnOwner && pendingCount(s)) && known(t);
+  const ready = (t) => t.status === 'approved' && !(t.waitingOnOwner && pendingCount(s)) && known(t) && inBrain(s, t);
   // the owner's own tasks come before the ones JARVIS set itself
   return s.tasks.find((t) => ready(t) && !isSkillTask(t) && t.by !== 'origin') || s.tasks.find((t) => ready(t) && !isSkillTask(t)) || s.tasks.find((t) => ready(t) && t.kind === 'skill-file') || null;
 }
@@ -270,7 +282,8 @@ function workAs(s, task) {
 
 /** Close open work for agents that are no longer in the brain the app synced, so it never spends the cap on them. */
 export function pruneGone(s, at) {
-  const here = new Set([AGENT_ID, ...(s.agents || []).map((a) => a.id)]);
+  // an agent of another brain the owner started is not gone, only not open right now
+  const here = new Set([AGENT_ID, ...(s.agents || []).map((a) => a.id), ...Object.values(s.brains || {}).flatMap((b) => (b.agents || []).map((a) => a.id))]);
   const gone = 'agent no longer in the brain';
   let n = 0;
   for (const t of s.tasks) {
@@ -301,7 +314,7 @@ function declinedLately(s) {
 }
 const designDir = () => path.join(DIR, 'designs');
 /** Save one design (SVG text or PNG base64) and record it for the gallery. */
-function saveDesign(s, task, { file_name, svg, png, ext, title, imageId, source, assets }, w) {
+function saveDesign(s, task, { file_name, svg, png, ext, title, imageId, source, assets, sourceFile }, w) {
   const credits = Array.isArray(assets) ? assets.filter((a) => a && typeof a === 'object').slice(0, 10).map((a) => ({ title: String(a.title || '').slice(0, 120), page: String(a.page || a.url || '').slice(0, 300), licence: String(a.licence || a.license || '').slice(0, 80) })) : [];
   const kind = png ? (ext === 'jpg' ? 'jpg' : 'png') : 'svg';
   // the owner's approval list for this ask is full: the agent stops and waits for their Yes or No
@@ -314,9 +327,130 @@ function saveDesign(s, task, { file_name, svg, png, ext, title, imageId, source,
   fs.writeFileSync(path.join(designDir(), `${id}.${kind}`), data);
   const agent = task ? taskAgent(s, task) : null;
   const name = String(file_name || title || 'design').replace(/[^\w .-]/g, '_').slice(0, 80);
-  s.designs = [...(s.designs || []), { id, kind, fileName: name.endsWith(`.${kind}`) ? name : `${name}.${kind}`, title: String(title || name).slice(0, 140), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'JARVIS', taskId: task?.id ?? null, taskTitle: task?.title ?? null, imageId: imageId ?? null, ...(credits.length ? { assets: credits } : {}), ...(source ? { source } : {}), status: 'waiting', at: new Date().toISOString() }].slice(-DESIGNS_KEEP);
+  s.designs = [...(s.designs || []), { id, kind, fileName: name.endsWith(`.${kind}`) ? name : `${name}.${kind}`, title: String(title || name).slice(0, 140), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'JARVIS', taskId: task?.id ?? null, taskTitle: task?.title ?? null, imageId: imageId ?? null, ...(credits.length ? { assets: credits } : {}), ...(source ? { source } : {}), ...(sourceFile ? { sourceFile } : {}), status: 'waiting', at: new Date().toISOString() }].slice(-DESIGNS_KEEP);
   if (w) w.designs = (w.designs || 0) + 1;
   return { content: JSON.stringify({ saved: true, design_id: id, waiting_for_owner: waitingDesigns(s, task?.id), of: task ? designLimit(task) : null, note: 'It is in the owner\'s Approvals now. Do not make a Printify product from it: when the owner presses Yes, you get a task to make and publish it.' }), isError: false, id };
+}
+
+/** A found or generated image with the caption laid over it, saved to the owner's Approvals like any design. */
+async function captionDesign(s, task, input, w, tools) {
+  if (task && !task.designId && waitingDesigns(s, task.id) >= designLimit(task)) return { content: `The owner already has ${designLimit(task)} designs from this task waiting for their Yes or No. Make no more now: set "waitingOnOwner": true and finish this run.`, isError: true };
+  try {
+    const readDesign = (id) => { const d = (s.designs || []).find((x) => x.id === id); if (!d) return null; try { return { buf: fs.readFileSync(path.join(designDir(), `${d.id}.${d.kind}`)), kind: d.kind }; } catch { return null; } };
+    const r = await captionImage(input, { fetch: tools?.webFetch ?? globalThis.fetch, svgToPng: (svg) => svgToPng(svg), readDesign, readSource: (ref) => readSourceFile(sourceFolders(s, DIR), ref) });
+    const from = (s.designs || []).find((x) => x.id === input.design_id);
+    const assets = Array.isArray(input.assets) && input.assets.length ? input.assets : from?.assets ?? (r.sourceMeta ? [{ title: r.sourceMeta.title, page: r.sourceMeta.page, licence: r.sourceMeta.licence }] : undefined);
+    const title = String(input.title || r.caption || 'captioned image').slice(0, 140);
+    return saveDesign(s, task, { file_name: input.file_name || `${title.replace(/[^\w .-]/g, '_').slice(0, 60)}.png`, png: r.png.toString('base64'), ext: 'png', title, assets, source: 'caption', sourceFile: r.sourceFile }, w);
+  } catch (e) { return { content: `design_caption_image: ${e.message}`, isError: true }; }
+}
+
+// ---------- ads: for products the owner approved and listed, approved again in the Ads tab ----------
+const AD_TOOL = {
+  name: 'ad_save',
+  description: "Save one ad for a product the owner already approved and listed (APPROVED PRODUCTS in your brief). The owner reads it in the Ads tab, approves or declines it, and posts it themselves; you never post, pay or create accounts. Make each ad for one channel with the copy ready to paste: a hook, the text, hashtags, the call to action, and for a video the shot list with on-screen text. Say what it costs (organic reach is $0).",
+  input_schema: { type: 'object', properties: {
+    product_id: { type: 'string' },
+    title: { type: 'string', description: 'the ad in a few words, e.g. "fih shirt: TikTok try-on hook"' },
+    channel: { type: 'string', enum: ['tiktok', 'instagram_reels', 'instagram_post', 'pinterest', 'etsy_ads', 'facebook_ads', 'other'] },
+    format: { type: 'string', enum: ['short_video', 'image_post', 'carousel', 'pin', 'search_ad'] },
+    headline: { type: 'string', description: 'the hook or first line, under 12 words' },
+    primary_text: { type: 'string', description: 'the caption or ad text, ready to paste' },
+    hashtags: { type: 'array', items: { type: 'string' } },
+    cta: { type: 'string', description: 'the call to action, e.g. "link in bio"' },
+    script: { type: 'string', description: 'for a video: 3 to 6 shots, each with what is on screen and the on-screen text' },
+    design_id: { type: 'string', description: 'the design to show, from the product' },
+    cost_note: { type: 'string', description: 'expected cost and why, e.g. "$0 organic" or "Etsy Ads $1 a day for 7 days"' },
+    why: { type: 'string', description: 'why this reaches buyers cheaply, with the evidence' },
+  }, required: ['product_id', 'channel', 'headline', 'primary_text'] },
+};
+const approvedProducts = (s) => (s.publishRequests || []).filter((r) => r.status === 'published');
+const waitingAds = (s, taskId = null) => (s.ads || []).filter((a) => a.status === 'waiting' && (!taskId || a.taskId === taskId)).length;
+export function saveAd(s, task, input, w) {
+  const productId = String(input.product_id || '').slice(0, 64);
+  const product = approvedProducts(s).find((r) => r.productId === productId);
+  if (!product) return { content: 'That product is not one the owner approved and listed; use a product_id from APPROVED PRODUCTS.', isError: true };
+  if (task && waitingAds(s, task.id) >= ADS_PER_ASK) return { content: `The owner already has ${ADS_PER_ASK} ads from this task waiting in the Ads tab. Make no more now: set "waitingOnOwner": true and finish this run.`, isError: true };
+  const agent = task ? taskAgent(s, task) : null;
+  const design = (s.designs || []).find((d) => d.id === (input.design_id || product.designId));
+  const str = (v, n) => String(v || '').trim().slice(0, n);
+  const channels = AD_TOOL.input_schema.properties.channel.enum;
+  const ad = { id: newId('ad'), productId, productTitle: product.title, designId: design?.id ?? product.designId ?? null, image: product.image ?? null, title: str(input.title || input.headline, 120), channel: channels.includes(input.channel) ? input.channel : 'other', format: str(input.format, 20) || null, headline: str(input.headline, 200), primaryText: str(input.primary_text, 2000), hashtags: (Array.isArray(input.hashtags) ? input.hashtags : []).map((h) => str(h, 40).replace(/^#/, '')).filter(Boolean).slice(0, 30), cta: str(input.cta, 120), script: str(input.script, 3000), costNote: str(input.cost_note, 300), why: str(input.why, 600), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'JARVIS', taskId: task?.id ?? null, taskTitle: task?.title ?? null, status: 'waiting', at: new Date().toISOString() };
+  s.ads = [...(s.ads || []), ad].slice(-ADS_KEEP);
+  if (w) w.ads = (w.ads || 0) + 1;
+  return { content: JSON.stringify({ saved: true, ad_id: ad.id, waiting_for_owner: waitingAds(s, task?.id), of: ADS_PER_ASK, note: 'It is in the owner\'s Ads tab. They post it themselves after approving; do not post anything.' }), isError: false };
+}
+const adsDir = () => path.join(DIR, 'ads');
+export const adMarkdown = (ad) => `# ${ad.title}\n\nProduct: ${ad.productTitle} (${ad.productId})\nChannel: ${ad.channel}${ad.format ? ` · ${ad.format}` : ''}\nCost: ${ad.costNote || 'not stated'}\nBy: ${ad.agentName}, ${ad.at}\n\n## Hook\n${ad.headline}\n\n## Text\n${ad.primaryText}\n\n${ad.hashtags.length ? `## Hashtags\n${ad.hashtags.map((h) => `#${h}`).join(' ')}\n\n` : ''}${ad.cta ? `## Call to action\n${ad.cta}\n\n` : ''}${ad.script ? `## Shot list\n${ad.script}\n\n` : ''}${ad.why ? `## Why this works\n${ad.why}\n` : ''}`;
+/** The owner's Yes or No on an ad: Yes keeps it as a file they can post from (origin-data/ads), No drops it. */
+export function decideAd(s, id, action, deps = {}) {
+  const ad = (s.ads || []).find((a) => a.id === id);
+  if (!ad) return { ok: false, status: 404, body: { error: 'no ad' } };
+  if (!['approve', 'reject'].includes(action)) return { ok: false, status: 400, body: { error: 'unknown action' } };
+  const at = new Date().toISOString();
+  for (const t of s.tasks) if (t.id === ad.taskId) delete t.waitingOnOwner;
+  Object.assign(ad, { status: action === 'approve' ? 'approved' : 'rejected', decidedAt: at });
+  if (action === 'approve') {
+    const dir = deps.dir ?? adsDir();
+    try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, `${ad.id}.md`), adMarkdown(ad)); ad.file = path.join(dir, `${ad.id}.md`); } catch { /* the ad still shows in the app */ }
+  }
+  logProgress(s, s.tasks.find((t) => t.id === ad.taskId) ?? null, { at, agentId: ad.agentId, note: `The owner said ${action === 'approve' ? 'Yes' : 'No'} to the ad "${ad.title}" (${ad.channel}).` });
+  return { ok: true, status: 200, body: { ok: true, ad } };
+}
+export const adTask = (t, agentName = '') => /\bads?\b|advertis|promot|campaign|marketing|\breach\b/i.test(`${t?.title || ''} ${t?.detail || ''} ${agentName || ''}`);
+/** What an ads task needs: the approved products and the rules for ads. */
+export function adsBrief(s, task) {
+  if (!task || !adTask(task, task.agentName || taskAgent(s, task)?.name)) return '';
+  const products = approvedProducts(s);
+  return ` ADS: the owner approved and listed these products (APPROVED PRODUCTS): ${products.length ? products.slice(-20).map((r) => `"${r.title}" (product_id ${r.productId}${r.designId ? `, design ${r.designId}` : ''}${r.priceUsd ? `, $${r.priceUsd}` : ''})`).join('; ') : 'none yet, so research the approach and save no ads'}. Make ads for them with ad_save, one channel each, copy ready to paste. The owner wants inexpensive reach first: organic short video (TikTok, Reels) with a hook in the first second, Pinterest pins that keep finding buyers for months, and small paid tests (Etsy Ads at $1 a day) only when a product already sells; say each ad's cost. At most ${ADS_PER_ASK} ads waiting per ask (${waitingAds(s, task.id)} waiting now), then set "waitingOnOwner": true and stop. You never post, pay or create accounts: the owner approves each ad in the Ads tab and posts it themselves.`;
+}
+
+// ---------- the owner's skill library (lyopz/degen-skill), handed to agents by role ----------
+let degenCat = null;
+async function refreshDegen(fresh = false) {
+  try { degenCat = await degenCatalog({ fresh }); } catch (e) { if (fresh || !degenCat) console.error(`[origin] skill library: ${e.message}`); }
+  return degenCat;
+}
+function degenBrief() {
+  if (!degenCat?.skills.length) return '';
+  const fit = degenCat.skills.filter((k) => k.roles.length);
+  return ` SKILL LIBRARY: the owner's degen-skill library (${degenCat.skills.length} skills, read from ${degenCat.from === 'local' ? 'their PC' : 'GitHub'}) is yours to hand out with skills_degen (list, read, give). Give each agent only the skills that fit its job: ${fit.map((k) => `${k.name} (${k.roles.join(', ')})`).join(', ')}; the rest are developer tooling and belong on no store agent. Design skills belong on every agent that designs.`;
+}
+/** Queue one library skill for the app to put in the owner's bank and on these agents (merged with the same skill already queued). */
+async function giveDegenSkill(s, name, agentIds, at = new Date().toISOString()) {
+  const skill = await degenSkill(name);
+  const b = degenBankSkill(skill);
+  const nameOf = (id) => (s.agents || []).find((a) => a.id === id)?.name ?? id;
+  const given = (s.degenGiven ??= {});
+  const fresh = agentIds.filter((id) => !(given[b.skillKey] || []).includes(id));
+  const open = s.skillFiles.find((f) => f.status === 'new' && f.bank && f.skillKey === b.skillKey);
+  if (open) { open.agentIds = [...new Set([...open.agentIds, ...fresh])]; open.agentNames = open.agentIds.map(nameOf); }
+  else if (fresh.length || !given[b.skillKey]) s.skillFiles.push({ id: newId('skillfile'), bank: true, from: 'degen', skillKey: b.skillKey, skillName: b.skillName, name: b.name, description: b.description, body: b.body, tags: b.tags, agentId: fresh[0] ?? agentIds[0] ?? AGENT_ID, agentName: b.skillName, agentIds: fresh, agentNames: fresh.map(nameOf), version: SKILL_FILE_VERSION, status: 'new', createdAt: at });
+  given[b.skillKey] = [...new Set([...(given[b.skillKey] || []), ...agentIds])];
+  return { skill: name, agents: fresh.map(nameOf), already: agentIds.length - fresh.length };
+}
+async function degenTool(s, task, input) {
+  try {
+    await refreshDegen();
+    if (!degenCat) return { content: 'The skill library is not reachable right now (no clone on this PC and GitHub did not answer).', isError: true };
+    if (input.action === 'list') return { content: JSON.stringify({ from: degenCat.from, skills: degenCat.skills.map((k) => ({ name: k.name, fits: k.roles, ...(k.description ? { description: k.description } : {}) })) }), isError: false };
+    if (input.action === 'read') { const k = await degenSkill(String(input.skill || '')); return { content: JSON.stringify({ ...k, body: k.body.slice(0, 12_000) + (k.body.length > 12_000 ? '\n…(cut here; give it to an agent to use it whole)' : '') }), isError: false }; }
+    if (input.action === 'give') {
+      const who = resolveAgents(s, input.agents ?? []);
+      if (!who.ids.length) return { content: `Name the agents to give it to${who.unknown.length ? ` (unknown: ${who.unknown.join(', ')})` : ''}.`, isError: true };
+      const r = await giveDegenSkill(s, String(input.skill || ''), who.ids);
+      return { content: JSON.stringify({ ...r, unknown: who.unknown, note: 'It lands in the owner\'s skill bank and on those agents when the app next checks in; count this step done.' }), isError: false };
+    }
+    return { content: 'action is list, read or give.', isError: true };
+  } catch (e) { return { content: `skills_degen: ${e.message}`, isError: true }; }
+}
+/** Every agent gets the library skills its role fits (design first); pairs already given are skipped. */
+export async function distributeDegen(s) {
+  const given = [], errors = [];
+  const bySkill = new Map();
+  for (const a of s.agents || []) { if (a.id === AGENT_ID) continue; for (const k of degenSkillsForRole(`${a.name} ${a.title || ''}`)) bySkill.set(k, [...(bySkill.get(k) || []), a.id]); }
+  for (const [k, ids] of bySkill) { try { const r = await giveDegenSkill(s, k, ids); if (r.agents.length) given.push(r); } catch (e) { errors.push(`${k}: ${e.message}`); } }
+  return { given, errors };
 }
 
 /** The tools agents get in task runs, from whatever the owner has set up. */
@@ -328,7 +462,7 @@ async function agentTools() {
   // images go straight into Printify as designs, so the image tool needs both
   // images are uploaded to Printify when it is set up, and always saved in the app's design gallery
   const images = openaiPublic().configured;
-  const list = [DESIGN_TOOL, ...TREND_TOOLS, ...(etsyPublic().configured ? ETSY_TOOLS : []), ...(printify ? PRINTIFY_TOOLS : []), ...(images ? [IMAGE_TOOL] : []), ...canva];
+  const list = [DESIGN_TOOL, CAPTION_TOOL, AD_TOOL, DEGEN_TOOL, ...SOURCE_TOOLS, ...trendTools(), ...(etsyPublic().configured ? ETSY_TOOLS : []), ...(printify ? PRINTIFY_TOOLS : []), ...(images ? [IMAGE_TOOL] : []), ...canva];
   return {
     tools: list,
     canva: (name, input) => callCanva(name, input),
@@ -389,6 +523,8 @@ export async function decideDesign(s, id, action, deps = {}) {
       if (product) { try { await (deps.deleteProduct ?? deleteProduct)(printifyConfig()?.shopId ?? null, product); notes.push('product deleted from Printify'); for (const r of s.publishRequests || []) if (r.productId === product && r.status === 'waiting') Object.assign(r, { status: 'deleted', decidedAt: at }); } catch (e) { notes.push(`product not deleted: ${String(e.message || e).slice(0, 120)}`); } }
       if (d.imageId) { try { await (deps.archiveUpload ?? archiveUpload)(d.imageId); notes.push('upload archived in Printify'); } catch (e) { notes.push(`upload not archived: ${String(e.message || e).slice(0, 120)}`); } }
     }
+    // the saved image this design was made from goes too (the owner's own files are never deleted)
+    if (d.sourceFile && (deps.deleteSource ?? ((ref) => deleteSourceFile(sourceFolders(s, DIR), ref)))(d.sourceFile)) notes.push(`saved image ${d.sourceFile} deleted`);
     Object.assign(d, { status: 'rejected', decidedAt: at, printify: notes.join('; ') || 'nothing in Printify' });
     logProgress(s, s.tasks.find((t) => t.id === d.taskId) ?? null, { at, agentId: d.agentId, note: `The owner said No to "${d.title}" (${d.printify}).` });
     save(s);
@@ -608,7 +744,7 @@ function briefFor(s, task, deadline, etsy = null) {
     task?.kind === 'skill-file'
       ? `Your one task this run (the owner approved it): [${task.id}] write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId})${task.sharedWith?.length ? `. ${task.sharedWith.length} other agents do exactly the same job (${task.sharedWith.join(', ')}) and will share this file, so write it for the role, not the one name` : ''}. What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions${task.version > 1 ? ' and its earlier, thinner SKILL.md (replace it with a much more detailed one)' : ''}:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}\nResearch only if it makes the playbook more specific (for example current platform rules or prices). Return it as "skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"} and list the task id in completedTaskIds.`
       : task
-      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}${task.focus ? `\n${focusBrief(s, task, etsy)}` : ''}\nPLAN AND STEPS: work the task from start to finish through an ordered plan. ${task.steps?.length ? `Your plan so far:\n${task.steps.map((x, i) => `${i + 1}. [${x.done ? 'x' : ' '}] ${x.text}`).join('\n')}\nDo the first unchecked step now.` : 'This is the first run on it: write a plan of 3 to 8 concrete, ordered steps that end in a finished deliverable, then do step 1 now.'}${task.notes ? `\nWhere it stood after the last run: ${task.notes}` : ''}\nReturn the whole plan in "steps" with each finished step marked done, and in "taskNotes" exactly where the task stands (findings so far, sources, what is next). You get up to ${roundsFor(task)} rounds this run: after each reply you may be asked to continue with the next step. When every step is done, list the task id in completedTaskIds and put the deliverable in taskNotes and notifyOwner.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. ${trendTask(task, task.agentName || taskAgent(s, task)?.name) ? `${TREND_SOURCES} ` : ''}${etsy?.tools.some((t) => t.name === 'etsy_search') ? `ETSY (read-only, free): etsy_search shows real active listings with prices, favorites, views and tags; use it to measure demand, competition and price ranges. ${etsyPublic().connected ? "etsy_my_shop shows the owner's own shop and its numbers." : ''} ` : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? `PRINTIFY (the owner's shop "${printifyPublic().shopTitle || 'shop'}", ${printifyPublic().channel || 'connected store'}): you can make products to sell. Find a product type (printify_find_product_type), a provider and variants, upload a design (write it yourself as clean SVG, typography or simple vector art, sized for print), then printify_create_product with a researched price, SEO title, full description and 13 tags. ${etsy?.tools.some((t) => t.name === IMAGE_TOOL.name) ? `For illustrated or photo-style art, design_generate_image makes it with the owner's ChatGPT image model and uploads it for you ($${Math.max(0, imageCap(s) - rollImages(s).spentUsd).toFixed(2)} of the $${imageCap(s).toFixed(2)} monthly image budget left); text-only designs are better as SVG. ` : ''}Products stay unpublished in Printify (no cost). When one is finished and your research supports it, call printify_request_publish: the owner approves each one before it goes live on their store. At most ${perRun} product${perRun === 1 ? '' : 's'} this run. ` : ''}COSTS ARE YOUR BUDGET TOO: every listing published costs the owner $${LISTING_FEE_USD.toFixed(2)} on Etsy, each sale carries Printify's production cost, and each AI image its price; all of it counts against your branch's budget${(() => { const b = branchOf(s, task.agentId || AGENT_ID), cap = branchBudget(s, b); return cap != null ? ` ($${branchSpentUsd(s, b).toFixed(2)} of its $${cap.toFixed(2)} this month used)` : ` ($${branchSpentUsd(s, b).toFixed(2)} this month so far)`; })()}, so only make designs you expect to earn back the fee and plan the number of listings with that in mind. DESIGNS: you can make real artwork yourself. ${styleGuide(s)}${declinedLately(s)} Write it as complete SVG (lettering, badges, retro and vintage type, icons, patterns, simple illustration) sized for the product, and save it with design_save so the owner sees it in the app${etsy?.tools.some((t) => t.name === IMAGE_TOOL.name) ? '; for illustrated or photo-style art use design_generate_image' : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? '; then turn each finished design into a Printify product as above' : ''}. ${etsy?.tools.some((t) => t.name.startsWith('canva_')) && canvaOk(task) ? ` CANVA (the owner's own account): canva_create_design / canva_generate_design make finished layouts (posters, logos, cards and more) and canva_generate_image makes standalone art; then canva_export_design as png (transparent_background true for shirts and stickers, width at least 3000 for print) saves the file to the owner's gallery${etsy?.tools.some((t) => t.name === 'printify_create_product') ? ' and uploads it to Printify, giving you a printify_image_id for printify_create_product' : ''}. Each AI design uses the owner's Canva AI credits (${Math.max(0, canvaLimit(s) - rollCanva(s).aiCalls)} of ${canvaLimit(s)} left this month), so plan it first. Only sell designs that are original: never put a single Canva library photo or illustration on a product as it is.` : ''} Never answer that you have no design tool. ${COPYRIGHT_RULES} You cannot publish, buy or contact anyone yourself; for that, say what you need in notifyOwner. SKILLS: if the task is (or needs) SKILL.md files or bank skills for agents, do not write them here: list them in "skillRequests" ({"files": ["agent names"], "bank": [{"name": "...", "description": "...", "agents": ["agent names"]}]}) and the runner writes each one in full right after this run, saves it to the bank and attaches it; count that step as done.\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
+      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}${task.focus ? `\n${focusBrief(s, task, etsy)}` : ''}\nPLAN AND STEPS: work the task from start to finish through an ordered plan. ${task.steps?.length ? `Your plan so far:\n${task.steps.map((x, i) => `${i + 1}. [${x.done ? 'x' : ' '}] ${x.text}`).join('\n')}\nDo the first unchecked step now.` : 'This is the first run on it: write a plan of 3 to 8 concrete, ordered steps that end in a finished deliverable, then do step 1 now.'}${task.notes ? `\nWhere it stood after the last run: ${task.notes}` : ''}\nReturn the whole plan in "steps" with each finished step marked done, and in "taskNotes" exactly where the task stands (findings so far, sources, what is next). You get up to ${roundsFor(task)} rounds this run: after each reply you may be asked to continue with the next step. When every step is done, list the task id in completedTaskIds and put the deliverable in taskNotes and notifyOwner.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. ${trendTask(task, task.agentName || taskAgent(s, task)?.name) ? `${trendSources(trendsPublic())} ` : ''}${etsy?.tools.some((t) => t.name === 'etsy_search') ? `ETSY (read-only, free): etsy_search shows real active listings with prices, favorites, views and tags; use it to measure demand, competition and price ranges. ${etsyPublic().connected ? "etsy_my_shop shows the owner's own shop and its numbers." : ''} ` : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? `PRINTIFY (the owner's shop "${printifyPublic().shopTitle || 'shop'}", ${printifyPublic().channel || 'connected store'}): you can make products to sell. Find a product type (printify_find_product_type), a provider and variants, upload a design (write it yourself as clean SVG, typography or simple vector art, sized for print), then printify_create_product with a researched price, SEO title, full description and 13 tags. ${etsy?.tools.some((t) => t.name === IMAGE_TOOL.name) ? `For illustrated or photo-style art, design_generate_image makes it with the owner's ChatGPT image model and uploads it for you ($${Math.max(0, imageCap(s) - rollImages(s).spentUsd).toFixed(2)} of the $${imageCap(s).toFixed(2)} monthly image budget left); text-only designs are better as SVG. ` : ''}Products stay unpublished in Printify (no cost). When one is finished and your research supports it, call printify_request_publish: the owner approves each one before it goes live on their store. At most ${perRun} product${perRun === 1 ? '' : 's'} this run. ` : ''}COSTS ARE YOUR BUDGET TOO: every listing published costs the owner $${LISTING_FEE_USD.toFixed(2)} on Etsy, each sale carries Printify's production cost, and each AI image its price; all of it counts against your branch's budget${(() => { const b = branchOf(s, task.agentId || AGENT_ID), cap = branchBudget(s, b); return cap != null ? ` ($${branchSpentUsd(s, b).toFixed(2)} of its $${cap.toFixed(2)} this month used)` : ` ($${branchSpentUsd(s, b).toFixed(2)} this month so far)`; })()}, so only make designs you expect to earn back the fee and plan the number of listings with that in mind. DESIGNS: you can make real artwork yourself. ${styleGuide(s)}${declinedLately(s)} THE DEFAULT WAY FOR A MEME SHIRT: find a real image with assets_public_domain (public domain or CC0 only), then design_caption_image lays your caption over it in meme type; the image stays as it is and the words make the joke.${sourcesBrief(s, DIR)} Draw an SVG or use Canva only when no fitting free image exists or the owner asks for drawn art. For a drawn design write it as complete SVG (lettering, badges, retro and vintage type, icons, patterns, simple illustration) sized for the product, and save it with design_save so the owner sees it in the app${etsy?.tools.some((t) => t.name === IMAGE_TOOL.name) ? '; for illustrated or photo-style art use design_generate_image' : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? '; then turn each finished design into a Printify product as above' : ''}. ${etsy?.tools.some((t) => t.name.startsWith('canva_')) && canvaOk(task) ? ` CANVA (the owner's own account): canva_create_design / canva_generate_design make finished layouts (posters, logos, cards and more) and canva_generate_image makes standalone art; then canva_export_design as png (transparent_background true for shirts and stickers, width at least 3000 for print) saves the file to the owner's gallery${etsy?.tools.some((t) => t.name === 'printify_create_product') ? ' and uploads it to Printify, giving you a printify_image_id for printify_create_product' : ''}. Each AI design uses the owner's Canva AI credits (${Math.max(0, canvaLimit(s) - rollCanva(s).aiCalls)} of ${canvaLimit(s)} left this month), so plan it first. Only sell designs that are original: never put a single Canva library photo or illustration on a product as it is.` : ''} Never answer that you have no design tool.${adsBrief(s, task)} ${COPYRIGHT_RULES} You cannot publish, buy or contact anyone yourself; for that, say what you need in notifyOwner. SKILLS: if the task is (or needs) SKILL.md files or bank skills for agents, do not write them here: list them in "skillRequests" ({"files": ["agent names"], "bank": [{"name": "...", "description": "...", "agents": ["agent names"]}]}) and the runner writes each one in full right after this run, saves it to the bank and attaches it; count that step as done.${degenBrief()}\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
       : canSelfApprove(s)
       ? 'No task is ready. Do not research this run. Review your notes, make sure each venture has the skill agents it needs (below), and set the single most valuable next task in proposedTasks; in empire mode it is approved at once and worked next run.'
       : 'No approved task is ready. Do not research. Review your notes, make sure each venture has the skill agents it needs (below), and propose the single most valuable, cheap task for the owner to approve.',
@@ -619,7 +755,7 @@ function briefFor(s, task, deadline, etsy = null) {
       : s.autoAgents === false
       ? (pendingCount(s)
         ? 'Something is already waiting for the owner, so propose nothing new this run (leave proposedTasks and proposedAgents empty). If your task cannot continue until the owner decides, set "waitingOnOwner": true and the runner moves on to other work.'
-        : `You may propose at most one new task, or one new agent if the work clearly needs a lasting specialist (follow HOW TO CREATE AN AGENT and the branch rules; parentId is your own id for a venture, or an existing venture's id for a skill agent working for it). Give it a clear purpose of two or three sentences; its SKILL.md is written in full in a later run.`)
+        : `You may propose at most one new task, or one new agent, and an agent only when it is truly needed for the growth of the business: no existing agent can do the work (check AGENTS IN THE BRAIN NOW; a one-off need goes to an existing agent), the work will recur for months, and you can say in one sentence what it will earn or save. The owner approves every agent; in "reason" give that sentence and the evidence. Follow HOW TO CREATE AN AGENT and the branch rules; parentId is your own id for a venture, or an existing venture's id for a skill agent working for it. Give it a clear purpose of two or three sentences; its SKILL.md is written in full in a later run.`)
       : `GROWING THE BRAIN: the owner lets you create agents without asking; they exist as soon as you list them, cost nothing until they are given work, and the owner can delete any. Each venture should have the skill agents it needs to make money (for an Etsy store, for example: product research, listing copy and SEO, design or mockups, pricing, and ads). In proposedAgents, create up to ${agentsPerRun(s)} agents this run that a venture clearly needs and does not have yet; parentId is the venture's id (from AGENTS IN THE BRAIN NOW) for its skill agents, or your own id for a new venture ${s.autoTasks !== false ? '(start a new venture when your research shows real demand)' : '(a new venture needs a business the owner already asked for or approved)'}. Never duplicate an agent that already exists. Give each a clear purpose of two or three sentences; do not write its SKILL.md here, because the runner has you write each one in full in a later run.${canSelfApprove(s) ? ' You may also set one new task in proposedTasks; it is approved at once.' : pendingCount(s) ? ' A task proposal is waiting for the owner, so propose no new task this run.' : ' You may also propose one new task for the owner to approve.'}`,
     'Finish with exactly one JSON object in a ```json block: {"memory": "your updated notes, under 4000 characters, with sources and dates", "nextAction": "...", "proposedTasks": [{"title": "...", "detail": "...", "agentId": "the agent who should do it, or null"}], "proposedAgents": [{"parentId": "...", "name": "...", "specialty": "...", "purpose": "...", "skill": "a team such as Research", "bankSkillIds": ["..."], "everyMinutes": 120, "maxMinutes": 5, "reason": "why this window"}], "waitingOnOwner": false, "skillFile": "only for a SKILL.md task, else null", "steps": [{"text": "...", "done": true}], "taskNotes": "where this task stands", "progress": {"percent": 40, "note": "..."}, "completedTaskIds": ["..."], "skillRequests": null, "stopTaskIds": [], "stopReason": "...", "notifyOwner": "only a result the owner must see, else null", "summary": "one line on what this run did"}',
   ].filter(Boolean).join('\n\n');
@@ -670,7 +806,7 @@ export function pickTasks(s, n = PARALLEL, only = null) {
   const known = (t) => !(s.agents || []).length || !t.agentId || s.agents.some((a) => a.id === t.agentId);
   // a branch's own run: only the tasks of the agents in that branch
   const inBranch = (t) => !only || only.includes(t.agentId || AGENT_ID);
-  const ready = (t) => t.status === 'approved' && !isSkillTask(t) && !(t.waitingOnOwner && pendingCount(s)) && known(t) && inBranch(t) && !branchOverBudget(s, t);
+  const ready = (t) => t.status === 'approved' && !isSkillTask(t) && !(t.waitingOnOwner && pendingCount(s)) && known(t) && inBrain(s, t) && inBranch(t) && !branchOverBudget(s, t);
   // the owner's command-center tasks come before everything else, and while one is open nothing else runs
   const focus = s.tasks.filter((t) => ready(t) && t.focus);
   const work = (focus.length ? focus : s.tasks.filter(ready)).map((t, i) => [t, i]).sort((a, b) => (Number(a[0].by === 'origin') - Number(b[0].by === 'origin')) || a[1] - b[1]).map(([t]) => t);
@@ -732,6 +868,10 @@ async function work(s, task, ctx) {
           const res = tc.name === 'printify_request_publish' ? await requestPublish(s, task, tc.input, w, etsy)
             : tc.name === IMAGE_TOOL.name ? await makeImage(s, task, tc.input, w, etsy)
             : tc.name === DESIGN_TOOL.name ? saveDesign(s, task, tc.input || {}, w)
+            : tc.name === CAPTION_TOOL.name ? await captionDesign(s, task, tc.input || {}, w, etsy)
+            : tc.name === AD_TOOL.name ? saveAd(s, task, tc.input || {}, w)
+            : tc.name === DEGEN_TOOL.name ? await degenTool(s, task, tc.input || {})
+            : SOURCE_TOOLS.some((t) => t.name === tc.name) ? await runSourceTool(tc.name, tc.input || {}, s, DIR, w, { fetch: etsy.webFetch ?? globalThis.fetch })
             : tc.name.startsWith('canva_') ? await useCanva(s, task, tc, w, etsy)
             : tc.name.startsWith('trends_') ? await (etsy.trends ? etsy.trends(tc.name, tc.input) : runTrendTool(tc.name, tc.input))
             : await etsy.run(tc.name, tc.input);
@@ -739,9 +879,10 @@ async function work(s, task, ctx) {
           if (tc.name === 'printify_upload_design' && tc.input?.svg && !res.isError) { try { saveDesign(s, task, { file_name: tc.input.file_name, svg: tc.input.svg, imageId: JSON.parse(res.content).image_id }, w); } catch { /* the upload still counts */ } }
           if (tc.name.startsWith('etsy_')) record.etsyCalls = (record.etsyCalls || 0) + 1;
           else if (tc.name.startsWith('printify_')) record.printifyCalls = (record.printifyCalls || 0) + 1;
-          else if (tc.name === DESIGN_TOOL.name) record.designs = (record.designs || 0) + 1;
+          else if (tc.name === DESIGN_TOOL.name || tc.name === CAPTION_TOOL.name) record.designs = (record.designs || 0) + 1;
           else if (tc.name.startsWith('canva_')) record.canvaCalls = (record.canvaCalls || 0) + 1;
           else if (tc.name.startsWith('trends_')) record.trendCalls = (record.trendCalls || 0) + 1;
+          else if (tc.name === AD_TOOL.name) record.ads = (record.ads || 0) + 1;
           results.push({ type: 'tool_result', tool_use_id: tc.id, content: res.content, ...(res.isError ? { is_error: true } : {}) });
         }
         messages.push({ role: 'user', content: results });
@@ -884,6 +1025,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   const record = { id: `run_${start.getTime().toString(36)}`, trigger, model: MODEL, startedAt: start.toISOString(), endedAt: null, costUsd: 0, costKnown: true, calls: 0, searches: 0, fetches: 0, status: 'running', summary: '' };
   running = record;
   const etsy = 'etsy' in deps ? deps.etsy : await agentTools();
+  if (!('etsy' in deps)) await refreshDegen();
   const ctx = { deps, deadline, limit: runLimit / picks.length, etsy, record };
   let results;
   try {
@@ -1123,7 +1265,7 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
       ? `You are ${agent.name}${agent.title ? `, ${agent.title}` : ''}, an agent in the owner's brain working under JARVIS. The owner asked you this in the console because you are the agent best suited to it. Answer as ${agent.name}, from your own job and work, directly and briefly; you have no tools here and this is not a work run.`
       : 'The owner is asking you a question in the console, outside your work window. Answer directly and briefly from what you know; you have no tools here and this does not count as a run. Do not propose tasks or agents here.',
     `Recent progress${agent ? ` on your work` : ''}:\n${progress.map((e) => `- ${e.at.slice(0, 16)} ${e.agentName}${e.taskTitle ? ` on "${e.taskTitle}"` : ''}${e.pct != null ? ` (${e.pct}%)` : ''}: ${e.note}`).join('\n') || '(none yet)'}`,
-    `OWNER CONSENT: the owner's plain words are approval, inside the $${capOf(s)} monthly cap and the per-task budget. "allow etsy store to run", "go ahead", "yes do it", "1 dollar approval" all count; never ask them to repeat it in exact wording or to restate a scope. A request to do something ("make 5 items for my etsy store", "find me 3 trending niches") is approval of that work too. When their message approves or asks for work, say in one sentence what you will do, then end your answer with one line exactly like this: APPROVE {"title": "short task title", "detail": "what to do and what a good result looks like, in the owner's words", "agentId": "id from AGENTS IN THE BRAIN NOW of the agent who should do it, or null for you", "count": how many items they asked for or null, "everyMinutes": minutes between repeats when they want it again and again ("every hour" is 60), else null, "budgetUsd": the dollar amount they named or null, "approveIds": ["ids of waiting proposals they approved"]}. It becomes your focus: worked first, right away, before anything else. Write that line only when they approved or asked for work. Ventures create the skill agents they need without asking; that never needs approval.`,
+    `OWNER CONSENT: the owner's plain words are approval, inside the $${capOf(s)} monthly cap and the per-task budget. "allow etsy store to run", "go ahead", "yes do it", "1 dollar approval" all count; never ask them to repeat it in exact wording or to restate a scope. A request to do something ("make 5 items for my etsy store", "find me 3 trending niches") is approval of that work too. When their message approves or asks for work, say in one sentence what you will do, then end your answer with one line exactly like this: APPROVE {"title": "short task title", "detail": "what to do and what a good result looks like, in the owner's words", "agentId": "id from AGENTS IN THE BRAIN NOW of the agent who should do it, or null for you", "count": how many items they asked for or null, "everyMinutes": minutes between repeats when they want it again and again ("every hour" is 60), else null, "budgetUsd": the dollar amount they named or null, "approveIds": ["ids of waiting proposals they approved"]}. It becomes your focus: worked first, right away, before anything else. Write that line only when they approved or asked for work. ${s.autoAgents === true ? 'Ventures create the skill agents they need without asking; that never needs approval.' : 'New agents need the owner\'s approval: JARVIS or a venture proposes one only when it is truly needed for the growth of the business (no existing agent can do the work, it recurs for months, it will earn or save something), and the owner approves it in JARVIS runs. Never tell the owner an agent was created when it was only proposed.'}`,
     `CONNECTIONS RIGHT NOW (the only true setup steps; never invent others, never say Canva or an account needs "approval"): Canva ${canvaPublic().configured ? 'is connected: agents use it in tasks the owner gives' : 'is NOT connected: the owner connects it once by running npm.cmd run connect-canva on their PC and pressing Allow in the browser'}. Printify ${printifyPublic().configured ? `is connected (shop "${printifyPublic().shopTitle || 'shop'}")` : 'is NOT connected: the owner runs npm.cmd run set-printify once'}. ChatGPT images ${openaiPublic().configured ? 'are on' : 'are off: the owner runs npm.cmd run set-openai once with an OpenAI API key'}. Designs the agents make go to the owner's Approvals tab with Yes and No; Yes makes the Printify product and lists it on their store ($${LISTING_FEE_USD.toFixed(2)} listing fee), at most ${DESIGNS_PER_ASK} designs waiting per ask. A task the owner wants "every hour" repeats on its own.`,
     `WHAT YOUR AGENTS CAN DO IN THEIR WORK RUNS (not here): web search and reading pages; make real artwork as SVG (lettering, logos, badges, vector art) saved to the owner's design gallery${openaiPublic().configured ? "; illustrated or photo-style art with the owner's ChatGPT image model" : ''}${canvaPublic().configured ? "; designs and images in the owner's Canva account, exported to the gallery (in tasks the owner gives)" : ''}${printifyPublic().configured ? `; turn designs into products in the owner's Printify shop "${printifyPublic().shopTitle || 'shop'}" (shirts, mugs, posters and more) that the owner approves one by one before they go live` : ''}. So when the owner asks for designs, products or any other work, never say you or an agent can't, and never refuse because it is outside an agent's usual scope: approve it as a task with the APPROVE line (it becomes the focus and starts right away), give it to the best agent, and say what they will get and where. If what they asked for is unclear (for example a brand or name you don't know), still approve it, put what you know in detail, and ask one short question in your answer. TRENDS: they may check TikTok and Instagram trends from public sources only (this week's trend roundups found by web search, TikTok's own newsroom and Creative Center articles, Google Trends through trends_google, Pinterest through web search for inspiration only) and measure each on Etsy; they never log in to, scrape or use the owner's social accounts, and Instagram's and Pinterest's APIs are not set up. Designs follow the owner's style guide (modern, simple, funny: one flat drawing and a short lowercase caption, like a plain fish captioned "fih"), which every agent gets in its brief${s.designStyle ? `, plus the owner's note: ${s.designStyle}` : ''}. Free-to-use images (public domain and CC0 from Wikimedia Commons and Openverse) come through assets_public_domain with source and licence saved on each design; memes, characters, logos and trademarked phrases are never copied, and phrases are trademark-searched first. So when the owner asks for TikTok or Instagram trends, say yes and start.`,
     `SKILLS: you can write skills yourself; never tell the owner you can't, and never ask them for agent ids (the runner finds agents by name). A SKILL.md is an agent's own detailed playbook; a bank skill is a shared skill in the owner's skill bank given to the agents that need it. When the owner asks for SKILL.md files or skills (or names skills an agent is missing), say in one sentence what you will write, then end your answer with one line exactly like this: SKILLS {"files": ["agent names, a venture name + \" team\" for its whole team, or \"all\""], "bank": [{"name": "Web research", "description": "one line on what it covers", "agents": ["agent names, \"<venture> team\", or \"all\""]}]}. Writing starts right away and each file is saved to the bank and attached to its agents automatically. You may write both an APPROVE line and a SKILLS line.`,
@@ -1174,7 +1316,7 @@ function publicState() {
   return {
     configured: Boolean(KEY), model: MODEL, capUsd: capOf(s), budgets: budgetsPublic(s), everyMinutes: EVERY_MIN, maxMinutes: MAX_MIN, schedule: SCHEDULE,
     spentUsd: s.ledger.spentUsd, spentByAgent: s.ledger.byAgent, ...dailyAllowance(s), parallel: PARALLEL, rounds: MAX_ROUNDS, taskBudgetUsd: TASK_BUDGET_USD, unknownCostRuns: s.ledger.unknownCostRuns, month: s.ledger.month, running: running ? running.startedAt : null,
-    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, designStyle: { guide: DESIGN_STYLE, note: s.designStyle || '', at: s.designStyleAt || null }, etsy: etsyPublic(), printify: printifyPublic(), openai: openaiPublic(), canva: { ...canvaPublic(), connecting: connectInProgress(), month: rollCanva(s).month, aiCalls: s.canva.aiCalls, exports: s.canva.exports, limit: canvaLimit(s), log: (s.canvaLog || []).slice(-30).reverse() }, designs: (s.designs || []).slice(-40).reverse(), voice: voicePublic(DIR), money: { byAgent: moneyByAgent({ ...s, totals: s.totals ?? { claude: { ...s.ledger.byAgent }, images: {} } }), entries: (s.moneyEntries || []).slice(-50).reverse(), sales: (s.sales || []).slice(0, 50), salesSync: s.salesSync ?? null }, images: { month: rollImages(s).month, spentUsd: s.images.spentUsd, capUsd: imageCap(s), log: (s.imageLog || []).slice(-30).reverse() }, publishRequests: (s.publishRequests || []).slice(-30), skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
+    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks.filter((t) => inBrain(s, t)), brain: { id: s.brainId || null, others: Object.entries(s.brains || {}).filter(([id]) => id !== s.brainId).map(([id, b]) => ({ id, name: b.name, agents: (b.agents || []).length, openTasks: s.tasks.filter((t) => t.brainId === id && t.status === 'approved').length })) }, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, designStyle: { guide: DESIGN_STYLE, note: s.designStyle || '', at: s.designStyleAt || null }, etsy: etsyPublic(), printify: printifyPublic(), openai: openaiPublic(), canva: { ...canvaPublic(), connecting: connectInProgress(), month: rollCanva(s).month, aiCalls: s.canva.aiCalls, exports: s.canva.exports, limit: canvaLimit(s), log: (s.canvaLog || []).slice(-30).reverse() }, designs: (s.designs || []).slice(-40).reverse(), voice: voicePublic(DIR), money: { byAgent: moneyByAgent({ ...s, totals: s.totals ?? { claude: { ...s.ledger.byAgent }, images: {} } }), entries: (s.moneyEntries || []).slice(-50).reverse(), sales: (s.sales || []).slice(0, 50), salesSync: s.salesSync ?? null }, images: { month: rollImages(s).month, spentUsd: s.images.spentUsd, capUsd: imageCap(s), log: (s.imageLog || []).slice(-30).reverse() }, publishRequests: (s.publishRequests || []).slice(-30), ads: (s.ads || []).slice(-60).reverse(), sources: sourcesPublic(s, DIR), trends: trendsPublic(), degen: degenCat ? { from: degenCat.from, skills: degenCat.skills.length, given: Object.keys(s.degenGiven || {}).length } : null, skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
     // with no scheduled run yet, the next one starts within a minute
     nextScheduledAt: SCHEDULE ? new Date(s.lastScheduledAt ? Math.max(Date.now(), Date.parse(s.lastScheduledAt) + (pickTasks(s).some((t) => t.focus) ? Math.min(FOCUS_EVERY_MIN, EVERY_MIN) : EVERY_MIN) * 60_000) : Date.now() + 60_000).toISOString() : null,
     focusEveryMinutes: Math.min(FOCUS_EVERY_MIN, EVERY_MIN),
@@ -1255,10 +1397,17 @@ async function handle(req, res) {
   if (url === '/api/origin/sync') {
     if (typeof body.instructions !== 'string' || body.instructions.length < 100 || body.instructions.length > MAX_INSTRUCTIONS) return send(req, res, 400, { error: 'instructions required' });
     const s = loadState(); s.instructions = body.instructions;
+    // which of the owner's brains is open: its tasks run, the other brains' tasks wait for their turn
+    if (typeof body.brainId === 'string' && body.brainId) {
+      s.brainId = body.brainId.slice(0, 80);
+      s.brains = { ...(s.brains || {}) };
+      s.brains[s.brainId] = { ...(s.brains[s.brainId] || {}), name: String(body.brainName || 'Brain').slice(0, 80), syncedAt: new Date().toISOString() };
+    }
     // the other agents' instructions and SKILL.md, so JARVIS can work a task as one of them
     if (Array.isArray(body.agents)) {
       s.agents = body.agents.filter((a) => a && typeof a.id === 'string' && typeof a.name === 'string').slice(0, 100)
         .map((a) => ({ id: a.id.slice(0, 80), name: a.name.slice(0, 80), title: String(a.title || '').slice(0, 120), kind: String(a.kind || 'core'), ventureId: a.ventureId ? String(a.ventureId).slice(0, 80) : null, hasSkillFile: !!a.hasSkillFile, prompt: String(a.prompt || '').slice(0, 40_000) }));
+      if (s.brainId && s.brains?.[s.brainId]) s.brains[s.brainId].agents = s.agents.map((a) => ({ id: a.id, name: a.name }));
       pruneGone(s, new Date().toISOString());
     }
     saveState(s);
@@ -1358,6 +1507,41 @@ async function handle(req, res) {
     const r = await decideDesign(loadState(), body.id, body.action, { save: saveState });
     if (r.ok && r.start) setTimeout(startFocus, 500);
     return send(req, res, r.status, r.body);
+  }
+  if (url === '/api/origin/ads') {
+    const s = loadState();
+    if (body.action === 'make') {
+      // the owner asks for ads for approved, listed products: a focus task for the ads agent (or JARVIS)
+      const ids = Array.isArray(body.productIds) ? body.productIds.map(String).slice(0, 20) : [];
+      const products = approvedProducts(s).filter((r) => !ids.length || ids.includes(r.productId));
+      if (!products.length) return send(req, res, 400, { error: 'No approved, listed products yet. Say Yes to a design in Approvals; once it is listed, ads can be made for it.' });
+      const task = addFocusTask(s, { title: `Make ads for ${products.length === 1 ? `"${products[0].title}"` : `${products.length} approved products`}`, detail: `The owner asked for ads for these approved, listed products: ${products.map((r) => `"${r.title}" (product ${r.productId})`).join('; ')}. Find the cheapest way to reach buyers for each, then save the ads with ad_save for the owner's Ads tab.`, agentId: typeof body.agentId === 'string' ? body.agentId : null });
+      saveState(s); setTimeout(startFocus, 500);
+      return send(req, res, 200, { ok: true, task });
+    }
+    const r = decideAd(s, body.id, body.action);
+    if (r.ok) saveState(s);
+    return send(req, res, r.status, r.body);
+  }
+  if (url === '/api/origin/sources') {
+    // the owner's design sources: link a folder on this PC, unlink one, or delete one saved image
+    const s = loadState();
+    try {
+      if (body.action === 'add') addSourceFolder(s, { path: body.path, label: body.label });
+      else if (body.action === 'remove') { if (!removeSourceFolder(s, String(body.id || ''))) return send(req, res, 404, { ok: false, error: 'no such folder' }); }
+      else if (body.action === 'delete') { if (!deleteSourceFile(sourceFolders(s, DIR), String(body.file || ''))) return send(req, res, 400, { ok: false, error: 'Only images the agents saved can be deleted here; your own files stay.' }); }
+      saveState(s);
+      return send(req, res, 200, { ok: true, sources: sourcesPublic(s, DIR) });
+    } catch (e) { return send(req, res, 400, { ok: false, error: e.message }); }
+  }
+  if (url === '/api/origin/degen') {
+    // the owner's skill library: list it, or hand every agent the skills its role fits
+    try {
+      await refreshDegen(true);
+      if (!degenCat) return send(req, res, 503, { ok: false, error: 'The skill library could not be read: no degen-skill clone next to the app or in your home folder, and GitHub did not answer.' });
+      if (body.action === 'distribute') { const s = loadState(); const r = await distributeDegen(s); saveState(s); return send(req, res, 200, { ok: true, ...r, from: degenCat.from }); }
+      return send(req, res, 200, { ok: true, from: degenCat.from, dir: degenCat.dir, skills: degenCat.skills });
+    } catch (e) { return send(req, res, 502, { ok: false, error: e.message }); }
   }
   if (url === '/api/origin/money') {
     // the owner's own money lines for a branch (income the shop data doesn't show, or other costs), and a fresh sales pull

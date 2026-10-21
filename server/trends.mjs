@@ -4,7 +4,13 @@
 // render in a browser, and Instagram has no public trend page, so those go through
 // web_search for fresh roundups; TREND_SOURCES says how, so agents never log in, scrape,
 // or use the owner's own social accounts.
+import { INSTAGRAM_TOOL, instagramHashtag, instagramPublic } from './instagram.mjs';
+import { PINTEREST_TOOL, pinterestPublic, pinterestTool } from './pinterest.mjs';
+
 const GOOGLE_TRENDS = 'https://trends.google.com/trending/rss';
+const IMGFLIP = 'https://api.imgflip.com/get_memes';
+const REDDIT = 'https://www.reddit.com';
+const MEME_SUBS = ['memes', 'dankmemes', 'me_irl', 'wholesomememes', 'MemeEconomy'];
 const COMMONS = 'https://commons.wikimedia.org/w/api.php';
 const OPENVERSE = 'https://api.openverse.org/v1/images/';
 const MAX_ITEMS = 25;
@@ -21,10 +27,27 @@ export const ASSETS_TOOL = {
   description: "Find images that are free to use on products: public domain and CC0 only, from Wikimedia Commons (and Openverse when Commons has little). Returns each image's title, creator, licence, source page and file URL. Use it for vintage illustrations, botanical plates, old maps, engravings, posters and icons an original design can build on; never for memes, logos, characters or photos of real people. Record every asset you use (title, source URL, licence) in design_save's assets so the owner sees where it came from, and open the source page to confirm the licence before using it.",
   input_schema: { type: 'object', properties: { query: { type: 'string', description: 'what to look for, e.g. "vintage botanical rose engraving"' }, limit: { type: 'integer', description: `how many, 1 to ${MAX_ASSETS}` } }, required: ['query'] },
 };
-export const TREND_TOOLS = [GOOGLE_TRENDS_TOOL, ASSETS_TOOL];
+export const MEMES_TOOL = {
+  name: 'trends_memes',
+  description: "What is popular in memes right now, from two public databases (free, no login): Imgflip's most-used meme templates (name and how many captions each has had; the templates are not free images) and the top posts of the week in meme subreddits (title, score, comments and link; never the picture). Use it to learn which formats and jokes are hot, then make your own phrase and your own art; Know Your Meme (knowyourmeme.com/memes/popular) can be read with web_fetch for a meme's history.",
+  input_schema: { type: 'object', properties: { source: { type: 'string', enum: ['imgflip', 'reddit', 'both'], description: 'default both' }, subreddit: { type: 'string', description: `one subreddit without r/, default ${MEME_SUBS.join(', ')} together` }, period: { type: 'string', enum: ['day', 'week', 'month'], description: 'for reddit, default week' }, limit: { type: 'integer', minimum: 1, maximum: 50 } } },
+};
+export const TREND_TOOLS = [GOOGLE_TRENDS_TOOL, MEMES_TOOL, ASSETS_TOOL];
+/** The trend tools this PC offers: the public ones always, Instagram and Pinterest once the owner connected them. */
+export function trendTools(conn = trendsPublic()) {
+  return [...TREND_TOOLS, ...(conn.instagram?.configured ? [INSTAGRAM_TOOL] : []), ...(conn.pinterest?.configured ? [PINTEREST_TOOL] : [])];
+}
+/** What the app may see about trend sources: which are connected, never a token. */
+export function trendsPublic() {
+  return { google: true, memes: true, instagram: instagramPublic(), pinterest: pinterestPublic() };
+}
 
 /** How agents may look at TikTok and Instagram trends: public pages only, and how each one is reached. */
-export const TREND_SOURCES = `TRENDS (TikTok, Instagram and the rest): the owner wants TikTok and Instagram trends checked for design ideas, and you may do that from public sources only: never log in to a social site, never use the owner's accounts, never a scraper or a scraping service. TikTok's Creative Center (free and public at ads.tiktok.com/business/creativecenter) and Pinterest Trends only render in a browser, so web_fetch returns nothing from them; get TikTok trends through web_search for this week's roundups (for example "TikTok trending hashtags this week", "TikTok trends this month", "trending TikTok sounds this week", "TikTok Creative Center top hashtags" with the month and year, and TikTok's own newsroom and Creative Center articles that appear in results) and read the two freshest with web_fetch. Instagram has no public trend page and its hashtag API needs a Meta developer app the owner has not set up, so Instagram trends come from the same kind of weekly roundups (Later, Hootsuite, Sprout Social, Buffer and others publish them) and from press coverage. trends_google (free, no search fee) shows what is breaking into general search right now, with the news behind each search; a phrase that is there and in a fresh TikTok roundup is real. Then measure it with etsy_search: how many listings already use the phrase, their prices and favorites; a trend with real search and few listings is the opportunity, one with thousands of listings is late. Date every trend (first seen, source), treat anything older than four weeks as fading. PINTEREST: Pinterest Trends and pin pages also render only in a browser and Pinterest's API needs a developer app the owner has not set up, so use Pinterest through web_search (add "pinterest" to a query: which styles, phrases and products recur) for inspiration only; a pin is someone else's work, never copy one.`;
+export const TREND_SOURCES = `TRENDS (TikTok, Instagram and the rest): the owner wants TikTok and Instagram trends checked for design ideas, and you may do that from public sources only: never log in to a social site, never use the owner's accounts, never a scraper or a scraping service. TikTok's Creative Center (free and public at ads.tiktok.com/business/creativecenter) and Pinterest Trends only render in a browser, so web_fetch returns nothing from them; get TikTok trends through web_search for this week's roundups (for example "TikTok trending hashtags this week", "TikTok trends this month", "trending TikTok sounds this week", "TikTok Creative Center top hashtags" with the month and year, and TikTok's own newsroom and Creative Center articles that appear in results) and read the two freshest with web_fetch. Instagram has no public trend page and its hashtag API needs a Meta developer app the owner has not set up, so Instagram trends come from the same kind of weekly roundups (Later, Hootsuite, Sprout Social, Buffer and others publish them) and from press coverage. trends_google (free, no search fee) shows what is breaking into general search right now, with the news behind each search; a phrase that is there and in a fresh TikTok roundup is real. Then measure it with etsy_search: how many listings already use the phrase, their prices and favorites; a trend with real search and few listings is the opportunity, one with thousands of listings is late. Date every trend (first seen, source), treat anything older than four weeks as fading. MEME DATABASES: trends_memes shows the meme templates most used on Imgflip right now and the top posts of the week in meme subreddits (titles, scores and links only), and Know Your Meme's pages (knowyourmeme.com/memes/popular, or one meme's page) can be read with web_fetch for a meme's history and whether it is still alive. A template or a post is a format to learn from, never an image to use. PINTEREST: Pinterest Trends and pin pages also render only in a browser and Pinterest's API needs a developer app the owner has not set up, so use Pinterest through web_search (add "pinterest" to a query: which styles, phrases and products recur) for inspiration only; a pin is someone else's work, never copy one.`;
+/** TREND_SOURCES plus what the owner connected: Instagram's hashtag search, Pinterest's trends and pin search. */
+export function trendSources(conn = trendsPublic()) {
+  return `${TREND_SOURCES}${conn.instagram?.configured ? ` INSTAGRAM CONNECTED: trends_instagram searches a hashtag through the owner's own Instagram account and returns the top posts' captions, counts and links (30 different hashtags a week${conn.instagram.hashtagsLeft != null ? `, ${conn.instagram.hashtagsLeft} left` : ''}); the pictures stay where they are.` : ''}${conn.pinterest?.configured ? ' PINTEREST CONNECTED: trends_pinterest gives Pinterest\'s trending keywords by region (growing, monthly, yearly, seasonal) and a pin search that returns titles, descriptions and links for ideas; never the images.' : ''}`;
+}
 
 /** What a design may and may not use, so nothing the owner lists is copied or trademarked. */
 export const COPYRIGHT_RULES = `ORIGINAL ONLY: a design the owner lists must be your own work. Never copy a meme image, a character, a logo, a brand, a celebrity's name or likeness, song lyrics or another seller's design; a meme format or a trend may inspire an original phrase and original art, nothing more. Before you build on a phrase, web_search it with the word trademark (and "site:uspto.gov") and drop it if a live registration or a known brand owns it; say in the design's title that you checked. Images you did not draw yourself come only from assets_public_domain (public domain and CC0), with each one's title, source URL and licence saved in design_save's assets.`;
@@ -103,10 +126,47 @@ export async function publicDomainAssets(input = {}, deps = {}) {
 }
 
 /** Run one of the trend tools for an agent; the result is text for the model. */
+const SUB = /^[A-Za-z0-9_]{2,21}$/;
+/** Imgflip's most-used templates and the week's top posts in meme subreddits: names, counts, links; no images. */
+export async function popularMemes(input = {}, deps = {}) {
+  const f = deps.fetch ?? globalThis.fetch;
+  const source = ['imgflip', 'reddit'].includes(input.source) ? input.source : 'both';
+  const limit = Math.max(1, Math.min(50, Number(input.limit) || 25));
+  const out = { note: 'Formats and jokes to learn from; none of these images is free to use on a product.' };
+  if (source !== 'reddit') {
+    try {
+      const r = await f(IMGFLIP, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(15_000) });
+      const data = await r.json();
+      if (!r.ok || !data?.success) throw new Error(`HTTP ${r.status}`);
+      out.imgflip = (data.data?.memes || []).slice(0, limit).map((m) => ({ template: m.name, captions: m.captions ?? null, text_boxes: m.box_count ?? null }));
+    } catch (e) { out.imgflip_error = `Imgflip did not answer (${e.message}).`; }
+  }
+  if (source !== 'imgflip') {
+    const subs = input.subreddit ? [String(input.subreddit).replace(/^r\//, '')] : MEME_SUBS;
+    const period = ['day', 'week', 'month'].includes(input.period) ? input.period : 'week';
+    const posts = [], errors = [];
+    for (const sub of subs) {
+      if (!SUB.test(sub)) { errors.push(`${sub}: not a subreddit name`); continue; }
+      try {
+        const r = await f(`${REDDIT}/r/${sub}/top.json?t=${period}&limit=${Math.min(limit, 50)}&raw_json=1`, { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(15_000) });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        for (const c of data?.data?.children || []) { const d = c.data || {}; if (d.over_18) continue; posts.push({ subreddit: sub, title: String(d.title || '').slice(0, 200), score: d.score ?? null, comments: d.num_comments ?? null, at: d.created_utc ? new Date(d.created_utc * 1000).toISOString() : null, link: d.permalink ? `${REDDIT}${d.permalink}` : null }); }
+      } catch (e) { errors.push(`r/${sub}: ${e.message}`); }
+    }
+    out.reddit = posts.sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, limit);
+    if (errors.length) out.reddit_errors = errors;
+  }
+  return out;
+}
+
 export async function runTrendTool(name, input, deps = {}) {
   try {
     if (name === GOOGLE_TRENDS_TOOL.name) return { content: JSON.stringify(await googleTrends(input, deps)), isError: false };
     if (name === ASSETS_TOOL.name) return { content: JSON.stringify(await publicDomainAssets(input, deps)), isError: false };
+    if (name === MEMES_TOOL.name) return { content: JSON.stringify(await popularMemes(input, deps)), isError: false };
+    if (name === INSTAGRAM_TOOL.name) return { content: JSON.stringify(await instagramHashtag(input, deps.instagram ?? {})), isError: false };
+    if (name === PINTEREST_TOOL.name) return { content: JSON.stringify(await pinterestTool(input, deps.pinterest ?? {})), isError: false };
     return { content: `Unknown trend tool ${name}`, isError: true };
   } catch (e) { return { content: `Trends: ${e.message}`, isError: true }; }
 }

@@ -57,3 +57,62 @@ describe('trends', () => {
     expect(r.notes[0]).toMatch(/few anonymous searches an hour/);
   });
 });
+
+describe('meme databases and connectors', () => {
+  test('Imgflip templates and Reddit top posts come back as names, counts and links; never image URLs', async () => {
+    const { popularMemes, trendTools, trendSources, MEMES_TOOL } = await import('../server/trends.mjs');
+    const fetch = async (u: URL | string) => {
+      const url = String(u);
+      if (url.includes('imgflip')) return { ok: true, status: 200, json: async () => ({ success: true, data: { memes: [{ id: '1', name: 'Drake Hotline Bling', url: 'https://i.imgflip.com/30b1gx.jpg', box_count: 2, captions: 1250000 }] } }) };
+      if (url.includes('/r/memes/')) return { ok: true, status: 200, json: async () => ({ data: { children: [{ data: { title: 'fih', score: 42000, num_comments: 300, created_utc: 1_760_000_000, permalink: '/r/memes/comments/x/fih/', url: 'https://i.redd.it/x.png' } }, { data: { title: 'nsfw', over_18: true, score: 9 } }] } }) };
+      return { ok: false, status: 429, json: async () => ({}) };
+    };
+    const r: any = await popularMemes({ subreddit: 'memes' }, { fetch });
+    expect(r.imgflip).toEqual([{ template: 'Drake Hotline Bling', captions: 1250000, text_boxes: 2 }]);
+    expect(r.reddit).toEqual([{ subreddit: 'memes', title: 'fih', score: 42000, comments: 300, at: new Date(1_760_000_000 * 1000).toISOString(), link: 'https://www.reddit.com/r/memes/comments/x/fih/' }]);
+    expect(JSON.stringify(r)).not.toMatch(/i\.redd\.it|i\.imgflip/);
+    const bad: any = await popularMemes({ source: 'reddit', subreddit: 'bad name!' }, { fetch });
+    expect(bad.reddit_errors[0]).toMatch(/not a subreddit/);
+    expect(trendTools({ google: true, memes: true, instagram: { configured: false, username: null, hashtagsLeft: null }, pinterest: { configured: false, username: null } }).map((t) => t.name)).toEqual(['trends_google', 'trends_memes', 'assets_public_domain']);
+    expect(trendTools({ google: true, memes: true, instagram: { configured: true, username: 'ed', hashtagsLeft: 30 }, pinterest: { configured: true, username: 'ed' } }).map((t) => t.name)).toContain('trends_instagram');
+    expect(trendSources()).not.toMatch(/INSTAGRAM CONNECTED/);
+    expect(TREND_SOURCES).toMatch(/MEME DATABASES: trends_memes/);
+    expect(MEMES_TOOL.name).toBe('trends_memes');
+  });
+
+  test('Instagram hashtag search returns captions and counts only, counts the weekly allowance, and explains Meta errors', async () => {
+    const { instagramHashtag, instagramPublic } = await import('../server/instagram.mjs');
+    const cfg: any = { token: 't', igUserId: '123', recent: [] };
+    const fetch = async (u: URL) => {
+      const url = String(u);
+      expect(url).not.toMatch(/media_url/);
+      if (url.includes('ig_hashtag_search')) return { ok: true, json: async () => ({ data: [{ id: 'h1' }] }) };
+      if (url.includes('h1/top_media')) return { ok: true, json: async () => ({ data: [{ id: 'm', caption: 'fih  shirt day', media_type: 'IMAGE', permalink: 'https://www.instagram.com/p/x/', like_count: 10, comments_count: 2, timestamp: '2026-10-20T00:00:00+0000', media_url: 'https://cdn/x.jpg' }] }) };
+      return { ok: false, status: 400, json: async () => ({ error: { code: 190, message: 'expired' } }) };
+    };
+    const saved: any[] = [];
+    const r: any = await instagramHashtag({ hashtag: '#FihShirt' }, { config: cfg, fetch, save: (c: any) => saved.push(c) });
+    expect(r.posts).toEqual([{ caption: 'fih shirt day', type: 'IMAGE', likes: 10, comments: 2, at: '2026-10-20T00:00:00+0000', link: 'https://www.instagram.com/p/x/' }]);
+    expect(JSON.stringify(r)).not.toMatch(/cdn\/x\.jpg/);
+    expect(saved[0].recent).toEqual([expect.objectContaining({ tag: 'fihshirt' })]);
+    expect(instagramPublic(saved[0])).toEqual({ configured: true, username: null, hashtagsLeft: 29 });
+    await expect(instagramHashtag({ hashtag: 'x' }, { config: { token: 't', igUserId: '1', recent: [] }, fetch: async () => ({ ok: false, status: 400, json: async () => ({ error: { code: 190 } }) }) })).rejects.toThrow(/expired/);
+    await expect(instagramHashtag({ hashtag: 'x' }, { config: null as any })).rejects.toThrow(/set-instagram/);
+  });
+
+  test('Pinterest trends and pin search return keywords, titles and links, never images', async () => {
+    const { pinterestTool } = await import('../server/pinterest.mjs');
+    const fetch = async (u: URL, init: any) => {
+      expect(init.headers.authorization).toBe('Bearer tok');
+      const url = String(u);
+      if (url.includes('/trends/keywords/US/top/growing')) return { ok: true, json: async () => ({ trends: [{ keyword: 'fish shirt', pct_growth_wow: 40, pct_growth_yoy: 300, time_series: [1, 2, 3] }] }) };
+      if (url.includes('/search/pins')) return { ok: true, json: async () => ({ items: [{ id: '9', title: 'funny fish tee', description: 'a  tee', link: 'https://shop/x', media: { images: {} }, created_at: '2026-10-01T00:00:00' }] }) };
+      return { ok: false, status: 403, json: async () => ({ message: 'needs standard access' }) };
+    };
+    const t: any = await pinterestTool({ action: 'trends' }, { config: { token: 'tok' }, fetch });
+    expect(t.trends).toEqual([{ keyword: 'fish shirt', pct_growth_wow: 40, pct_growth_yoy: 300, time_series: [1, 2, 3] }]);
+    const p: any = await pinterestTool({ action: 'search', query: 'funny fish' }, { config: { token: 'tok' }, fetch });
+    expect(p.pins).toEqual([{ title: 'funny fish tee', description: 'a tee', link: 'https://shop/x', board: null, at: '2026-10-01T00:00:00' }]);
+    await expect(pinterestTool({ action: 'trends', region: 'ZZ' }, { config: { token: 'tok' }, fetch })).rejects.toThrow(/standard access/);
+  });
+});

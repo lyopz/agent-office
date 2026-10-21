@@ -41,7 +41,7 @@ export function TopBar() {
       <span className="brand"><LogoLockup /></span>
       <input className="office-name" aria-label="Brain name" defaultValue={name} key={name} onBlur={(e) => e.target.value.trim() && e.target.value !== name && s.commit([{ op: 'office.rename', name: e.target.value.trim() }], 'Rename brain')} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
       <nav className="seg" aria-label="Pages">
-        {(['office', 'dashboard', 'approvals', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'office' ? 'Brain' : p[0].toUpperCase() + p.slice(1)}{p === 'approvals' && waiting > 0 && <span className="nav-count" aria-label={`${waiting} waiting`}>{waiting}</span>}</button>)}
+        {(['office', 'universe', 'dashboard', 'charts', 'approvals', 'ads', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'office' ? 'Brain' : p === 'universe' ? 'Brains' : p[0].toUpperCase() + p.slice(1)}{p === 'approvals' && waiting > 0 && <span className="nav-count" aria-label={`${waiting} waiting`}>{waiting}</span>}</button>)}
       </nav>
       <span className="spacer" />
       <EmergencyButton />
