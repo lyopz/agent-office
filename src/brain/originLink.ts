@@ -24,9 +24,9 @@ export type AdChannel = 'tiktok' | 'instagram_reels' | 'instagram_post' | 'pinte
 export interface AdEntry { id: string; productId: string; productTitle: string; designId: string | null; image: string | null; title: string; channel: AdChannel; format: string | null; headline: string; primaryText: string; hashtags: string[]; cta: string; script: string; costNote: string; why: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; status: 'waiting' | 'approved' | 'rejected'; at: string; decidedAt?: string; file?: string }
 /** A design-source folder on the owner's PC (memez, or one they linked) and what is in it. */
 export interface SourceFile { ref: string; folder: string; name: string; bytes: number; kind: 'png' | 'jpg'; usable: 'print' | 'reference' | 'owner'; title: string | null; page: string | null; licence: string; savedBy: string | null; at: string; note: string | null }
-export interface SourceFolderInfo { id: string; label: string; path: string; builtin: boolean; exists: boolean; files: number; printable: number; reference: number; recent: SourceFile[] }
+export interface SourceFolderInfo { id: string; label: string; path: string; builtin: boolean; exists: boolean; files: number; printable: number; reference: number; notes?: number; recent: SourceFile[] }
 /** Which trend sources this PC offers (never a token). */
-export interface TrendSources { google: boolean; memes: boolean; instagram: { configured: boolean; username: string | null; hashtagsLeft: number | null }; pinterest: { configured: boolean; username: string | null } }
+export interface TrendSources { google: boolean; memes: boolean; instagram: { configured: boolean; username: string | null; hashtagsLeft: number | null }; pinterest: { configured: boolean; username: string | null; board?: string | null; canSave?: boolean } }
 export interface MoneyEntry { id: string; agentId: string; kind: 'income' | 'expense'; usd: number; note: string; at: string }
 export interface SaleLine { id: string; orderId: string; at: string; status: string; productId: string; title: string; quantity: number; revenueUsd: number | null; costUsd: number; agentId: string | null; agentName: string | null }
 /** A design an agent made, kept on the owner's PC: SVG it wrote or a PNG from the image model. */

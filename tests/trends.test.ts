@@ -73,8 +73,8 @@ describe('meme databases and connectors', () => {
     expect(JSON.stringify(r)).not.toMatch(/i\.redd\.it|i\.imgflip/);
     const bad: any = await popularMemes({ source: 'reddit', subreddit: 'bad name!' }, { fetch });
     expect(bad.reddit_errors[0]).toMatch(/not a subreddit/);
-    expect(trendTools({ google: true, memes: true, instagram: { configured: false, username: null, hashtagsLeft: null }, pinterest: { configured: false, username: null } }).map((t) => t.name)).toEqual(['trends_google', 'trends_memes', 'assets_public_domain']);
-    expect(trendTools({ google: true, memes: true, instagram: { configured: true, username: 'ed', hashtagsLeft: 30 }, pinterest: { configured: true, username: 'ed' } }).map((t) => t.name)).toContain('trends_instagram');
+    expect(trendTools({ google: true, memes: true, instagram: { configured: false, username: null, hashtagsLeft: null }, pinterest: { configured: false, username: null, board: null, canSave: false } }).map((t) => t.name)).toEqual(['trends_google', 'trends_memes', 'assets_public_domain']);
+    expect(trendTools({ google: true, memes: true, instagram: { configured: true, username: 'ed', hashtagsLeft: 30 }, pinterest: { configured: true, username: 'ed', board: 'memez', canSave: true } }).map((t) => t.name)).toContain('trends_instagram');
     expect(trendSources()).not.toMatch(/INSTAGRAM CONNECTED/);
     expect(TREND_SOURCES).toMatch(/MEME DATABASES: trends_memes/);
     expect(MEMES_TOOL.name).toBe('trends_memes');
@@ -112,7 +112,53 @@ describe('meme databases and connectors', () => {
     const t: any = await pinterestTool({ action: 'trends' }, { config: { token: 'tok' }, fetch });
     expect(t.trends).toEqual([{ keyword: 'fish shirt', pct_growth_wow: 40, pct_growth_yoy: 300, time_series: [1, 2, 3] }]);
     const p: any = await pinterestTool({ action: 'search', query: 'funny fish' }, { config: { token: 'tok' }, fetch });
-    expect(p.pins).toEqual([{ title: 'funny fish tee', description: 'a tee', link: 'https://shop/x', board: null, at: '2026-10-01T00:00:00' }]);
+    expect(p.pins).toEqual([{ id: '9', title: 'funny fish tee', description: 'a tee', link: 'https://shop/x', board: null, owner: null, at: '2026-10-01T00:00:00' }]);
+    expect(p.canSave).toBe(false);
     await expect(pinterestTool({ action: 'trends', region: 'ZZ' }, { config: { token: 'tok' }, fetch })).rejects.toThrow(/standard access/);
+  });
+
+  test('Pinterest find filters by phrase; save and unsave touch only the secret memez board and every other write is refused', async () => {
+    const { pinterestTool, findOrCreateBoard, savePin, unsavePin, boardPins, pinterestPublic, MEMEZ_BOARD } = await import('../server/pinterest.mjs');
+    const calls: { method: string; url: string; body?: any }[] = [];
+    const fetch = async (u: URL | string, init: any) => {
+      const url = String(u); const method = init?.method || 'GET';
+      calls.push({ method, url, body: init?.body ? JSON.parse(init.body) : undefined });
+      if (method === 'GET' && url.endsWith('/boards?page_size=100')) return { ok: true, json: async () => ({ items: [{ id: 'b-other', name: 'Shirts' }], bookmark: null }) };
+      if (method === 'POST' && url.endsWith('/boards')) return { ok: true, json: async () => ({ id: 'b-memez', name: 'memez' }) };
+      if (url.includes('/search/pins')) return { ok: true, json: async () => ({ items: [{ id: '1', title: 'fih shirt', description: 'the fih meme' }, { id: '2', title: 'fish dinner', description: 'recipe' }] }) };
+      if (method === 'POST' && url.endsWith('/pins/1/save')) return { ok: true, json: async () => ({ id: '1', title: 'fih shirt', board_id: 'b-memez' }) };
+      if (method === 'GET' && url.endsWith('/pins/1')) return { ok: true, json: async () => ({ id: '1', title: 'fih shirt', board_id: 'b-memez' }) };
+      if (method === 'GET' && url.endsWith('/pins/2')) return { ok: true, json: async () => ({ id: '2', title: 'fish dinner', board_id: 'b-other' }) };
+      if (method === 'DELETE' && url.endsWith('/pins/1')) return { ok: true, status: 204, json: async () => ({}) };
+      if (method === 'GET' && url.includes('/boards/b-memez/pins')) return { ok: true, json: async () => ({ items: [{ id: '1', title: 'fih shirt', board_id: 'b-memez' }] }) };
+      return { ok: false, status: 400, json: async () => ({ message: `unexpected ${method} ${url}` }) };
+    };
+    const cfg: any = { token: 'tok', username: 'ed' };
+    expect(pinterestPublic(cfg)).toEqual({ configured: true, username: 'ed', board: null, canSave: false });
+    await expect(savePin(cfg, '1', fetch)).rejects.toThrow(/no memez board yet/);
+    const board = await findOrCreateBoard(cfg, fetch);
+    expect(board).toEqual({ id: 'b-memez', name: MEMEZ_BOARD });
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.body)).toEqual([expect.objectContaining({ name: 'memez', privacy: 'SECRET' })]);
+    cfg.boardId = board.id; cfg.boardName = board.name;
+    expect(pinterestPublic(cfg).canSave).toBe(true);
+
+    const found: any = await pinterestTool({ action: 'find', query: 'fish shirt', phrase: 'fih' }, { config: cfg, fetch });
+    expect(found.pins.map((p: any) => p.id)).toEqual(['1']);
+    expect(found.canSave).toBe(true);
+
+    const saved: any = await pinterestTool({ action: 'save', pin_id: '1', note: 'rising on fish accounts' }, { config: cfg, fetch });
+    expect(saved.saved).toMatchObject({ id: '1', title: 'fih shirt', board: 'b-memez' });
+    expect(saved.board).toBe('memez');
+    expect(calls.find((c) => c.url.endsWith('/pins/1/save'))?.body).toEqual({ board_id: 'b-memez' });
+
+    expect((await boardPins(cfg, 10, fetch)).map((p) => p.id)).toEqual(['1']);
+    await expect(unsavePin(cfg, '2', fetch)).rejects.toThrow(/not on the memez board/);
+    expect(calls.some((c) => c.method === 'DELETE' && c.url.endsWith('/pins/2'))).toBe(false);
+    const removed: any = await pinterestTool({ action: 'unsave', pin_id: '1' }, { config: cfg, fetch });
+    expect(removed).toEqual({ removed: '1', title: 'fih shirt', board: 'memez' });
+
+    // Nothing else is ever written: every non-GET call so far is the board creation, the save, or the delete on the memez board.
+    const writes = calls.filter((c) => c.method !== 'GET');
+    expect(writes.map((c) => `${c.method} ${c.url.split('/v5/')[1]}`)).toEqual(['POST boards', 'POST pins/1/save', 'DELETE pins/1']);
   });
 });

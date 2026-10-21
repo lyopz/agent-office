@@ -62,7 +62,7 @@ export function listSourceFiles(folder, limit = MAX_FILES) {
 }
 /** What the app shows: each folder with its counts, never the files' bytes. */
 export function sourcesPublic(s, dataDir) {
-  return sourceFolders(s, dataDir).map((f) => { const files = listSourceFiles(f); return { id: f.id, label: f.label, path: f.path, builtin: !!f.builtin, exists: fs.existsSync(f.path), files: files.length, printable: files.filter((x) => x.usable !== 'reference').length, reference: files.filter((x) => x.usable === 'reference').length, recent: files.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8) }; });
+  return sourceFolders(s, dataDir).map((f) => { const files = listSourceFiles(f); return { id: f.id, label: f.label, path: f.path, builtin: !!f.builtin, exists: fs.existsSync(f.path), files: files.length, printable: files.filter((x) => x.usable !== 'reference').length, reference: files.filter((x) => x.usable === 'reference').length, notes: listMemeNotes(f).length, recent: files.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8) }; });
 }
 
 /** "memez/fish.png" → the folder and file name; no paths, only a name inside a known folder. */
@@ -116,6 +116,33 @@ export async function saveSourceImage(folder, input, by, deps = {}) {
   return { ref: `${folder.id}/${name}`, usable, width: size.width, height: size.height, bytes: buf.length };
 }
 
+// ---------- meme notes: the info of a meme (source, caption, stats, licence), kept even when no image is saved ----------
+const NOTES = 'notes';
+const slug = (t) => String(t || 'meme').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'meme';
+/** Write one meme's info to <folder>/notes/<slug>-<time>.json. */
+export function saveMemeNote(folder, info, by = null) {
+  const dir = path.join(folder.path, NOTES);
+  fs.mkdirSync(dir, { recursive: true });
+  const str = (v, n) => (v == null ? null : String(v).trim().slice(0, n) || null);
+  const note = { title: str(info.title, 160) || 'meme', platform: str(info.platform, 40), page: str(info.page, 300), caption: str(info.caption, 600), stats: info.stats && typeof info.stats === 'object' ? info.stats : str(info.stats, 300), licence: str(info.licence, 80) || 'unknown (someone\'s post)', pinId: str(info.pinId ?? info.pin_id, 64), file: str(info.file, 200), note: str(info.note, 600), savedBy: by?.agentName ?? info.savedBy ?? 'JARVIS', taskId: by?.taskId ?? null, at: new Date().toISOString() };
+  const name = `${slug(note.title)}-${Date.now().toString(36)}.json`;
+  fs.writeFileSync(path.join(dir, name), JSON.stringify(note, null, 2));
+  return { ref: `${folder.id}/${NOTES}/${name}`, ...note };
+}
+/** The notes in a folder, newest first. */
+export function listMemeNotes(folder, limit = 50) {
+  const dir = path.join(folder.path, NOTES);
+  let names; try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.json')); } catch { return []; }
+  const out = [];
+  for (const n of names) { try { out.push({ ref: `${folder.id}/${NOTES}/${n}`, ...JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')) }); } catch { /* skip a broken note */ } }
+  return out.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, limit);
+}
+export const SOURCE_NOTE_TOOL = {
+  name: 'source_note',
+  description: "Save a meme's info to the owner's memez folder without saving its picture: title, platform, source page, caption, stats (likes, comments, score), licence, and why it matters. Use it for every meme worth remembering from Instagram, TikTok roundups, Reddit or Pinterest, so nothing is lost even when the image is someone's work. (A Pinterest pin saved with trends_pinterest gets its note written automatically.)",
+  input_schema: { type: 'object', properties: { title: { type: 'string' }, platform: { type: 'string', description: 'instagram, tiktok, reddit, pinterest, imgflip, web' }, page: { type: 'string', description: 'the post or page URL' }, caption: { type: 'string' }, stats: { type: 'object', description: 'e.g. {"likes": 1200, "comments": 40}' }, licence: { type: 'string' }, pin_id: { type: 'string' }, note: { type: 'string', description: 'the joke, the trend, where it is rising, what to make of it' } }, required: ['title', 'page'] },
+};
+
 export const SOURCE_LIST_TOOL = {
   name: 'files_source',
   description: "The owner's design sources: the memez folder (images the scouts saved, with licence) and any folder the owner linked (their own files). Each file says what it may be used for: print (public domain or CC0, can go on a shirt), owner (the owner's own file, theirs to print), or reference (someone else's work: learn the joke, never print it). Use a print or owner file in design_caption_image with source_file.",
@@ -126,7 +153,7 @@ export const SOURCE_SAVE_TOOL = {
   description: "Save an image you found online into the owner's memez folder for the design agents, with its title, source page and licence. A public-domain or CC0 image is saved as print and may go on a shirt; anything else (a meme, a post, a photo someone owns) is saved as reference only, so the designers learn the joke from it and remake it with a free image or their own drawing. If the owner declines a design made from a saved image, that file is deleted.",
   input_schema: { type: 'object', properties: { image_url: { type: 'string', description: 'the https URL of the image file itself' }, file_name: { type: 'string' }, title: { type: 'string' }, page: { type: 'string', description: 'the page it was found on' }, licence: { type: 'string', description: 'as stated by the source, e.g. "Public domain", "CC0", "CC BY 4.0", or "unknown (someone\'s post)"' }, note: { type: 'string', description: 'why it matters: the joke, the trend, where it is rising' }, folder: { type: 'string', description: 'folder id, default memez' } }, required: ['image_url', 'title', 'page'] },
 };
-export const SOURCE_TOOLS = [SOURCE_LIST_TOOL, SOURCE_SAVE_TOOL];
+export const SOURCE_TOOLS = [SOURCE_LIST_TOOL, SOURCE_SAVE_TOOL, SOURCE_NOTE_TOOL];
 
 /** Run one of the source tools for an agent. */
 export async function runSourceTool(name, input, s, dataDir, by, deps = {}) {
@@ -137,7 +164,13 @@ export async function runSourceTool(name, input, s, dataDir, by, deps = {}) {
       const q = String(input.query || '').toLowerCase().trim();
       const limit = Math.max(1, Math.min(100, Number(input.limit) || 40));
       const files = pick.flatMap((f) => listSourceFiles(f)).filter((x) => !q || `${x.name} ${x.title || ''} ${x.note || ''}`.toLowerCase().includes(q)).sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
-      return { content: JSON.stringify({ folders: folders.map((f) => ({ id: f.id, label: f.label })), files: files.map(({ ref, usable, title, licence, page, note, savedBy, at, kind }) => ({ ref, usable, title, licence, page, note, savedBy, at, kind })), note: 'print and owner files may go on a shirt (design_caption_image source_file); reference files are for the joke only.' }), isError: false };
+      const notes = pick.flatMap((f) => listMemeNotes(f, 30)).filter((x) => !q || `${x.title} ${x.caption || ''} ${x.note || ''}`.toLowerCase().includes(q)).slice(0, limit);
+      return { content: JSON.stringify({ folders: folders.map((f) => ({ id: f.id, label: f.label })), files: files.map(({ ref, usable, title, licence, page, note, savedBy, at, kind }) => ({ ref, usable, title, licence, page, note, savedBy, at, kind })), notes: notes.map(({ ref, title, platform, page, caption, stats, licence, pinId, note, savedBy, at }) => ({ ref, title, platform, page, caption, stats, licence, pinId, note, savedBy, at })), note: 'print and owner files may go on a shirt (design_caption_image source_file); reference files and notes are for the joke only.' }), isError: false };
+    }
+    if (name === SOURCE_NOTE_TOOL.name) {
+      if (!String(input.title || '').trim() || !String(input.page || '').trim()) return { content: 'Give the title and the page URL.', isError: true };
+      const r = saveMemeNote(folders[0], input, by);
+      return { content: JSON.stringify({ saved: true, ref: r.ref, note: 'The info is kept in the memez folder; the picture was not saved.' }), isError: false };
     }
     if (name === SOURCE_SAVE_TOOL.name) {
       const folder = folders.find((f) => f.id === (input.folder || MEMEZ) || f.label === input.folder) || folders[0];
@@ -151,5 +184,5 @@ export async function runSourceTool(name, input, s, dataDir, by, deps = {}) {
 /** The sentence in every design brief about the source folders. */
 export function sourcesBrief(s, dataDir) {
   const list = sourceFolders(s, dataDir).map((f) => { const files = listSourceFiles(f); return `${f.label}: ${files.length} file${files.length === 1 ? '' : 's'}${files.length ? ` (${files.filter((x) => x.usable !== 'reference').length} printable, ${files.filter((x) => x.usable === 'reference').length} reference)` : ''}`; });
-  return ` SOURCE FOLDERS (the owner's design sources on their PC: ${list.join('; ')}): files_source lists them. A file marked print or owner may go on a shirt (design_caption_image with source_file), a file marked reference is someone else's work: take the joke, remake it with a free image or your own drawing. Scouts save what they find with source_save (title, page and licence recorded; anything not public domain or CC0 is saved as reference). When the owner declines a design made from a saved image, that one file is deleted.`;
+  return ` SOURCE FOLDERS (the owner's design sources on their PC: ${list.join('; ')}): files_source lists them. A file marked print or owner may go on a shirt (design_caption_image with source_file), a file marked reference is someone else's work: take the joke, remake it with a free image or your own drawing. Scouts save what they find with source_save (title, page and licence recorded; anything not public domain or CC0 is saved as reference) and keep a meme's info without its picture with source_note. When the owner declines a design made from a saved image, that one file is deleted.`;
 }

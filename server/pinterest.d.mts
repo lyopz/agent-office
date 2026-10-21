@@ -1,6 +1,11 @@
 export function pinterestConfig(): Record<string, unknown> | null;
 export function savePinterest(cfg: Record<string, unknown>): void;
-export function pinterestPublic(cfg?: Record<string, unknown> | null): { configured: boolean; username: string | null };
+export const MEMEZ_BOARD: string;
+export function pinterestPublic(cfg?: Record<string, unknown> | null): { configured: boolean; username: string | null; board: string | null; canSave: boolean };
+export function findOrCreateBoard(cfg: Record<string, unknown>, fetch?: unknown): Promise<{ id: string; name: string }>;
+export function savePin(cfg: Record<string, unknown>, pinId: string, fetch?: unknown): Promise<Record<string, unknown>>;
+export function unsavePin(cfg: Record<string, unknown>, pinId: string, fetch?: unknown): Promise<{ removed: string; title: string }>;
+export function boardPins(cfg: Record<string, unknown>, limit?: number, fetch?: unknown): Promise<Record<string, unknown>[]>;
 export function pingPinterest(cfg: Record<string, unknown>, fetch?: unknown): Promise<string>;
 export const PINTEREST_TOOL: { name: string; description: string; input_schema: Record<string, unknown> };
 export function pinterestTool(input?: Record<string, unknown>, deps?: { config?: Record<string, unknown>; fetch?: unknown }): Promise<Record<string, unknown>>;

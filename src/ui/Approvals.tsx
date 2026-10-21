@@ -166,7 +166,7 @@ function DesignSources({ st, onDone }: { st: RunnerStatus; onDone: () => void })
       <p className="small muted">The scouts save images they find online into <b>memez</b> with the source and licence recorded: a public-domain or CC0 image can go on a shirt; anything else is reference only (the designers take the joke and remake it). Link your own folders too: your files are yours to print. Declining a design made from a saved image deletes that one image.</p>
       <ul className="creator-request-log">
         {sources.map((f) => <li key={f.id}>
-          <b>{f.label}</b> <span className="small muted">{f.path}{!f.exists ? ' (not there yet)' : ''} · {f.files} image{f.files === 1 ? '' : 's'}{f.files ? `: ${f.printable} printable, ${f.reference} reference` : ''}</span>
+          <b>{f.label}</b> <span className="small muted">{f.path}{!f.exists ? ' (not there yet)' : ''} · {f.files} image{f.files === 1 ? '' : 's'}{f.files ? `: ${f.printable} printable, ${f.reference} reference` : ''}{f.notes ? ` · ${f.notes} meme note${f.notes === 1 ? '' : 's'}` : ''}</span>
           {!f.builtin && <> <button className="link-btn" disabled={busy} onClick={() => void act({ action: 'remove', id: f.id }, `Unlinked ${f.label}; the files stay on your PC.`)}>unlink</button></>}
           {f.recent.length > 0 && <ul className="small">{f.recent.map((x) => <li key={x.ref}>{x.title ?? x.name} <span className="muted">· {usable(x.usable)}{x.savedBy ? ` · saved by ${x.savedBy}` : ''}</span> {x.savedBy && <button className="link-btn" disabled={busy} onClick={() => void act({ action: 'delete', file: x.ref }, `Deleted ${x.name}.`)}><Trash2 size={11} /> delete</button>}</li>)}</ul>}
         </li>)}

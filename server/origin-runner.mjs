@@ -27,7 +27,7 @@ import { CANVA_AI, callCanva, canvaFiles, canvaName, canvaPublic, canvaText, can
 import { voicePublic, voiceRoute } from './openai-voice.mjs';
 import { COPYRIGHT_RULES, runTrendTool, trendSources, trendTask, trendTools, trendsPublic } from './trends.mjs';
 import { DEGEN_TOOL, degenBankSkill, degenCatalog, degenSkill, degenSkillsForRole } from './degen-skills.mjs';
-import { SOURCE_TOOLS, addSourceFolder, deleteSourceFile, readSourceFile, removeSourceFolder, runSourceTool, sourceFolders, sourcesBrief, sourcesPublic } from './sources.mjs';
+import { SOURCE_TOOLS, addSourceFolder, deleteSourceFile, readSourceFile, removeSourceFolder, runSourceTool, saveMemeNote, sourceFolders, sourcesBrief, sourcesPublic } from './sources.mjs';
 import { DESIGN_STYLE, cleanStyleNote, styleGuide } from './design-style.mjs';
 
 const PORT = Number(process.env.ORIGIN_PORT || 8788);
@@ -877,6 +877,8 @@ async function work(s, task, ctx) {
             : await etsy.run(tc.name, tc.input);
           // an SVG sent to Printify is kept in the gallery too
           if (tc.name === 'printify_upload_design' && tc.input?.svg && !res.isError) { try { saveDesign(s, task, { file_name: tc.input.file_name, svg: tc.input.svg, imageId: JSON.parse(res.content).image_id }, w); } catch { /* the upload still counts */ } }
+          // a pin kept on the memez board gets its info written to the memez folder, so nothing is lost
+          if (tc.name === 'trends_pinterest' && tc.input?.action === 'save' && !res.isError) { try { const p = JSON.parse(res.content); saveMemeNote(sourceFolders(s, DIR)[0], { title: p.saved?.title || 'pin', platform: 'pinterest', page: p.saved?.link, caption: p.saved?.description, pinId: p.saved?.id, note: p.note }, w); } catch { /* the save still stands */ } }
           if (tc.name.startsWith('etsy_')) record.etsyCalls = (record.etsyCalls || 0) + 1;
           else if (tc.name.startsWith('printify_')) record.printifyCalls = (record.printifyCalls || 0) + 1;
           else if (tc.name === DESIGN_TOOL.name || tc.name === CAPTION_TOOL.name) record.designs = (record.designs || 0) + 1;

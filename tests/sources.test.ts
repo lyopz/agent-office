@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { addSourceFolder, deleteSourceFile, listSourceFiles, readSourceFile, removeSourceFolder, runSourceTool, saveSourceImage, sourceFolders, sourcesBrief, sourcesPublic, usableFor } from '../server/sources.mjs';
+import { SOURCE_TOOLS, addSourceFolder, deleteSourceFile, listMemeNotes, listSourceFiles, readSourceFile, removeSourceFolder, runSourceTool, saveMemeNote, saveSourceImage, sourceFolders, sourcesBrief, sourcesPublic, usableFor } from '../server/sources.mjs';
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('0000000d49484452', 'hex'), Buffer.from([0, 0, 0, 40, 0, 0, 0, 30]), Buffer.alloc(16)]);
 const fetchPng = async () => ({ ok: true, status: 200, arrayBuffer: async () => PNG.buffer.slice(PNG.byteOffset, PNG.byteOffset + PNG.byteLength) });
@@ -61,5 +61,29 @@ describe('design sources', () => {
     expect(JSON.parse(saved.content)).toMatchObject({ saved: true, usable: 'print', ref: 'memez/Old map.png' });
     const list = await runSourceTool('files_source', { query: 'map' }, s, dir, null);
     expect(JSON.parse(list.content).files).toEqual([expect.objectContaining({ ref: 'memez/Old map.png', usable: 'print', savedBy: 'Trend Scout' })]);
+  });
+
+  test("a meme's info is kept as a note in memez/notes without its picture, listed newest first and counted", async () => {
+    const dir = tmp(); const s: Record<string, unknown> = {};
+    const [memez] = sourceFolders(s, dir);
+    expect(SOURCE_TOOLS.map((t) => t.name)).toEqual(['files_source', 'source_save', 'source_note']);
+    const first = saveMemeNote(memez, { title: 'fih shirt', platform: 'instagram', page: 'https://www.instagram.com/p/x/', caption: 'fih', stats: { likes: 1200, comments: 40 }, note: 'rising' }, { agentName: 'Scout', taskId: 't1' });
+    expect(first.ref).toMatch(/^memez\/notes\/fih-shirt-/);
+    expect(first.licence).toBe("unknown (someone's post)");
+    expect(fs.readdirSync(path.join(dir, 'memez'))).toEqual(['notes']);
+    await new Promise((ok) => setTimeout(ok, 5));
+    const r = await runSourceTool('source_note', { title: 'fish dinner', page: 'https://www.pinterest.com/pin/2/', platform: 'pinterest', pin_id: '2', licence: 'CC0' }, s, dir, { agentName: 'Scout', taskId: 't2' });
+    expect(r.isError).toBe(false);
+    expect(JSON.parse(r.content)).toMatchObject({ saved: true, ref: expect.stringMatching(/^memez\/notes\/fish-dinner-/) });
+    const bad = await runSourceTool('source_note', { title: 'no page' }, s, dir, null);
+    expect(bad.isError).toBe(true);
+    const notes = listMemeNotes(memez);
+    expect(notes.map((n) => n.title)).toEqual(['fish dinner', 'fih shirt']);
+    expect(notes[0]).toMatchObject({ pinId: '2', licence: 'CC0', savedBy: 'Scout', taskId: 't2' });
+    expect(notes[1].stats).toEqual({ likes: 1200, comments: 40 });
+    const listed = JSON.parse((await runSourceTool('files_source', { query: 'fih' }, s, dir, null)).content);
+    expect(listed.files).toEqual([]);
+    expect(listed.notes.map((n: any) => n.title)).toEqual(['fih shirt']);
+    expect(sourcesPublic(s, dir)[0]).toMatchObject({ id: 'memez', notes: 2 });
   });
 });
