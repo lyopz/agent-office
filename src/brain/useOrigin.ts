@@ -20,6 +20,10 @@ export function originNotice(prev: RunnerStatus | null, next: RunnerStatus): { t
   const seenTasks = new Set(prev.tasks.map((t) => t.id));
   const proposed = next.tasks.filter((t) => t.status === 'proposed' && t.by === 'origin' && !seenTasks.has(t.id));
   if (proposed.length) return { text: proposed.length === 1 ? `ORIGIN wants your approval: ${proposed[0].title}` : `ORIGIN wants your approval on ${proposed.length} tasks`, level: 'info' };
+  // agents ORIGIN created on its own (auto-create on), or that wait for approval (ask-first)
+  const seenAgents = new Set((prev.agentProposals ?? []).map((p) => p.id));
+  const newAgents = (next.agentProposals ?? []).filter((p) => !seenAgents.has(p.id) && p.status === 'proposed');
+  if (newAgents.length) return { text: next.autoAgents ? `ORIGIN created ${newAgents.map((p) => p.name).join(', ')}` : `ORIGIN wants your approval for a new agent: ${newAgents[0].name}`, level: 'info' };
   const pct = (s: RunnerStatus) => (s.capUsd ? s.spentUsd / s.capUsd : 0);
   if (next.month === prev.month && pct(prev) < 1 && pct(next) >= 1) return { text: `ORIGIN hit its $${next.capUsd} monthly cap and won't run again this month.`, level: 'warn' };
   if (next.month === prev.month && pct(prev) < 0.8 && pct(next) >= 0.8) return { text: `ORIGIN has used $${next.spentUsd.toFixed(2)} of its $${next.capUsd} monthly cap.`, level: 'warn' };
