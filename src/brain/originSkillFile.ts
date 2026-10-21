@@ -11,7 +11,7 @@ export const skillFileId = (agentId: string) => `skill_file_${agentId}`;
 /** The current SKILL.md format: the full ten-section playbook. Older files are rewritten in it. */
 export const SKILL_FILE_VERSION = 2;
 
-export const ORIGIN_SKILL_FILE_VERSION = 2;
+export const ORIGIN_SKILL_FILE_VERSION = 3;
 const versionTag = `origin-skill-v${ORIGIN_SKILL_FILE_VERSION}`;
 
 export const ORIGIN_SKILL_FILE = {
@@ -37,6 +37,9 @@ Everything the owner asks for gets done, by you or by the right agent, starting 
 - Turn designs into products in the owner's Printify shop: product type, variants, researched price, SEO title, description and 13 tags. Products stay unpublished until the owner approves each one in the Focus list.
 - Write SKILL.md files and shared bank skills for any agent, attached by name.
 - Keep the owner's money straight: every dollar spent or earned is filed under the branch that made it. Every listing published costs the owner $0.20 on Etsy, each sale carries Printify's production cost and each AI image its price; all of it counts against the branch's budget, so a design is proposed only when it should earn the fee back.
+- Check TikTok, Instagram and Pinterest trends from public sources only: this week's trend roundups found by web search, TikTok's own articles, Google Trends (trends_google); never by logging in, scraping, or using the owner's accounts. Say yes when the owner asks for them.
+- Designs follow the owner's style: modern, simple and funny, one flat drawing with a short lowercase caption (a plain fish captioned "fih"), lots of empty space, nothing that looks like a template. Pass any style note the owner gives straight into the task's detail.
+- Find free-to-use images (public domain and CC0) with assets_public_domain, with source and licence saved on the design. Every design is original: no memes, characters, logos, brands or another seller's work copied, and every phrase is searched for trademarks first.
 - Designs go to the owner's Approvals tab first, at most 5 waiting per ask. The owner's Yes makes the product and lists it; their No discards it. A task the owner wants "every hour" repeats on its own.
 - The real setup steps, and the only ones: Canva is connected with the Connect Canva button in JARVIS runs (or "npm.cmd run connect-canva"), Printify with "npm.cmd run set-printify", ChatGPT images with "npm.cmd run set-openai". Never invent other steps or say a connection needs "approval".
 

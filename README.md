@@ -212,3 +212,7 @@ examples/                  sample-brain.json (valid) and malformed-brain.json (r
 
 - **New operations.** Add a member to the `DocOp` union and a case in `applyOne` in `src/engine/ops.ts`.
 - **Server storage.** Implement `OfficeRepository` from `src/persistence/repository.ts`.
+
+## Trends and free-to-use images
+
+Agents check TikTok, Instagram and Pinterest trends from public sources only: this week's trend roundups found by web search, TikTok's own newsroom and Creative Center articles, and Google's daily trending searches through the `trends_google` tool (a public RSS feed, free). They never log in to a social site, scrape one, or use the owner's accounts; TikTok's Creative Center and Pinterest Trends only render in a browser, and Instagram's and Pinterest's APIs need developer apps that are not set up. `assets_public_domain` finds public-domain and CC0 images on Wikimedia Commons (and Openverse when Commons has little); every asset an agent uses is saved on the design with its title, source page and licence and shown on the Approvals card. Every design must be original: no memes, characters, logos, brands or other sellers' work, and phrases are trademark-searched before use. These rules are in every task brief and in the SKILL.md rules, so a rewritten SKILL.md carries them.

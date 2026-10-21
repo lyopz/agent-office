@@ -380,6 +380,53 @@ describe('origin runner: Etsy tools', () => {
   });
 });
 
+describe('origin runner: trends and free-to-use images', () => {
+  test('a trend task gets the public-source rules, and trends_google runs through the runner', async () => {
+    write({ ...base, agents: [{ id: 'ts', name: 'Trend Scout' }], tasks: [{ id: 't1', title: 'Trend Scout: TikTok and Instagram phrases for shirts', detail: '', status: 'approved', by: 'owner', agentId: 'ts', createdAt: '' }] });
+    const bodies: any[] = [];
+    const ran: any[] = [];
+    const etsy = { tools: [{ name: 'trends_google', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }), trends: async (name: string, input: any) => { ran.push([name, input]); return { content: '{"items":[]}', isError: false }; } };
+    const fetch = async (_u: string, init: any) => {
+      bodies.push(JSON.parse(init.body));
+      if (bodies.length === 1) return { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'tu1', name: 'trends_google', input: { geo: 'US' } }], usage: { input_tokens: 100, output_tokens: 10 }, stop_reason: 'tool_use' }) };
+      return reply(result({ memory: 'm', summary: 's' }), { input_tokens: 100, output_tokens: 10 });
+    };
+    const r: any = await runner.runOnce('manual', { fetch, file, key: 'test', etsy } as any);
+    expect(ran).toEqual([['trends_google', { geo: 'US' }]]);
+    expect(bodies[0].messages[0].content).toMatch(/TRENDS \(TikTok, Instagram and the rest\)/);
+    expect(bodies[0].messages[0].content).toMatch(/never log in to a social site/);
+    expect(bodies[0].messages[0].content).toMatch(/ORIGINAL ONLY/);
+    expect(bodies[1].messages.at(-1).content[0]).toMatchObject({ type: 'tool_result', tool_use_id: 'tu1', content: '{"items":[]}' });
+    expect(r.run).toMatchObject({ status: 'done', trendCalls: 1 });
+  });
+
+  test("every task brief carries the owner's design style guide, and their own note once they add one", async () => {
+    write({ ...base, designStyle: 'navy and cream only', tasks: [{ id: 't1', title: 'Art', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
+    const bodies: any[] = [];
+    const fetch = async (_u: string, init: any) => { bodies.push(JSON.parse(init.body)); return reply(result({ memory: 'm', summary: 's' }), { input_tokens: 100, output_tokens: 10 }); };
+    await runner.runOnce('manual', { fetch, file, key: 'test', etsy: { tools: [], run: async () => ({ content: 'x', isError: false }) } } as any);
+    expect(bodies[0].messages[0].content).toMatch(/DESIGN STYLE .*captioned "fih"|"fih"/);
+    expect(bodies[0].messages[0].content).toMatch(/THE OWNER ADDS: navy and cream only/);
+  });
+
+  test('a task that is not about trends does not carry the trend sources, but keeps the copyright rule', async () => {
+    write({ ...base, tasks: [{ id: 't1', title: 'Mug demand', detail: 'prices', status: 'approved', by: 'owner', createdAt: '' }] });
+    const bodies: any[] = [];
+    const fetch = async (_u: string, init: any) => { bodies.push(JSON.parse(init.body)); return reply(result({ memory: 'm', summary: 's' }), { input_tokens: 100, output_tokens: 10 }); };
+    await runner.runOnce('manual', { fetch, file, key: 'test', etsy: { tools: [], run: async () => ({ content: 'x', isError: false }) } } as any);
+    expect(bodies[0].messages[0].content).not.toMatch(/TRENDS \(TikTok/);
+    expect(bodies[0].messages[0].content).toMatch(/ORIGINAL ONLY/);
+  });
+
+  test('a design saved with public-domain assets keeps their title, page and licence', async () => {
+    write({ ...base, tasks: [{ id: 't1', title: 'Art', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
+    let n = 0;
+    const fetch = async () => { n++; return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'd1', name: 'design_save', input: { svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>', title: 'Rose tee', assets: [{ title: 'Rosa gallica', page: 'https://commons/Rose', licence: 'Public domain' }] } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
+    await runner.runOnce('manual', { fetch, file, key: 'test', etsy: { tools: [{ name: 'design_save', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }) } } as any);
+    expect(read().designs[0]).toMatchObject({ title: 'Rose tee', assets: [{ title: 'Rosa gallica', page: 'https://commons/Rose', licence: 'Public domain' }] });
+  });
+});
+
 describe('origin runner: Printify publish requests', () => {
   test('an agent asks to publish; the runner records it for the owner and tells them, without publishing', async () => {
     write({ ...base, tasks: [{ id: 't1', title: 'Make mugs', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });

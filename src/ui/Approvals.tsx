@@ -5,10 +5,10 @@
 // owner tops up: the monthly cap, funds added to it, the image and Canva limits, and per-branch
 // budgets. Everything comes from JARVIS's runner (useOrigin); nothing is simulated.
 import { useMemo, useState } from 'react';
-import { BadgeCheck, Check, CircleDollarSign, Images, Plus, Repeat, X } from 'lucide-react';
+import { BadgeCheck, Check, CircleDollarSign, Images, Palette, Plus, Repeat, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import { useOrigin } from '../brain/useOrigin';
-import { designDecision, designUrl, mockupUrl, publishDecision, runnerStatus, setBudgets, type DesignEntry, type PublishRequest, type RunnerStatus } from '../brain/originLink';
+import { designDecision, designUrl, mockupUrl, publishDecision, runnerStatus, setBudgets, setDesignStyle, type DesignEntry, type PublishRequest, type RunnerStatus } from '../brain/originLink';
 import { ORIGIN_ID } from '../brain/opportunity';
 import { usd } from './Dashboard';
 
@@ -75,6 +75,7 @@ export function Approvals() {
               <figcaption>
                 <b>{d.title}</b>
                 <span>{d.agentName} · {when(d.at)}{d.source === 'canva' ? ' · Canva' : d.kind === 'svg' ? ' · SVG' : ' · image'}</span>
+                {d.assets?.length ? <span className="small muted">Uses {d.assets.map((x, i) => <span key={i}>{i ? ', ' : ''}{x.page ? <a href={x.page} target="_blank" rel="noreferrer">{x.title || 'an image'}</a> : (x.title || 'an image')}{x.licence ? ` (${x.licence})` : ''}</span>)}</span> : null}
                 <div className="approval-actions">
                   <button className="btn sm danger" disabled={busy === d.id} onClick={() => void decide(d, 'reject')}><X size={13} /> No</button>
                   <button className="btn sm primary" disabled={busy === d.id} onClick={() => void decide(d, 'approve')}><Check size={13} /> Yes, make and list it</button>
@@ -110,12 +111,39 @@ export function Approvals() {
         </ul>
       </section>}
 
+      <DesignStyle st={st} onDone={() => void refresh()} />
       <Budgets st={st} agents={doc.agents} onDone={() => void refresh()} />
     </div>
   );
 }
 
 /** The owner's budgets, changed whenever they top up; every change is logged by the runner and in force at once. */
+/** The owner's taste in designs: the built-in guide, plus their own notes that every agent gets from the next run. */
+function DesignStyle({ st, onDone }: { st: RunnerStatus; onDone: () => void }) {
+  const d = st.designStyle;
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!d) return null;
+  const value = note ?? d.note;
+  const save = async () => {
+    setBusy(true);
+    const r = await setDesignStyle(value);
+    setBusy(false);
+    useStore.getState().notify(r?.ok ? (value.trim() ? 'Saved. Agents follow your note from their next design.' : 'Your note is cleared; the built-in style guide stays.') : 'The runner did not answer.', r?.ok ? undefined : 'warn');
+    setNote(null);
+    onDone();
+  };
+  return (
+    <section className="card approval-group">
+      <h4><Palette size={13} /> Design style <span className="count">what every agent is told before it draws</span></h4>
+      <details><summary className="small">The built-in guide: modern, simple, funny (one flat drawing, a short lowercase caption like a fish captioned "fih")</summary><p className="note">{d.guide}</p></details>
+      <label className="small" htmlFor="design-style-note">Your own notes, in your words <small>{d.at ? `last changed ${when(d.at)}` : 'none yet'}</small></label>
+      <textarea id="design-style-note" rows={3} value={value} maxLength={2000} placeholder='e.g. "more animals, fewer food jokes", "navy and cream only", "add a tiny crown on everything"' onChange={(e) => setNote(e.target.value)} style={{ width: '100%' }} />
+      <div className="approval-actions"><button className="btn sm primary" disabled={busy || note == null || note === d.note} onClick={() => void save()}><Check size={13} /> Save</button></div>
+    </section>
+  );
+}
+
 function Budgets({ st, agents, onDone }: { st: RunnerStatus; agents: Record<string, { identity: { name: string } }>; onDone: () => void }) {
   const b = st.budgets;
   const [cap, setCap] = useState('');

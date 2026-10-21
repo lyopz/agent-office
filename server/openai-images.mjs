@@ -57,7 +57,7 @@ export async function generateImage({ prompt, quality = 'medium', size = '1024x1
 
 export const IMAGE_TOOL = {
   name: 'design_generate_image',
-  description: "Make artwork with the owner's image generator (ChatGPT's gpt-image) and upload it to Printify as a design. Returns image_id for printify_create_product. Each image costs the owner money (about $0.006 low, $0.05 medium, $0.21 high quality), so plan the design first and make one image per product unless it failed. Best for illustrated or photo-style art on mugs, posters, stickers and totes. For text-only designs, write SVG with printify_upload_design instead (free and sharper).",
+  description: "Make artwork with the owner's image generator (ChatGPT's gpt-image) and upload it to Printify as a design. Returns image_id for printify_create_product. Each image costs the owner money (about $0.006 low, $0.05 medium, $0.21 high quality), so plan the design first and make one image per product unless it failed. Best for illustrated or photo-style art on mugs, posters, stickers and totes. Follow DESIGN STYLE in your brief: flat, minimal, one subject, lots of negative space, isolated on a transparent background, and put those words in the prompt. For text-only designs, write SVG with printify_upload_design instead (free and sharper).",
   input_schema: { type: 'object', properties: {
     prompt: { type: 'string', description: 'The full image description: subject, style, colors, composition, any text to show exactly, and "isolated on a plain background" for print.' },
     quality: { type: 'string', enum: ['low', 'medium', 'high'], description: 'medium for most products; high only for a hero design the research supports' },

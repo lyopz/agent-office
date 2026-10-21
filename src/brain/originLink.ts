@@ -25,7 +25,7 @@ export type DesignStatus = 'waiting' | 'approved' | 'rejected' | 'published';
 export interface BranchBudget { id: string; budgetUsd: number | null; spentUsd: number }
 export interface BudgetChange { id: string; at: string; what: string; from: number | null; to: number | null }
 export interface Budgets { capUsd: number; defaultCapUsd: number; imageCapUsd: number; canvaAiLimit: number; voiceCapUsd: number | null; listingFeeUsd: number; branches: BranchBudget[]; log: BudgetChange[] }
-export interface DesignEntry { id: string; kind: 'svg' | 'png' | 'jpg'; source?: 'canva'; status?: DesignStatus; productId?: string; decidedAt?: string; publishedAt?: string; printify?: string; fileName: string; title: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string | null; at: string }
+export interface DesignEntry { id: string; kind: 'svg' | 'png' | 'jpg'; source?: 'canva'; assets?: { title: string; page: string; licence: string }[]; status?: DesignStatus; productId?: string; decidedAt?: string; publishedAt?: string; printify?: string; fileName: string; title: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string | null; at: string }
 /** One design image an agent made with the owner's OpenAI key, and what it cost. */
 export interface ImageEntry { id: string; at: string; model: string; quality: string; size: string; usd: number; estimated?: boolean; prompt: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string }
 /** One line of progress, filed under the agent the work was for. */
@@ -37,11 +37,11 @@ export interface AgentProposal {
   everyMinutes: number; maxMinutes: number; reason: string; skillFile?: { name: string; description: string; body: string } | null; auto?: boolean; status: 'proposed' | 'approved' | 'rejected'; createdAt: string; agentId?: string | null;
 }
 export interface RunnerWorker { taskId: string | null; agentId: string; agentName: string; title: string | null; costUsd: number; status: string; rounds: number; summary?: string }
-export interface RunnerRun { workers?: RunnerWorker[]; id: string; agentId?: string; taskId?: string | null; skillFileFor?: string; trigger: 'manual' | 'schedule' | 'focus'; startedAt: string; endedAt: string | null; costUsd: number; costKnown: boolean; searches: number; fetches?: number; etsyCalls?: number; printifyCalls?: number; images?: number; imageUsd?: number; status: string; summary: string; notify?: string | null }
+export interface RunnerRun { workers?: RunnerWorker[]; id: string; agentId?: string; taskId?: string | null; skillFileFor?: string; trigger: 'manual' | 'schedule' | 'focus'; startedAt: string; endedAt: string | null; costUsd: number; costKnown: boolean; searches: number; fetches?: number; etsyCalls?: number; printifyCalls?: number; trendCalls?: number; images?: number; imageUsd?: number; status: string; summary: string; notify?: string | null }
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
   spentUsd: number; spentByAgent?: Record<string, number>; allowanceUsd?: number; spentTodayUsd?: number; parallel?: number; rounds?: number; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
-  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; budgets?: Budgets; canva?: { configured: boolean; connectedAt: string | null; connecting?: { url: string; startedAt: number } | null; month: string; aiCalls: number; exports: number; limit: number; log: CanvaEntry[] }; designs?: DesignEntry[]; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; money?: { byAgent: Record<string, MoneyRow>; entries: MoneyEntry[]; sales: SaleLine[]; salesSync: { at: string; error: string | null; orders: number | null } | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
+  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; budgets?: Budgets; designStyle?: { guide: string; note: string; at: string | null }; canva?: { configured: boolean; connectedAt: string | null; connecting?: { url: string; startedAt: number } | null; month: string; aiCalls: number; exports: number; limit: number; log: CanvaEntry[] }; designs?: DesignEntry[]; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; money?: { byAgent: Record<string, MoneyRow>; entries: MoneyEntry[]; sales: SaleLine[]; salesSync: { at: string; error: string | null; orders: number | null } | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
 }
 
 // in the browser the dev server forwards /api/origin; the desktop app talks to the runner directly
@@ -171,6 +171,11 @@ export async function designDecision(id: string, action: 'approve' | 'reject') {
 }
 
 /** The owner's budgets: the monthly cap (or funds added to it), the image, Canva and voice limits, and per-branch budgets. */
+/** The owner's own design notes, added to the style guide every agent gets. */
+export async function setDesignStyle(note: string) {
+  const r = await call<{ ok: boolean }>('/settings', { designStyle: note }, 20_000);
+  return r ? r.data : null;
+}
 export async function setBudgets(b: { capUsd?: number; addFundsUsd?: number; imageCapUsd?: number; canvaAiLimit?: number; voiceCapUsd?: number; branchBudgets?: Record<string, number | null> }) {
   const r = await call<{ ok: boolean; budgets: Budgets }>('/settings', b);
   return r ? r.data : null;
