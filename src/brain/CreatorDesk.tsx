@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, Check, FileText, GitBranch, Mic2, Plus, Search, ShieldCheck, Sparkles, Upload, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { KnowledgeEntry, RunWindow } from '../model/types';
-import { SKILL_LABELS, SKILL_TEAMS, VENTURE_TEAM, describeWindow, growKind, isOpportunityOrigin, opportunityOriginOps, skillInstructions, suggestedWindow, ventureInstructions } from './opportunity';
+import { SKILL_LABELS, SKILL_TEAMS, VENTURE_TEAM, branchAgentOps, describeWindow, growKind, isOpportunityOrigin, opportunityOriginOps, suggestedWindow } from './opportunity';
+import SkillRequests from './SkillRequests';
 
-type DeskTab = 'ideas' | 'agent' | 'tutorial';
+type DeskTab = 'ideas' | 'agent' | 'requests' | 'tutorial';
 const EVERY = [[15, 'every 15 min'], [30, 'every 30 min'], [60, 'every hour'], [120, 'every 2 hours'], [180, 'every 3 hours'], [300, 'every 5 hours'], [480, 'every 8 hours'], [720, 'every 12 hours'], [1440, 'once a day']] as const;
 
 function saveTextFile(name: string, text: string) {
@@ -31,6 +32,8 @@ export default function CreatorDesk() {
   const [agentDept, setAgentDept] = useState('Research');
   const [agentPurpose, setAgentPurpose] = useState('');
   const [parentId, setParentId] = useState<string | null>(null);
+  const [requestFrom, setRequestFrom] = useState<string | null>(null);
+  const openRequests = doc.skillRequests.filter((r) => r.status === 'venture-review' || r.status === 'owner-review').length;
   const [window_, setWindow] = useState<RunWindow>(suggestedWindow('Research'));
   const growFrom = parentId && doc.agents[parentId] ? parentId : leaderId;
   // only ORIGIN (starts ventures) and ventures (add skills) can grow branches
@@ -43,10 +46,10 @@ export default function CreatorDesk() {
 
   useEffect(() => {
     const onOpen = (event: Event) => {
-      const detail = (event as CustomEvent<{ tab?: DeskTab; parentId?: string }>).detail;
+      const detail = (event as CustomEvent<{ tab?: DeskTab; parentId?: string; fromId?: string }>).detail;
       const requested = detail?.tab;
-      if (requested !== 'ideas' && requested !== 'agent' && requested !== 'tutorial') return;
-      setNotice(''); setTab(requested); pickParent(detail?.parentId ?? null);
+      if (requested !== 'ideas' && requested !== 'agent' && requested !== 'requests' && requested !== 'tutorial') return;
+      setNotice(''); setTab(requested); pickParent(detail?.parentId ?? null); setRequestFrom(detail?.fromId ?? null);
     };
     window.addEventListener('agent-office:open-creator', onOpen);
     return () => window.removeEventListener('agent-office:open-creator', onOpen);
@@ -79,14 +82,10 @@ export default function CreatorDesk() {
     if (!agentName.trim() || !agentRole.trim() || !agentPurpose.trim()) { setNotice('Complete the agent name, role and purpose first.'); return; }
     if (!growFrom || !kind) { setNotice(`Only ${leaderName} can start a venture, and only a venture can add skill agents.`); return; }
     const parentName = doc.agents[growFrom]?.identity.name ?? leaderName;
-    const scope = kind === 'venture' ? ventureInstructions(agentName.trim(), agentRole.trim()) : skillInstructions(agentName.trim(), SKILL_LABELS[agentDept] ?? agentDept, parentName, agentPurpose.trim());
-    const id = `agent_custom_${Date.now().toString(36)}`;
-    const created = useStore.getState().commit([{ op: 'agent.createFromArchetype', archetype: 'custom', name: agentName.trim(), id }], `Approve specialist: ${agentName.trim()}`, { silent: true });
-    if (!created.ok) { setNotice(created.errors.join(' · ') || 'The specialist could not be added.'); return; }
-    const brief = `${kind === 'venture' ? `${agentPurpose.trim()}\n\n` : ''}${scope}\n\nRole: ${agentRole.trim()}. For research, cite current sources with publication dates and URLs; separate evidence, assumptions and recommendations. State uncertainty, costs and success criteria. Never claim work ran if it was only planned. Never spend, publish, contact people externally, create accounts or delete data without owner approval.`;
-    const updated = useStore.getState().commit([{ op: 'agent.update', id, patch: { identity: { title: agentRole.trim(), department: team, bio: agentPurpose.trim(), roleDescription: brief }, skills: { primaryRole: agentRole.trim(), supervisorId: growFrom, teams: [team], skills: [agentRole.trim()], expertise: [agentPurpose.trim()], tools: ['web-research', 'library-search', 'reports'], taskPermissions: ['draft', 'research', 'recommend'], priorityRules: 'Owner priorities first; make costs and evidence visible.', escalationRules: 'Escalate unclear scope, missing research access, safety issues and any action requiring approval.' }, branch: { kind, ventureId: kind === 'venture' ? id : growFrom }, schedule: { runWindow: window_ }, permissions: { allowedTools: ['web-research', 'library-search', 'reports'], requireApprovalFor: ['spend', 'publish', 'external-message', 'create-account', 'delete'] }, ai: { provider: 'simulated', executionMode: 'manual-approval', agentInstructions: brief, systemInstructions: `You are ${agentName.trim()}, ${kind === 'venture' ? 'a venture branch started' : 'a skill agent'} reporting to ${parentName}. ${brief}`, toolPermissions: ['web-research', 'library-search', 'reports'] } } }], `Configure specialist: ${agentName.trim()}`);
-    if (!updated.ok) { setNotice(`The agent was added, but its full blueprint needs review: ${updated.errors.join(' · ')}`); return; }
-    setNotice(`${agentName.trim()} now grows from ${parentName} as a new ${kind === 'venture' ? 'venture' : 'skill'} branch, planned to work ${describeWindow(window_)}. Its provider is simulated and nothing is scheduled until you connect a model and approve a scheduler.`);
+    const { ops, error } = branchAgentOps(doc, growFrom, { id: `agent_custom_${Date.now().toString(36)}`, name: agentName.trim(), specialty: agentRole.trim(), purpose: agentPurpose.trim(), skill: team, window: window_ });
+    const result = error ? null : useStore.getState().commit(ops, `Approve ${kind}: ${agentName.trim()}`);
+    if (!result?.ok) { setNotice(error ?? result?.errors.join(' · ') ?? 'The agent could not be added.'); return; }
+    setNotice(`${agentName.trim()} now grows from ${parentName} as a new ${kind} branch, planned to work ${describeWindow(window_)}. Its provider is simulated and nothing is scheduled until you connect a model and approve a scheduler.`);
     setAgentName(''); setAgentRole(''); setAgentPurpose('');
   };
 
@@ -115,6 +114,7 @@ export default function CreatorDesk() {
         <span className="creator-live"><i /> {leaderName} · OWNER-LED</span>
         <button className="creator-action" onClick={() => { setTab('ideas'); setNotice(''); }}><Plus size={14} /> Add idea <span className="creator-count">{pending}</span></button>
         <button className="creator-action" onClick={() => { setTab('agent'); pickParent(null); setNotice(''); }}><GitBranch size={14} /> Start a venture</button>
+        <button className="creator-action" onClick={() => { setTab('requests'); setRequestFrom(null); setNotice(''); }}><Plus size={14} /> Skill requests <span className="creator-count">{openRequests}</span></button>
         {needsSetup && <button className="creator-action" onClick={setupOrigin} title="Give ORIGIN your Opportunity Research & Builder prompt and starting memory"><Sparkles size={14} /> Set up Opportunity agent</button>}
         <button className="creator-action creator-tutorial" onClick={() => { setTab('tutorial'); setNotice(''); }}><BookOpen size={14} /> Tutorial</button>
         <button className="creator-voice" onClick={speak} title={`Hear ${leaderName}'s low-pitched voice`}><Mic2 size={14} /> Hear {leaderName}</button>
@@ -123,7 +123,7 @@ export default function CreatorDesk() {
       {tab && <div className="creator-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setTab(null); }}>
         <section className="creator-dialog" role="dialog" aria-modal="true" aria-labelledby="creator-title">
           <header className="creator-dialog-head">
-            <div><span className="creator-kicker"><Sparkles size={13} /> AGENT CREATOR / {leaderName}</span><h2 id="creator-title">{tab === 'ideas' ? 'Compare two ideas' : tab === 'agent' ? (kind === 'skill' ? 'Add a skill to a venture' : 'Start a venture branch') : 'A quick tour'}</h2></div>
+            <div><span className="creator-kicker"><Sparkles size={13} /> AGENT CREATOR / {leaderName}</span><h2 id="creator-title">{tab === 'ideas' ? 'Compare two ideas' : tab === 'agent' ? (kind === 'skill' ? 'Add a skill to a venture' : 'Start a venture branch') : tab === 'requests' ? 'Skill requests' : 'A quick tour'}</h2></div>
             <button className="creator-close" aria-label="Close dialog" onClick={() => setTab(null)}><X size={17} /></button>
           </header>
 
@@ -160,6 +160,8 @@ export default function CreatorDesk() {
             <div className="creator-blueprint"><span className="creator-kicker">BLUEPRINT PREVIEW</span><p><b>{kind === 'skill' ? 'Skill for' : 'Started by'}:</b> {doc.agents[growFrom ?? '']?.identity.name ?? leaderName} · <b>Works:</b> {describeWindow(window_)} ({window_.setBy === 'origin' ? `suggested by ${leaderName}: ${window_.reason}` : 'set by you'}) · <b>Mode:</b> simulated until a provider is connected</p><p>Will use dated sources, expose assumptions, show costs and uncertainty, and request approval before external actions.</p></div>
             <div className="creator-dialog-foot"><button className="creator-secondary" onClick={() => setTab(null)}>Cancel</button><button className="creator-primary" onClick={proposeAgent}><Check size={15} /> Approve & add agent</button></div>
           </div>}
+
+          {tab === 'requests' && <SkillRequests fromId={requestFrom} onNotice={setNotice} />}
 
           {tab === 'tutorial' && <div className="creator-body">
             <ol className="creator-steps">

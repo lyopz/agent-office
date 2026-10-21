@@ -4,7 +4,7 @@
 // and search from here.
 import { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { GitBranch, Pause, Play, Search, Send } from 'lucide-react';
+import { GitBranch, MessageSquarePlus, Pause, Play, Search, Send } from 'lucide-react';
 import { ORIGIN_ID } from './opportunity';
 import { useStore } from '../store/store';
 import type { AgentStatus } from '../model/types';
@@ -89,6 +89,9 @@ export function AgentMenu() {
                       </button>
                       {(id === ORIGIN_ID || a.branch?.kind === 'venture') && <button className="am-pause am-grow" aria-label={id === ORIGIN_ID ? 'Start a venture branch' : `Add a skill to ${a.identity.name}`} title={id === ORIGIN_ID ? 'Start a venture branch' : 'Add a skill to this venture'} onClick={() => window.dispatchEvent(new CustomEvent('agent-office:open-creator', { detail: { tab: 'agent', parentId: id } }))}>
                         <GitBranch size={12} />
+                      </button>}
+                      {a.branch?.kind === 'skill' && <button className="am-pause am-grow" aria-label={`Request a new skill from ${a.identity.name}'s venture`} title="Ask this agent's venture for a new skill agent" onClick={() => window.dispatchEvent(new CustomEvent('agent-office:open-creator', { detail: { tab: 'requests', fromId: id } }))}>
+                        <MessageSquarePlus size={12} />
                       </button>}
                       <button className="am-pause" aria-label={a.enabled ? `Pause ${a.identity.name}` : `Resume ${a.identity.name}`} title={a.enabled ? 'Pause' : 'Resume'} onClick={() => togglePause(id)}>
                         {a.enabled ? <Pause size={12} /> : <Play size={12} />}

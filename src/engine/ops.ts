@@ -4,7 +4,7 @@
 import { produce, type Draft } from 'immer';
 import type { PlayerProfile,
   Agent, AlertSettings, Appearance, AppearanceSettings, CorridorEndpoint, Corridor, CosmeticItem, Door, Furniture, FurnitureMaterial, FurnitureType,
-  ArcadeSettings, ControlSettings, Department, KnowledgeEntry, OfficeDoc, OfficeSettings, OutfitTemplate, Point, Project, Rect, Room, RoomAppearance, RoomTemplate, RoomType, ThemeDef,
+  ArcadeSettings, ControlSettings, Department, KnowledgeEntry, OfficeDoc, OfficeSettings, OutfitTemplate, Point, Project, Rect, Room, RoomAppearance, RoomTemplate, RoomType, SkillRequest, ThemeDef,
 } from '../model/types';
 import { agentFromArchetype, furniturePreset, makeAgent, makeFurniture, makeRoom, uid, withAppearance } from '../model/defaults';
 import { FURNITURE_META } from '../model/catalog';
@@ -83,6 +83,9 @@ export type DocOp =
   | { op: 'department.setAgentsEnabled'; id: string; enabled: boolean }
   | { op: 'control.update'; patch: DeepPartial<ControlSettings> }
   | { op: 'arcade.update'; patch: DeepPartial<ArcadeSettings> }
+  | { op: 'skillRequest.create'; request: Pick<SkillRequest, 'id' | 'fromAgentId' | 'name' | 'skill' | 'specialty' | 'purpose'> }
+  | { op: 'skillRequest.review'; id: string; relevant: boolean; note: string }
+  | { op: 'skillRequest.decide'; id: string; approve: boolean; agentId?: string }
   | { op: 'player.update'; patch: { name?: string; camera?: PlayerProfile['camera']; lastRoomId?: string | null; appearance?: Partial<Appearance> } };
 
 export interface ApplyResult { doc: OfficeDoc; summary: string[]; errors: string[] }
@@ -668,6 +671,37 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
       if (!doc.projects[o.id]) { errors.push('Project not found'); return; }
       summary.push(`Deleted project ${doc.projects[o.id].name}`); delete doc.projects[o.id];
       return;
+    case 'skillRequest.create': {
+      const r = o.request, from = doc.agents[r.fromAgentId];
+      if (!from || from.branch?.kind !== 'skill' || !from.branch.ventureId || !doc.agents[from.branch.ventureId]) { errors.push('Only a skill agent working for a venture can file a skill request'); return; }
+      if (!r.name.trim() || !r.purpose.trim()) { errors.push('A skill request needs a name and how it helps the venture'); return; }
+      if (doc.skillRequests.some((x) => x.id === r.id)) { errors.push('That request already exists'); return; }
+      doc.skillRequests.push({ ...r, ventureId: from.branch.ventureId, status: 'venture-review', ventureNote: '', createdAt: new Date().toISOString(), decidedAt: null, agentId: null });
+      summary.push(`${from.identity.name} asked ${doc.agents[from.branch.ventureId].identity.name} for a ${r.skill} skill agent`);
+      return;
+    }
+    case 'skillRequest.review': {
+      const r = doc.skillRequests.find((x) => x.id === o.id);
+      if (!r) { errors.push('Skill request not found'); return; }
+      if (r.status !== 'venture-review') { errors.push('That request has already been reviewed'); return; }
+      r.status = o.relevant ? 'owner-review' : 'not-relevant'; r.ventureNote = o.note.trim();
+      if (!o.relevant) r.decidedAt = new Date().toISOString();
+      summary.push(`${doc.agents[r.ventureId]?.identity.name ?? 'The venture'} judged “${r.name}” ${o.relevant ? 'relevant; it now waits for the owner' : 'not relevant'}`);
+      return;
+    }
+    case 'skillRequest.decide': {
+      const r = doc.skillRequests.find((x) => x.id === o.id);
+      if (!r) { errors.push('Skill request not found'); return; }
+      if (r.status !== 'owner-review') { errors.push('Only a request its venture judged relevant can be decided'); return; }
+      if (o.approve) {
+        const a = o.agentId ? doc.agents[o.agentId] : null;
+        if (!a || a.branch?.kind !== 'skill' || a.branch.ventureId !== r.ventureId) { errors.push('Approving a request needs the new skill agent under its venture'); return; }
+        r.agentId = a.id;
+      }
+      r.status = o.approve ? 'approved' : 'denied'; r.decidedAt = new Date().toISOString();
+      summary.push(`Owner ${o.approve ? 'approved' : 'denied'} “${r.name}”`);
+      return;
+    }
     case 'library.upsert':
       doc.library[o.entry.id] = o.entry; summary.push(`Filed “${o.entry.title}” in the library`);
       return;

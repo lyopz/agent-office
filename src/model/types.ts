@@ -326,6 +326,17 @@ export interface Agent {
 }
 
 /** A venture is a business ORIGIN started; a skill agent works for exactly one venture. */
+export interface SkillRequest {
+  id: ID;
+  fromAgentId: ID;            // the skill agent asking
+  ventureId: ID;              // the venture it works for, which reviews the request
+  name: string; skill: string; specialty: string; purpose: string;
+  status: 'venture-review' | 'owner-review' | 'not-relevant' | 'approved' | 'denied';
+  ventureNote: string;        // why the venture judged it relevant or not
+  createdAt: string; decidedAt: string | null;
+  agentId: ID | null;         // the skill agent created on approval
+}
+
 export interface AgentBranch { kind: 'core' | 'venture' | 'skill'; ventureId: ID | null }
 
 export interface AgentBudget {
@@ -452,6 +463,8 @@ export interface OfficeDoc {
   control: ControlSettings;
   arcade: ArcadeSettings;
   player: PlayerProfile;
+  /** Skill agents asking for a new skill agent: their venture checks relevance, then the owner decides. */
+  skillRequests: SkillRequest[];
 }
 
 // ---------- Departments and executive control ----------

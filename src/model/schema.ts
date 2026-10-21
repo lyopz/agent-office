@@ -143,6 +143,11 @@ export const officeSchema = z.object({
     name: z.string().min(1).max(60), appearance: z.record(z.unknown()),
     camera: z.enum(['first', 'third']).default('third'), lastRoomId: z.string().nullable().default(null),
   }).default(() => defaultPlayer() as unknown as { name: string; appearance: Record<string, unknown>; camera: "first" | "third"; lastRoomId: string | null }),
+  skillRequests: z.array(z.object({
+    id, fromAgentId: id, ventureId: id, name: z.string().min(1).max(80), skill: z.string().max(120), specialty: z.string().max(200), purpose: z.string().max(4000),
+    status: z.enum(['venture-review', 'owner-review', 'not-relevant', 'approved', 'denied']), ventureNote: z.string().max(2000),
+    createdAt: z.string(), decidedAt: z.string().nullable(), agentId: id.nullable(),
+  })).max(1000).default([]),
 });
 
 const SECRET_KEYS = /^(api[-_]?key|secret|token|password|authorization|credential)s?$/i;

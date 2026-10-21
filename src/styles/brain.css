@@ -477,3 +477,7 @@
 .creator-field .creator-window select { flex: 1; }
 .am-grow { border-radius: 0; }
 .creator-rule { margin: 0; padding: 10px 11px; border: 1px dashed rgba(172,199,231,.17); border-radius: 9px; color: #bdc9d9; font: 400 12px/1.5 var(--font-sans); }
+.creator-request { display: grid; gap: 6px; }
+.creator-request-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.creator-request-row input { flex: 1 1 220px; min-width: 0; border: 1px solid rgba(172,199,231,.17); border-radius: 9px; padding: 9px 11px; background: rgba(1,6,14,.6); color: #e9f1fc; font: 400 12px/1.5 var(--font-sans); }
+.creator-request-log { margin: 0; padding-left: 18px; color: #bdc9d9; font-size: 12px; line-height: 1.6; }

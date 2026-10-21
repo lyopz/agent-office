@@ -148,7 +148,7 @@ Check whether an operating allowance, authorized information sources, and schedu
  * agent and follows the prompt's delegation and spending rules.
  */
 export const BRANCH_NOTE = `BRANCHES IN THE BRAIN
-Only you start branches. Each branch is a venture: one business or project you took on after researching it, such as Roblox development, and you need the owner's approval to start it. A venture may add only the skill agents it needs to succeed, such as research, 3D modelling, design or ads, and every skill agent works for that venture alone. A venture can never start a different business; it sends any new business idea to your backlog instead. Skill agents cannot create agents. Proposing a branch costs nothing; running one inside a work window is a child agent and follows the delegation and spending rules above (at most two running at once, none running outside the window).
+Only you start branches. Each branch is a venture: one business or project you took on after researching it, such as Roblox development, and you need the owner's approval to start it. A venture may add only the skill agents it needs to succeed, such as research, 3D modelling, design or ads, and every skill agent works for that venture alone. Teach every venture you create how to create agents, using the blueprint below. Skill agents can't create agents; they file skill requests, their venture checks relevance, and the owner decides. A venture can never start a different business; it sends any new business idea to your backlog instead. Skill agents cannot create agents. Proposing a branch costs nothing; running one inside a work window is a child agent and follows the delegation and spending rules above (at most two running at once, none running outside the window).
 
 WORK WINDOWS PER BRANCH
 Each venture and skill agent gets its own work window sized to its task, not your hourly window. For example, research may need 10 minutes every 5 hours while design needs 5 minutes every hour. Set each window from your own research on what the task needs, record the reason, and change it when the evidence changes. The owner can override any window. A window is a plan until the owner approves the scheduler and the spend it implies; never start one without that approval.`;
@@ -199,7 +199,7 @@ export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
       identity: { title: 'Opportunity Research & Builder Agent', bio, roleDescription: bio },
       skills: { primaryRole: 'Opportunity Research & Builder Agent', skills: ['opportunity research', 'demand validation', 'experiment design', 'agent architecture', 'unit economics'], expertise: ['opportunity research', 'validation', 'agent creation'] },
       permissions: { requireApprovalFor: ['spend', 'publish', 'external-message', 'create-account', 'delete'] },
-      ai: { executionMode: 'manual-approval', agentInstructions: `${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}`, systemInstructions: `You are ORIGIN, the owner's Opportunity Research and Builder Agent and the root of this brain.\n\n${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\nBe accurate about what is simulated and what has actually run.` },
+      ai: { executionMode: 'manual-approval', agentInstructions: `${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}`, systemInstructions: `You are ORIGIN, the owner's Opportunity Research and Builder Agent and the root of this brain.\n\n${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}\n\nBe accurate about what is simulated and what has actually run.` },
       // credits are this app's illustrative budget, not money; real spend needs the owner's approval
       budget: { monthlyCredits: 0, approvalAbove: 0 },
       schedule: { runWindow: ORIGIN_WINDOW },
@@ -215,6 +215,18 @@ export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
 }
 
 export const isOpportunityOrigin = (doc: OfficeDoc) => !!doc.agents[ORIGIN_ID]?.ai.agentInstructions.startsWith(OPPORTUNITY_PROMPT.slice(0, 60));
+
+/** How to design an agent; ORIGIN uses it for ventures, ventures for their skill agents. */
+export const AGENT_BLUEPRINT = `HOW TO CREATE AN AGENT
+Propose a new agent only for a specific, lasting need. Give it: a short name; one specialty; the exact outcome it owns and the deliverable it hands back; the evidence and context it starts with; its permitted tools; a work window sized to the task, with the reason; a spending limit (zero until the owner approves one); and what it must escalate. Check that no existing agent already owns the work. The owner approves every new agent before it exists. A venture you create must know this same blueprint so it can design its own skill agents.`;
+
+/** How a skill agent asks for help it can't create itself. */
+export const SKILL_REQUESTS = `REQUESTING A NEW SKILL
+You cannot create agents. If your venture needs a skill nobody covers, file a skill request with your venture: the skill, a name, and how it helps the venture. Your venture checks whether it is relevant to the venture; if so, the owner decides.`;
+
+/** How a venture handles its skill agents' requests. */
+export const VENTURE_REVIEW = `REVIEWING SKILL REQUESTS
+When one of your skill agents files a skill request, judge only whether it helps this venture succeed. If it does, mark it relevant with one line of reasoning, and it goes to the owner to approve. If it belongs to a different business or adds nothing here, mark it not relevant and say why. Never create the agent yourself before the owner approves.`;
 
 export type BranchKind = 'root' | 'core' | 'venture' | 'skill';
 
@@ -244,8 +256,35 @@ export const SKILL_LABELS: Record<string, string> = { '3D Design': '3D modelling
 export const VENTURE_TEAM = 'Ventures';
 
 export function ventureInstructions(name: string, focus: string) {
-  return `You are ${name}, the venture branch for: ${focus}. ORIGIN started you. Work only on this venture. You may propose skill agents only for skills this venture needs to succeed, such as research, 3D modelling, design or ads; each works for this venture alone. You may not start or pursue a different business; send any new business idea to ORIGIN's backlog. The owner approves every new skill agent.`;
+  return `You are ${name}, the venture branch for: ${focus}. ORIGIN started you. Work only on this venture. You may propose skill agents only for skills this venture needs to succeed, such as research, 3D modelling, design or ads; each works for this venture alone. You may not start or pursue a different business; send any new business idea to ORIGIN's backlog. The owner approves every new skill agent.\n\n${VENTURE_REVIEW}`;
 }
 export function skillInstructions(name: string, skill: string, venture: string, purpose: string) {
   return `You are ${name}, the ${skill} skill for the ${venture} venture. ${purpose}\n\nWork only on ${skill} for ${venture}. You cannot create agents or start other ventures; raise anything outside your skill with ${venture}.`;
+}
+
+export interface BranchSpec { id: string; name: string; specialty: string; purpose: string; skill: string; window: RunWindow }
+
+/** The ops that add a venture under ORIGIN or a skill agent under a venture, following the branch rules. */
+export function branchAgentOps(doc: OfficeDoc, parentId: string, spec: BranchSpec): { ops: DocOp[]; error: string | null } {
+  const kind = growKind(doc, parentId);
+  if (!kind) return { ops: [], error: 'Only ORIGIN can start a venture, and only a venture can add skill agents.' };
+  const parentName = doc.agents[parentId].identity.name;
+  const team = kind === 'venture' ? VENTURE_TEAM : spec.skill;
+  const scope = kind === 'venture' ? ventureInstructions(spec.name, spec.specialty) : skillInstructions(spec.name, SKILL_LABELS[spec.skill] ?? spec.skill, parentName, spec.purpose);
+  const brief = `${kind === 'venture' ? `${spec.purpose}\n\n` : ''}${scope}\n\n${kind === 'venture' ? AGENT_BLUEPRINT : SKILL_REQUESTS}\n\nRole: ${spec.specialty}. For research, cite current sources with publication dates and URLs; separate evidence, assumptions and recommendations. State uncertainty, costs and success criteria. Never claim work ran if it was only planned. Never spend, publish, contact people externally, create accounts or delete data without owner approval.`;
+  const tools = ['web-research', 'library-search', 'reports'];
+  return {
+    error: null,
+    ops: [
+      { op: 'agent.createFromArchetype', archetype: 'custom', name: spec.name, id: spec.id },
+      { op: 'agent.update', id: spec.id, patch: {
+        branch: { kind, ventureId: kind === 'venture' ? spec.id : parentId },
+        identity: { title: spec.specialty, department: team, bio: spec.purpose, roleDescription: brief },
+        skills: { primaryRole: spec.specialty, supervisorId: parentId, teams: [team], skills: [spec.specialty], expertise: [spec.purpose], tools, taskPermissions: ['draft', 'research', 'recommend'], priorityRules: 'Owner priorities first; make costs and evidence visible.', escalationRules: 'Escalate unclear scope, missing research access, safety issues and any action requiring approval.' },
+        schedule: { runWindow: spec.window },
+        permissions: { allowedTools: tools, requireApprovalFor: ['spend', 'publish', 'external-message', 'create-account', 'delete'] },
+        ai: { provider: 'simulated', executionMode: 'manual-approval', agentInstructions: brief, systemInstructions: `You are ${spec.name}, ${kind === 'venture' ? 'a venture branch started by' : 'a skill agent reporting to'} ${parentName}. ${brief}`, toolPermissions: tools },
+      } },
+    ],
+  };
 }
