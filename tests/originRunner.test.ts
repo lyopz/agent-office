@@ -240,3 +240,19 @@ describe('origin runner: growing the brain on its own', () => {
     expect(s.skillFiles[0].agentIds).toEqual(['agent_OPS-01', 'agent_OPS-02']);
   });
 });
+
+describe('origin runner: ORIGIN sees the real brain', () => {
+  const agents = [{ id: 'agent_store', name: 'STORE', title: 'Etsy store', kind: 'venture', ventureId: 'agent_store', hasSkillFile: false, prompt: 'p' }];
+  test('runs and console answers list the agents that exist, over ORIGIN\'s own notes', async () => {
+    write({ ...base, memory: 'Agents existing: 0', agents });
+    let brief = '', system = '';
+    await runner.runOnce('manual', { fetch: async (_u: string, init: any) => { brief = JSON.parse(init.body).messages[0].content; return reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 10 }); }, file, key: 'test' } as any);
+    await runner.ask('what agents exist?', { fetch: async (_u: string, init: any) => { system = JSON.parse(init.body).system; return reply('STORE', { input_tokens: 10, output_tokens: 10 }); }, file, key: 'test' } as any);
+    for (const text of [brief, system]) expect(text).toMatch(/AGENTS IN THE BRAIN NOW \(1 besides you[\s\S]*\[agent_store\] STORE: Etsy store \(venture\) \(SKILL\.md not written yet\)/);
+  });
+
+  test('SKILL.md requests for agents not in the open brain wait', () => {
+    const req = (id: string, agentId: string) => ({ id, status: 'approved', kind: 'skill-file', agentId });
+    expect(runner.nextTask({ agents, tasks: [req('gone', 'agent_nova'), req('here', 'agent_store')] } as any)).toMatchObject({ id: 'here' });
+  });
+});

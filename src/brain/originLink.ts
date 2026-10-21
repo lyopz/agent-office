@@ -49,7 +49,10 @@ export function brainMap(doc: OfficeDoc): string {
 export async function syncOrigin(doc: OfficeDoc) {
   if (!doc.agents[ORIGIN_ID]?.ai.systemInstructions) return false;
   // every other agent's instructions and SKILL.md, so ORIGIN can work a task as that agent
-  const agents = Object.values(doc.agents).filter((a) => a.id !== ORIGIN_ID).map((a) => ({ id: a.id, name: a.identity.name, prompt: agentPrompt(doc, a.id) }));
+  const agents = Object.values(doc.agents).filter((a) => a.id !== ORIGIN_ID).map((a) => ({
+    id: a.id, name: a.identity.name, title: a.identity.title, kind: branchKind(doc, a.id), ventureId: a.branch?.ventureId ?? null,
+    hasSkillFile: doc.skillBank.some((k) => k.id === `skill_file_${a.id}`), prompt: agentPrompt(doc, a.id),
+  }));
   return !!(await call('/sync', { instructions: `${agentPrompt(doc, ORIGIN_ID)}\n\n${brainMap(doc)}`, agents }, 10_000));
 }
 
