@@ -1,5 +1,6 @@
 import { saveFile } from '../persistence/saveFile';
 import { useRef, useState } from 'react';
+import { useOrigin, useOriginPoll } from '../brain/useOrigin';
 import { Download, FolderOpen, History, OctagonX, Pause, Play, Redo2, Undo2, Upload } from 'lucide-react';
 import { useStore } from '../store/store';
 import { repo } from '../store/store';
@@ -18,7 +19,13 @@ export function TopBar() {
   const s = useStore.getState();
   const [versionsOpen, setVersionsOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const prov = providerStatus(prefs.aiProvider);
+  useOriginPoll();
+  const origin = useOrigin((o) => o.status);
+  const prov = origin?.configured
+    ? { kind: 'live', label: origin.running ? 'ORIGIN: working' : 'ORIGIN: live', detail: `${origin.model} · $${origin.spentUsd.toFixed(2)} of $${origin.capUsd} this month${origin.nextScheduledAt ? ` · next run ${new Date(origin.nextScheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}` }
+    : origin ? { kind: 'off', label: 'ORIGIN: no key', detail: 'The runner is up but has no API key. Set ANTHROPIC_API_KEY and restart it.' }
+    : { kind: 'off', label: 'ORIGIN: offline', detail: 'The live runner is not running. On your PC run: npm.cmd run origin' };
+  void providerStatus;
 
   const exportFile = async () => {
     const r = await saveFile(`${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.office.json`, s.exportText());
@@ -33,7 +40,7 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <span className="brand"><LogoLockup /><small className="hide-sm">sim v0.2</small></span>
+      <span className="brand"><LogoLockup /></span>
       <input className="office-name" aria-label="Office name" defaultValue={name} key={name} onBlur={(e) => e.target.value.trim() && e.target.value !== name && s.commit([{ op: 'office.rename', name: e.target.value.trim() }], 'Rename office')} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
       <nav className="seg" aria-label="Pages">
         {(['dashboard', 'control', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'control' ? 'Control' : p[0].toUpperCase() + p.slice(1)}</button>)}

@@ -24,6 +24,7 @@ import { CEREBRUM, buildNerveTree, ideaSprouts, insideCerebrum, pathToRoot, rout
 import { growIdeaOps, openIdeas, treeIdeas } from './ideas';
 import { confirmAction } from '../ui/primitives';
 import { useBrainFocus } from './ConnectomeView';
+import { useOrigin } from './useOrigin';
 
 const BUSY = new Set(['working', 'researching', 'thinking', 'communicating']);
 const reduceMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -379,7 +380,8 @@ export default function BrainScene() {
         const busy = Object.keys(t.nodes).filter((id) => BUSY.has(st.runtime.agents[id]?.status ?? '') && t.nodes[id].depth > 0);
         const id = busy.length ? busy[Math.floor(Math.random() * busy.length)] : null;
         if (id) outTo(id, t.nodes[id].color);
-        else if (bundles.length > 1) { const b = bundles[1 + Math.floor(Math.random() * (bundles.length - 1))]; outTo(b.to, t.nodes[b.to]?.color ?? '#fff'); }
+        // ORIGIN's live run: its core fires while the runner works
+        if (useOrigin.getState().status?.running && t.rootId) { const rn = nodes.find((q) => q.id === t.rootId); if (rn) { rn.flash = 1; ring(rn.pos, t.nodes[t.rootId].color, rn.base); } }
         if (buds.length && Math.random() < 0.35) { const b = buds[Math.floor(Math.random() * buds.length)]; if (b.grow >= 1) { b.sprite.scale.multiplyScalar(1.8); ring(b.pos, b.owner ? '#ffd27a' : '#9ff4ff', 0.06); } }
         nextAmbient = now + (busy.length ? 650 : 1800) + Math.random() * 600;
       }

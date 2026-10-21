@@ -15,7 +15,7 @@ import type { OfficeDesktopBridge } from './desktopBridge';
 export { SaveError } from './backends';
 
 export interface SavedVersion { id: string; officeId: string; name: string; savedAt: string; doc: OfficeDoc }
-export interface Preferences { autosave: boolean; viewMode: string; showDashboard: boolean; aiProvider: string; autoApplySafe: boolean; simSpeed: number; simRunning: boolean; demoTasks: boolean; hqView?: HqView }
+export interface Preferences { autosave: boolean; viewMode: string; showDashboard: boolean; aiProvider: string; autoApplySafe: boolean; simSpeed: number; simRunning: boolean; demoTasks: boolean; hqView?: HqView; liveMode?: boolean }
 /** Which way the headquarters is shown on the Office page. */
 /** brain: the agent brain (main screen); overview: the classic floor plan. */
 export type HqView = 'brain' | 'overview';

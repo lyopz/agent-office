@@ -14,7 +14,8 @@ import { useBrainFocus } from './ConnectomeView';
 import { askGrow, treeOf } from './BrainScene';
 import { byOwner, openIdeas, ownerIdeaOps, suggestIdeaOps } from './ideas';
 import { subtree, type NerveTree } from './nerveTree';
-import { runOrigin, runnerStatus } from './originLink';
+import { runOrigin, runnerStatus, taskAction } from './originLink';
+import { useOrigin } from './useOrigin';
 import { MANUAL_RUN_MINUTES, ORIGIN_ID, describeWindow, growKind } from './opportunity';
 
 const BUSY: AgentStatus[] = ['working', 'researching', 'thinking', 'communicating'];
@@ -35,6 +36,7 @@ export function BranchMenu({ agents, teams, live, match, selected }: Props) {
   const library = useStore((s) => s.doc.library);
   const ideas = useMemo(() => openIdeas({ library }), [library]);
   const [idea, setIdea] = useState('');
+  const originLive = useOrigin((o) => o.status?.configured);
   if (!tree.rootId) return <p className="muted small am-none">No agents yet. Create one to start the first branch.</p>;
 
   const busyIn = (id: string) => [...subtree(tree, id)].filter((q) => BUSY.includes((live[q] ?? '').split('|')[0] as AgentStatus)).length;
@@ -49,13 +51,11 @@ export function BranchMenu({ agents, teams, live, match, selected }: Props) {
     const { notify, runRuntimeOps, doc } = useStore.getState();
     const name = agents[id]?.identity.name ?? 'The main agent';
     const status = await runnerStatus();
-    if (!status) {
-      runRuntimeOps([{ op: 'task.create', agentId: id, name: `Manual run (${MANUAL_RUN_MINUTES} min)`, description: `Owner-started ${MANUAL_RUN_MINUTES}-minute work window: advance the highest-value approved task, save progress and record the next action.`, priority: 'high', simulated: true }]);
-      notify(`${name} started a ${MANUAL_RUN_MINUTES}-minute run in simulation: the live runner isn't on, so nothing ran for real and nothing was spent.`);
-      return;
-    }
-    notify(`${name} started a live ${MANUAL_RUN_MINUTES}-minute run on ${status.model} ($${status.spentUsd.toFixed(2)} of $${status.capUsd} spent this month).`);
+    if (!status?.configured) { notify(status ? `${name}'s runner has no API key, so nothing ran.` : `${name}'s runner isn't running, so nothing ran. Start it on your PC with npm.cmd run origin.`, 'warn'); return; }
+    void runRuntimeOps;
+    useOrigin.setState({ status: { ...status, running: 'manual' } });
     const r = await runOrigin(doc, MANUAL_RUN_MINUTES);
+    useOrigin.setState({ status: await runnerStatus() });
     const run = r?.data.run;
     useStore.getState().notify(run ? `${name}'s run ended (${run.status}, ${run.costKnown ? `$${run.costUsd.toFixed(3)}` : 'cost unknown'})${run.summary ? `: ${run.summary}` : '.'}` : r?.data.reason ?? 'The runner did not answer.');
   };
@@ -91,7 +91,11 @@ export function BranchMenu({ agents, teams, live, match, selected }: Props) {
 
   const rootId = tree.rootId, rootName = agents[rootId]?.identity.name ?? 'The main agent';
   const give = () => { if (!idea.trim()) return; const r = useStore.getState().commit(ownerIdeaOps(idea, rootId), 'Give the main agent an idea'); if (r.ok) setIdea(''); };
-  const ask = () => { const s = useStore.getState(); s.commit(suggestIdeaOps(s.doc, rootId), `${rootName} suggests an idea`); };
+  const ask = async () => {
+    const r = await taskAction({ action: 'add', title: 'Suggest one new business idea', detail: 'Research current demand and propose one idea with sources, costs and the smallest cheap test. Add it as an idea for the owner.' });
+    useStore.getState().notify(r ? `Asked ${rootName}. The idea comes back from its next run.` : `${rootName}'s runner isn't running, so it can't suggest ideas right now.`, r ? 'info' : 'warn');
+  };
+  void suggestIdeaOps;
 
   return <>
     <section className="bm-ideas" aria-label="Ideas">
@@ -99,7 +103,7 @@ export function BranchMenu({ agents, teams, live, match, selected }: Props) {
       <form className="bm-idea-form" onSubmit={(e) => { e.preventDefault(); give(); }}>
         <input value={idea} onChange={(e) => setIdea(e.target.value)} placeholder={`Give ${rootName} an idea`} aria-label={`Give ${rootName} an idea`} maxLength={600} />
         <button className="btn sm primary" disabled={!idea.trim()} aria-label="Add idea"><Sprout size={13} /></button>
-        <button type="button" className="btn sm" onClick={ask} title={`${rootName} suggests an idea (simulated until a live model is connected)`}><Sparkles size={13} /> Ask</button>
+        <button type="button" className="btn sm" onClick={() => void ask()} disabled={!originLive} title={originLive ? `Ask ${rootName} to research and suggest an idea in its next run` : `${rootName}'s live runner isn't running`}><Sparkles size={13} /> Ask</button>
       </form>
       {ideas.length > 0 && <ul className="bm-idea-list">{ideas.map((e) => <li key={e.id} className={byOwner(e) ? 'is-owner' : 'is-agent'} onPointerEnter={() => hover(rootId)} onPointerLeave={() => hover(null)}>
         <span className="bm-bud" aria-hidden />

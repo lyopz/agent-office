@@ -89,7 +89,7 @@ export function getProvider(id: string, endpoint = '/api/ai/plan'): AIProvider {
 }
 
 export function providerStatus(id: string): { kind: 'sim' | 'live' | 'off'; label: string; detail: string } {
-  if (id === 'remote') return { kind: 'live', label: 'AI: live proxy', detail: 'Commands go to a model through the server-side proxy. Agent work is still simulated.' };
+  if (id === 'remote') return { kind: 'live', label: 'AI: live proxy', detail: 'Console commands go to a model through the server-side proxy.' };
   if (id === 'off') return { kind: 'off', label: 'AI: off', detail: 'AI provider disconnected. Manual editing works.' };
-  return { kind: 'sim', label: 'AI: simulated', detail: 'Commands are interpreted by local rules; agent activity is simulated. No model is called.' };
+  return { kind: 'sim', label: 'Commands: local', detail: 'Console commands are read by local rules on this computer. No model is called for them; ORIGIN runs on its own live runner.' };
 }

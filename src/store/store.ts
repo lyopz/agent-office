@@ -117,7 +117,7 @@ interface State {
 
 export const repo: OfficeRepository = createRepository();
 
-const DEFAULT_PREFS: Preferences = { autosave: true, viewMode: 'auto', showDashboard: true, aiProvider: 'mock', autoApplySafe: true, simSpeed: 1, simRunning: true, demoTasks: true, hqView: 'brain' };
+const DEFAULT_PREFS: Preferences = { autosave: true, viewMode: 'auto', showDashboard: true, aiProvider: 'mock', autoApplySafe: true, simSpeed: 1, simRunning: true, demoTasks: false, hqView: 'brain' };
 
 function initial() {
   const loaded = repo.load();
@@ -151,7 +151,10 @@ function pruneTasks(rt: RuntimeState) {
 
 export const useStore = create<State>((set, get) => {
   const init = initial();
-  const prefs = { ...DEFAULT_PREFS, ...repo.loadPrefs() };
+  const loaded = repo.loadPrefs();
+  // live mode: older saves had simulated demo work switched on; turn it off once
+  if (!loaded.liveMode) { loaded.demoTasks = false; loaded.liveMode = true; repo.savePrefs({ demoTasks: false, liveMode: true }); }
+  const prefs = { ...DEFAULT_PREFS, ...loaded };
   // the 3D headquarters and avatar studio became the agent brain
   prefs.hqView = (prefs.hqView as string | undefined) === 'overview' ? 'overview' : 'brain';
   delete (prefs as { characterStyle?: unknown }).characterStyle;
