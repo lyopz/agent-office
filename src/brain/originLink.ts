@@ -19,6 +19,8 @@ export interface PublishRequest { id: string; productId: string; title: string; 
 export interface MoneyRow { claudeUsd: number; imageUsd: number; listingFeesUsd: number; productionUsd: number; saleFeesEstUsd: number; revenueUsd: number; manualIncomeUsd: number; manualExpenseUsd: number; orders: number; itemsSold: number; unpricedItems: number; listed: number }
 export interface MoneyEntry { id: string; agentId: string; kind: 'income' | 'expense'; usd: number; note: string; at: string }
 export interface SaleLine { id: string; orderId: string; at: string; status: string; productId: string; title: string; quantity: number; revenueUsd: number | null; costUsd: number; agentId: string | null; agentName: string | null }
+/** A design an agent made, kept on the owner's PC: SVG it wrote or a PNG from the image model. */
+export interface DesignEntry { id: string; kind: 'svg' | 'png'; fileName: string; title: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string | null; at: string }
 /** One design image an agent made with the owner's OpenAI key, and what it cost. */
 export interface ImageEntry { id: string; at: string; model: string; quality: string; size: string; usd: number; estimated?: boolean; prompt: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string }
 /** One line of progress, filed under the agent the work was for. */
@@ -34,7 +36,7 @@ export interface RunnerRun { workers?: RunnerWorker[]; id: string; agentId?: str
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
   spentUsd: number; spentByAgent?: Record<string, number>; allowanceUsd?: number; spentTodayUsd?: number; parallel?: number; rounds?: number; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
-  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; money?: { byAgent: Record<string, MoneyRow>; entries: MoneyEntry[]; sales: SaleLine[]; salesSync: { at: string; error: string | null; orders: number | null } | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
+  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; designs?: DesignEntry[]; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; money?: { byAgent: Record<string, MoneyRow>; entries: MoneyEntry[]; sales: SaleLine[]; salesSync: { at: string; error: string | null; orders: number | null } | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
 }
 
 // in the browser the dev server forwards /api/origin; the desktop app talks to the runner directly
@@ -94,6 +96,15 @@ export async function giveTask(text: string) {
   if (!r) return null;
   if (!r.data.ok && !('reason' in r.data && r.data.reason)) return { ok: false as const, reason: "JARVIS's runner is out of date. Restart the app (or npm.cmd run origin)." };
   return r.data;
+}
+
+/** A design from the gallery, fetched through the runner and shown as a local blob. */
+export async function designUrl(id: string) {
+  try {
+    const r = await fetch(`${BASE}/design?id=${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(25_000) });
+    if (!r.ok || !(r.headers.get('content-type') || '').startsWith('image/')) return null;
+    return URL.createObjectURL(await r.blob());
+  } catch { return null; }
 }
 
 /** A product mockup, fetched through the runner and shown as a local blob (the app loads no outside images). */

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Play, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useStore } from '../store/store';
-import { agentProposalAction, mockupUrl, publishDecision, runnerStatus, setAutoAgents, setAutoTasks, setImageCap, syncOrigin, taskAction, type AgentProposal, type PublishRequest, type RunnerStatus, type RunnerTask } from './originLink';
+import { agentProposalAction, designUrl, mockupUrl, publishDecision, runnerStatus, setAutoAgents, setAutoTasks, setImageCap, syncOrigin, taskAction, type AgentProposal, type DesignEntry, type PublishRequest, type RunnerStatus, type RunnerTask } from './originLink';
 import { branchKind, describeWindow } from './opportunity';
 import { createProposedAgent } from './skillFiles';
 import { ProgressBar, ProgressLog } from './Progress';
@@ -9,15 +9,23 @@ import { BranchMoneyPanel } from './BranchMoneyPanel';
 
 const money = (n: number) => `$${n.toFixed(n < 1 ? 3 : 2)}`;
 
-/** A product's mockup from Printify, fetched through the runner. */
-function Mockup({ id, title }: { id: string; title: string }) {
+/** An image the runner serves (a product mockup or a design), shown as a local blob. */
+function RunnerImage({ load, id, alt, className }: { load: (id: string) => Promise<string | null>; id: string; alt: string; className: string }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     let url: string | null = null, live = true;
-    void mockupUrl(id).then((u) => { url = u; if (live) setSrc(u); else if (u) URL.revokeObjectURL(u); });
+    void load(id).then((u) => { url = u; if (live) setSrc(u); else if (u) URL.revokeObjectURL(u); });
     return () => { live = false; if (url) URL.revokeObjectURL(url); };
-  }, [id]);
-  return src ? <img className="product-mockup" src={src} alt={`Mockup of ${title}`} /> : null;
+  }, [id, load]);
+  return src ? <img className={className} src={src} alt={alt} /> : null;
+}
+const Mockup = ({ id, title }: { id: string; title: string }) => <RunnerImage load={mockupUrl} id={id} alt={`Mockup of ${title}`} className="product-mockup" />;
+/** The design gallery: every design an agent made, newest first. */
+function Designs({ list }: { list: DesignEntry[] }) {
+  return <div className="design-grid">{list.map((d) => <figure key={d.id} className="design-card" title={`${d.title} · ${d.agentName}${d.taskTitle ? ` · ${d.taskTitle}` : ''}`}>
+    <RunnerImage load={designUrl} id={d.id} alt={d.title} className="design-img" />
+    <figcaption><b>{d.title}</b><span>{d.agentName} · {new Date(d.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{d.imageId ? ' · in Printify' : ''}</span></figcaption>
+  </figure>)}</div>;
 }
 
 /**
@@ -115,10 +123,13 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
             <ProgressBar pct={t.status === 'done' ? 100 : t.count ? Math.round((mine.length / t.count) * 100) : t.progress} label={`${t.title} progress`} />
             <p className="creator-privacy">{t.count ? `${mine.length} of ${t.count} items made and sent to you` : `${t.progress ?? 0}% done`}{decided ? `, ${decided} decided` : ''} · {spent(t)} <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></p>
             {t.steps?.length ? <ol className="task-steps">{t.steps.map((x, j) => <li key={j} className={x.done ? 'done' : ''}>{x.done ? '✓ ' : ''}{x.text}</li>)}</ol> : null}
+            {(st.designs ?? []).some((d) => d.taskId === t.id) && <Designs list={(st.designs ?? []).filter((d) => d.taskId === t.id)} />}
             {waiting.length > 0 && <><span className="creator-kicker">YOUR APPROVAL LIST · {waiting.length} TO GO THROUGH</span>{waiting.map((r) => productCard(r, mine.indexOf(r) + 1))}</>}
             {t.notes && !waiting.length && <details><summary className="creator-privacy">Where it stands</summary><pre className="origin-notes">{t.notes}</pre></details>}
           </div>;
         })}</>}
+
+      {(st.designs ?? []).length > 0 && <><span className="creator-kicker">DESIGNS · {(st.designs ?? []).length} LATEST</span><Designs list={(st.designs ?? []).slice(0, 24)} /></>}
 
       <span className="creator-kicker">SPEND IN DOLLARS</span>
       <div className="spend-grid">

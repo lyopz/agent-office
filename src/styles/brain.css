@@ -569,3 +569,8 @@
 .skill-drop.over { border-color: #8edcff; background: rgba(142,220,255,.08); }
 .skill-drop .grow { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
 .skill-drop-error { flex-basis: 100%; color: #ff9f9f; }
+.design-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.design-card { margin: 0; display: grid; gap: 4px; padding: 6px; border: 1px solid rgba(172,199,231,.14); border-radius: 10px; background: rgba(1,6,14,.4); }
+.design-img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 6px; background: repeating-conic-gradient(#d9dee5 0 25%, #f4f6f8 0 50%) 0 0 / 16px 16px; }
+.design-card figcaption { display: grid; gap: 2px; font-size: 11px; color: #bdc9d9; min-width: 0; }
+.design-card figcaption b { color: #e9f1fc; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

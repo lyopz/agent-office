@@ -13,6 +13,7 @@ beforeAll(async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'origin-'));
   file = path.join(dir, 'state.json');
   process.env.ORIGIN_MONTHLY_CAP_USD = '15';
+  process.env.ORIGIN_DATA_DIR = dir;
   runner = await import('../server/origin-runner.mjs');
 });
 
@@ -579,5 +580,19 @@ describe('origin runner: skills from the command center', () => {
     expect(bank).toMatchObject({ skillKey: 'web_research', name: 'Web research', status: 'new' });
     expect(bank.agentIds.sort()).toEqual(['a1', 'm1', 'v1']);
     expect(s.runs[0].trigger).toBe('skills');
+  });
+});
+
+describe('origin runner: designs', () => {
+  test('an agent saves an SVG design; it is kept on disk and listed for the gallery', async () => {
+    write({ ...base, agents: [{ id: 'd1', name: 'Mockup & Design' }], tasks: [{ id: 't1', title: 'Jersey Avenue shirts', detail: '', status: 'approved', by: 'owner', agentId: 'd1', focus: true, createdAt: '' }] });
+    const tools = { tools: [{ name: 'design_save', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }) };
+    let n = 0;
+    const fetch = async () => { n++; return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'u1', name: 'design_save', input: { file_name: 'jersey-ave', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><text>JA</text></svg>', title: 'Jersey Avenue script' } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
+    const r: any = await runner.runOnce('focus', { fetch, file, key: 'test', etsy: tools } as any);
+    expect(r.run.designs).toBe(1);
+    const d = read().designs[0];
+    expect(d).toMatchObject({ kind: 'svg', fileName: 'jersey-ave.svg', title: 'Jersey Avenue script', agentName: 'Mockup & Design', taskId: 't1' });
+    expect(fs.readFileSync(path.join(path.dirname(file), 'designs', `${d.id}.svg`), 'utf8')).toMatch(/<svg/);
   });
 });
