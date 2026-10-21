@@ -29,3 +29,20 @@ describe('JARVIS', () => {
     expect(renamedLeader(doc)).toBe(doc);
   });
 });
+
+import { withBrainTheme, defaultAppearanceSettings, BUILTIN_THEMES } from '../src/model/themes';
+describe('Brain Red theme', () => {
+  test('is the default and the first built-in theme', () => {
+    expect(BUILTIN_THEMES[0].id).toBe('brain-red');
+    expect(defaultAppearanceSettings().themeId).toBe('brain-red');
+  });
+  test('moves an old save off the old green default but keeps a theme the owner chose', () => {
+    const old = { mode: 'dark' as const, themeId: 'obsidian-green', themes: BUILTIN_THEMES.filter((t) => t.id !== 'brain-red') };
+    const moved = withBrainTheme(old);
+    expect(moved.themeId).toBe('brain-red');
+    expect(moved.themes[0].id).toBe('brain-red');
+    const chosen = withBrainTheme({ ...old, themeId: 'arctic-blue' });
+    expect(chosen.themeId).toBe('arctic-blue');
+    expect(withBrainTheme(moved)).toBe(moved);
+  });
+});

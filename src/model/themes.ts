@@ -1,9 +1,11 @@
-// Interface themes: they style the app chrome. The brain keeps its own look.
+// Interface themes: they style the app chrome. Brain Red is the default so every page matches the brain.
 import type { AppearanceSettings, ThemeDef, ThemeTokens } from './types';
 
 interface Seed { id: string; name: string; accent: string; accent2: string; bg: string; panel: string; text: string; lightBg: string; lightAccent: string }
 
 const SEEDS: Seed[] = [
+  // the brain's own look, and the default: the whole app matches the brain page
+  { id: 'brain-red', name: 'Brain Red', accent: '#ff354f', accent2: '#5bcfff', bg: '#070708', panel: '#0d0c0e', text: '#f4edf0', lightBg: '#f6f0f1', lightAccent: '#b4142c' },
   { id: 'obsidian-green', name: 'Obsidian Green', accent: '#39ff88', accent2: '#4cc9ff', bg: '#030605', panel: '#070c0a', text: '#d9f7e6', lightBg: '#eef3ef', lightAccent: '#0f7a45' },
   { id: 'titanium-cyan', name: 'Titanium Cyan', accent: '#4cd6ff', accent2: '#a7b4c2', bg: '#0b0e12', panel: '#11161c', text: '#e2ecf4', lightBg: '#eef2f5', lightAccent: '#0b6f94' },
   { id: 'cyberpunk-violet', name: 'Cyberpunk Violet', accent: '#c07bff', accent2: '#ff6fb5', bg: '#0a0612', panel: '#120a1e', text: '#efe4ff', lightBg: '#f4f0f8', lightAccent: '#7a32c4' },
@@ -55,7 +57,7 @@ function fromSeed(s: Seed): ThemeDef {
 export const BUILTIN_THEMES: ThemeDef[] = SEEDS.map(fromSeed);
 
 export function defaultAppearanceSettings(): AppearanceSettings {
-  return { mode: 'dark', themeId: 'obsidian-green', themes: BUILTIN_THEMES.map((t) => JSON.parse(JSON.stringify(t))) };
+  return { mode: 'dark', themeId: 'brain-red', themes: BUILTIN_THEMES.map((t) => JSON.parse(JSON.stringify(t))) };
 }
 
 export function resolveMode(mode: AppearanceSettings['mode'], prefersDark: boolean): 'dark' | 'light' {
@@ -91,4 +93,14 @@ export function themeVars(t: ThemeTokens, mode: 'dark' | 'light'): Record<string
     '--scanline': dark ? 'rgba(0,0,0,.18)' : 'rgba(0,0,0,0)',
     'color-scheme': mode,
   };
+}
+
+/**
+ * Saves made before Brain Red existed (2026-10-21) carried the old green default. They get the new
+ * theme added, and switch to it when the old default was still in use; a theme the owner chose stays.
+ */
+export function withBrainTheme(s: AppearanceSettings): AppearanceSettings {
+  if (s.themes.some((t) => t.id === 'brain-red')) return s;
+  const brain = JSON.parse(JSON.stringify(BUILTIN_THEMES[0])) as ThemeDef;
+  return { ...s, themes: [brain, ...s.themes], themeId: s.themeId === 'obsidian-green' ? 'brain-red' : s.themeId };
 }

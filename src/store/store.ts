@@ -12,6 +12,7 @@ import { creatorBrain } from '../model/sample';
 import { ORIGIN_ID } from '../brain/opportunity';
 import { createRepository, type LoadResult, type OfficeRepository, type Preferences, type SaveResult } from '../persistence/repository';
 import { exportOffice, parseOffice } from '../model/schema';
+import { withBrainTheme } from '../model/themes';
 
 export type Selection = { kind: 'none' } | { kind: 'agent'; id: string };
 
@@ -94,7 +95,7 @@ function initial() {
 /** The brain always has JARVIS at its core; a save without it gets a fresh JARVIS. */
 function withOrigin(doc: OfficeDoc): OfficeDoc {
   if (!doc.agents[ORIGIN_ID]) return { ...doc, agents: { ...doc.agents, [ORIGIN_ID]: creatorBrain().agents[ORIGIN_ID] } };
-  return renamedLeader(doc);
+  return renamedLeader({ ...doc, appearance: withBrainTheme(doc.appearance) });
 }
 
 /** The owner renamed ORIGIN to JARVIS (2026-10-21); older saves get the new name in its profile, every agent's instructions and the skill bank. */

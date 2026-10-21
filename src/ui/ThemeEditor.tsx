@@ -60,12 +60,10 @@ function Preview({ theme, mode, label }: { theme: ThemeDef; mode: 'dark' | 'ligh
           <span style={{ color: 'var(--warn)', fontSize: 11 }}>warning</span><span style={{ color: 'var(--danger)', fontSize: 11 }}>error</span><span style={{ color: 'var(--success)', fontSize: 11 }}>ok</span>
         </div>
         <svg viewBox="0 0 120 50" width="100%" height={50} aria-hidden>
-          <rect x={6} y={6} width={50} height={38} fill="var(--floor-grid)" stroke="var(--wall)" strokeWidth={3} />
-          <rect x={56} y={20} width={40} height={10} fill="var(--hall-floor)" />
-          <rect x={96} y={6} width={18} height={38} fill="var(--floor-grid)" stroke="var(--wall)" strokeWidth={3} />
-          <rect x={53} y={20} width={6} height={10} fill="var(--door)" />
-          <rect x={14} y={14} width={16} height={8} fill="var(--panel-3)" stroke="var(--accent)" strokeOpacity={0.5} />
-          <circle cx={40} cy={32} r={4} fill="#d9772b" /><circle cx={105} cy={25} r={4} fill="#4cc9ff" />
+          <ellipse cx={60} cy={26} rx={30} ry={18} fill="var(--panel-3)" stroke="var(--accent)" strokeOpacity={0.6} strokeWidth={1.5} />
+          <path d="M60 8 C 52 18, 68 34, 60 44 M 36 20 C 48 22, 50 30, 40 36 M 84 20 C 72 22, 70 30, 80 36" fill="none" stroke="var(--accent)" strokeOpacity={0.5} />
+          <line x1={90} y1={26} x2={110} y2={12} stroke="var(--accent2, var(--accent-blue))" /><line x1={90} y1={26} x2={112} y2={38} stroke="var(--accent2, var(--accent-blue))" />
+          <circle cx={110} cy={12} r={3.5} fill="var(--accent2, var(--accent-blue))" /><circle cx={112} cy={38} r={3.5} fill="var(--accent2, var(--accent-blue))" /><circle cx={60} cy={26} r={4} fill="var(--accent)" />
         </svg>
       </div>
     </figure>

@@ -39,8 +39,8 @@ export function App() {
           <ConnectomeView />
         </main>
       )}
-      {page === 'dashboard' && <main style={{ overflow: 'auto', minHeight: 0 }}><Dashboard /></main>}
-      {page === 'settings' && <main style={{ overflow: 'auto', minHeight: 0 }}><Settings /></main>}
+      {page === 'dashboard' && <main className="page view-fade" key="dashboard"><Dashboard /></main>}
+      {page === 'settings' && <main className="page view-fade" key="settings"><Settings /></main>}
       <div>
         <Console />
       </div>
