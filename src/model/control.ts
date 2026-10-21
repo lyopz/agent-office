@@ -41,6 +41,7 @@ export function defaultControl(): ControlSettings {
     policy: { prioritizeRendering: false, backgroundLimit: 6, pauseNonessential: false, autoResume: true },
     simplifyAbove: 30,
     blenderBridgeUrl: '',
+    maxBranchDepth: null,
   };
 }
 

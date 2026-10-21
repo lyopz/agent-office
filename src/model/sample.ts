@@ -8,6 +8,7 @@ import type { Agent, FurnitureType, GameId, KnowledgeEntry, OfficeDoc, Project, 
 import { createAsset } from '../engine/production';
 import { validate } from '../engine/validate';
 import { makeDepartment } from './control';
+import { opportunityOriginOps, suggestedWindow } from '../brain/opportunity';
 
 export function sampleOffice(): OfficeDoc {
   let doc = emptyOffice('NEXUS-7 Headquarters');
@@ -146,10 +147,11 @@ export function creatorBrain(): OfficeDoc {
     agent.ai.agentInstructions = role.instructions;
     agent.ai.systemInstructions = `You are ${role.name}, ${role.title}, in a human-led collective agent firm. ${role.instructions} Be accurate about what is simulated and what has actually run.`;
     agent.budget = { monthlyCredits: 100, approvalAbove: 10 };
+    if (role.supervisorId) agent.schedule.runWindow = suggestedWindow(role.department);
     agents[agent.id] = agent;
   }
 
-  return produce(doc, (draft) => {
+  const built = produce(doc, (draft) => {
     draft.agents = agents;
     draft.departments = Object.fromEntries(teams.map((team) => [makeDepartment(team.name).id, makeDepartment(team.name, { color: team.color, description: team.description, essential: team.essential })]));
     draft.projects['proj_firm_playbook'] = {
@@ -163,6 +165,10 @@ export function creatorBrain(): OfficeDoc {
       confidence: 1, verification: 'verified', sensitive: false, allowedAgentIds: [],
     };
   });
+  // ORIGIN is the owner's Opportunity Research and Builder Agent
+  const r = applyOps(built, opportunityOriginOps(built));
+  if (r.errors.length) throw new Error(`creator brain: ${r.errors.join('; ')}`);
+  return r.doc;
 }
 
 const HQ_CREATED = '2026-10-01T09:00:00.000Z';

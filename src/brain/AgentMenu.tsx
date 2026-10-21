@@ -4,7 +4,7 @@
 // and search from here.
 import { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Pause, Play, Search, Send } from 'lucide-react';
+import { GitBranch, Pause, Play, Search, Send } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { AgentStatus } from '../model/types';
 import { STATUS_COLOR } from '../viewport/AgentsLayer';
@@ -85,6 +85,9 @@ export function AgentMenu() {
                           <span className="am-task">{taskName || st}</span>
                           {taskName && <span className="am-progress" aria-hidden><i style={{ width: `${progress}%`, background: t.color }} /></span>}
                         </span>
+                      </button>
+                      <button className="am-pause am-grow" aria-label={`Grow a branch from ${a.identity.name}`} title="Grow a branch from this agent" onClick={() => window.dispatchEvent(new CustomEvent('agent-office:open-creator', { detail: { tab: 'agent', parentId: id } }))}>
+                        <GitBranch size={12} />
                       </button>
                       <button className="am-pause" aria-label={a.enabled ? `Pause ${a.identity.name}` : `Resume ${a.identity.name}`} title={a.enabled ? 'Pause' : 'Resume'} onClick={() => togglePause(id)}>
                         {a.enabled ? <Pause size={12} /> : <Play size={12} />}

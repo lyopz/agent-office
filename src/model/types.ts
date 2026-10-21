@@ -279,6 +279,15 @@ export interface Schedule {
   preferredWorkstationId: ID | null;
   workStart: string; workEnd: string;
   breakEveryMin: number; breakLengthMin: number;
+  /** How often the agent wakes and how long it may work, sized to its task. Planned only until a scheduler is connected. */
+  runWindow?: RunWindow;
+}
+
+export interface RunWindow {
+  everyMinutes: number;       // wake once per this many minutes
+  maxMinutes: number;         // and work for at most this long
+  setBy: 'origin' | 'owner';  // ORIGIN proposes from its productivity research; the owner can override
+  reason: string;
 }
 
 export interface Permissions {
@@ -468,6 +477,8 @@ export interface ControlSettings {
   policy: ResourcePolicy;
   simplifyAbove: number;            // visible agents before characters switch to simple markers (0 = never)
   blenderBridgeUrl: string;         // local Blender bridge (server/blender-bridge.mjs); empty = planning mode
+  /** How many levels of branches may grow below the main agent; null = no limit. */
+  maxBranchDepth: number | null;
 }
 
 export type GameId = 'flappy' | 'pacman' | 'pong';

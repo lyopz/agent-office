@@ -351,6 +351,15 @@ Version 6 adds `settings.layoutPreset`. Older files migrate to the grid preset, 
 
 Version 4 added `departments`, `control` and `arcade`; version 3 files migrate with every department running, no emergency stop and the arcade set to human only. Version 5 adds locked uniforms. Migrating replaces only the built-in wardrobe (custom items and saved outfits are kept), adds the role uniforms, and locks an agent only if it is already dressed exactly in its role uniform, so nobody's look changes.
 
+## Opportunity agent and growing branches
+
+ORIGIN, the main agent at the core of the brain, is the owner's **Opportunity Research & Builder Agent** (`src/brain/opportunity.ts`). Its instructions are the owner's operating prompt word for word, plus two notes: how branches work, and that each branch gets its own work window. Its starting memory lives in the library under the `opportunity-agent` tag (status, backlog, approvals, costs and revenue, rejected ideas) and starts honest: no allowance, no sources, no schedule, costs unknown.
+
+- **Grow a branch** (Creator desk, or the branch button next to any agent in the side menu) adds a specialist under ORIGIN or under any other agent. Each one is a new nerve bundle off its creator in the 3D brain, so the map keeps expanding.
+- **Branch depth limit** (`control.maxBranchDepth`, `null` = no limit) caps how many levels can grow below ORIGIN. Set it to 1 to match the prompt's "child agents may not spawn further agents".
+- **Work windows** (`agent.schedule.runWindow`): ORIGIN wakes once an hour for at most 10 minutes; each specialist gets a window sized to its team (research 10 min every 5 hours, design 5 min every hour, finance once a day…), editable on its profile. These are plans. The app does not wake agents by itself, and nothing runs or spends until a scheduler and an allowance are approved.
+- Older saves get a **Set up Opportunity agent** button that applies the prompt and memory to the existing ORIGIN without overwriting anything it already recorded.
+
 ## What is simulated and what is live
 
 | Area | Status |

@@ -470,3 +470,9 @@
 .brain-surface { pointer-events: auto; }
 .brain-surface .btn { color: #b8eaff; border-color: rgba(114, 201, 255, .22); background: rgba(5, 14, 29, .68); font-size: 10px; }
 .brain-rotate-tools .brain-surface .btn[aria-pressed="true"] { color: #031018; background: #9fe6ff; border-color: #9fe6ff; }
+
+/* Creator desk: a branch's work window, and growing a branch from the agent menu */
+.creator-window { display: flex; align-items: center; gap: 6px; color: #bdc9d9; font-weight: 400; }
+.creator-field .creator-window input { width: 64px; }
+.creator-field .creator-window select { flex: 1; }
+.am-grow { border-radius: 0; }
