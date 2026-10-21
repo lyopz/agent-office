@@ -574,3 +574,17 @@
 .design-img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 6px; background: repeating-conic-gradient(#d9dee5 0 25%, #f4f6f8 0 50%) 0 0 / 16px 16px; }
 .design-card figcaption { display: grid; gap: 2px; font-size: 11px; color: #bdc9d9; min-width: 0; }
 .design-card figcaption b { color: #e9f1fc; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.money-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.money-cards > .note { grid-column: 1 / -1; margin: 0; }
+.money-card { display: grid; gap: 8px; align-content: start; padding: 12px 14px; border: 1px solid rgba(172,199,231,.17); border-radius: 12px; background: rgba(1,6,14,.4); }
+.money-card h4 { margin: 0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #9fb0c6; }
+.money-card.spend { border-top: 3px solid #ff9f9f; }
+.money-card.profit { border-top: 3px solid #7fd6a4; }
+.money-big { font-size: 26px; font-weight: 700; color: #e9f1fc; font-variant-numeric: tabular-nums; }
+.money-big.pos { color: #7fd6a4; }
+.money-big.neg { color: #ff9f9f; }
+.money-card ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 12px; color: #d5e0ee; }
+.money-card li { display: flex; justify-content: space-between; gap: 10px; }
+.money-card li b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.money-card .money-sales { padding-top: 6px; border-top: 1px solid rgba(172,199,231,.12); color: #bdc9d9; }
+.money-card .note { margin: 0; }

@@ -22,6 +22,7 @@ import { ETSY_TOOLS, authUrl, etsyPublic, finishAuth, runEtsyTool } from './etsy
 import { PRINTIFY_TOOLS, printifyConfig, printifyPublic, listOrders, productPreview, publishProduct, runPrintifyTool, uploadImage } from './printify.mjs';
 import { moneyByAgent, salesFromOrders } from './money.mjs';
 import { IMAGE_TOOL, generateImage, imageWorstUsd, openaiPublic } from './openai-images.mjs';
+import { CANVA_AI, callCanva, canvaFiles, canvaName, canvaPublic, canvaText, canvaTools } from './canva.mjs';
 import { voicePublic, voiceRoute } from './openai-voice.mjs';
 
 const PORT = Number(process.env.ORIGIN_PORT || 8788);
@@ -37,6 +38,9 @@ const FOCUS_EVERY_MIN = Number(process.env.ORIGIN_FOCUS_EVERY_MIN || 10);
 const FOCUS_MAX_ITEMS = 10;
 /** Design images are billed to the owner's OpenAI account, outside the Anthropic cap, so they get their own monthly cap (the owner sets it in the app). */
 const IMAGE_CAP_USD = Number(process.env.ORIGIN_IMAGE_CAP_USD || 5);
+/** Canva AI designs and images a month (they use the owner's Canva AI credits); the owner changes it in the app. */
+const CANVA_AI_LIMIT = Number(process.env.ORIGIN_CANVA_AI_LIMIT || 30);
+const CANVA_LOG_KEEP = 200;
 const IMAGE_LOG_KEEP = 200;
 const roundsFor = (task) => (task?.focus ? MAX_ROUNDS * 2 : MAX_ROUNDS);
 const MAX_MIN = Number(process.env.ORIGIN_MAX_MIN || 10);
@@ -263,8 +267,8 @@ const DESIGN_TOOL = {
 const DESIGNS_KEEP = 300;
 const designDir = () => path.join(DIR, 'designs');
 /** Save one design (SVG text or PNG base64) and record it for the gallery. */
-function saveDesign(s, task, { file_name, svg, png, title, imageId }, w) {
-  const kind = png ? 'png' : 'svg';
+function saveDesign(s, task, { file_name, svg, png, ext, title, imageId, source }, w) {
+  const kind = png ? (ext === 'jpg' ? 'jpg' : 'png') : 'svg';
   const data = png ? Buffer.from(String(png), 'base64') : Buffer.from(String(svg || ''), 'utf8');
   if (kind === 'svg' && !/<svg[\s>]/i.test(String(svg || ''))) return { content: 'Give the full SVG markup in svg.', isError: true };
   if (data.length > 8_000_000) return { content: 'That design is too large (over 8 MB).', isError: true };
@@ -273,20 +277,26 @@ function saveDesign(s, task, { file_name, svg, png, title, imageId }, w) {
   fs.writeFileSync(path.join(designDir(), `${id}.${kind}`), data);
   const agent = task ? taskAgent(s, task) : null;
   const name = String(file_name || title || 'design').replace(/[^\w .-]/g, '_').slice(0, 80);
-  s.designs = [...(s.designs || []), { id, kind, fileName: name.endsWith(`.${kind}`) ? name : `${name}.${kind}`, title: String(title || name).slice(0, 140), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'JARVIS', taskId: task?.id ?? null, taskTitle: task?.title ?? null, imageId: imageId ?? null, at: new Date().toISOString() }].slice(-DESIGNS_KEEP);
+  s.designs = [...(s.designs || []), { id, kind, fileName: name.endsWith(`.${kind}`) ? name : `${name}.${kind}`, title: String(title || name).slice(0, 140), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'JARVIS', taskId: task?.id ?? null, taskTitle: task?.title ?? null, imageId: imageId ?? null, ...(source ? { source } : {}), at: new Date().toISOString() }].slice(-DESIGNS_KEEP);
   if (w) w.designs = (w.designs || 0) + 1;
-  return { content: JSON.stringify({ saved: true, design_id: id, note: 'The owner can see it in the design gallery now.' }), isError: false };
+  return { content: JSON.stringify({ saved: true, design_id: id, note: 'The owner can see it in the design gallery now.' }), isError: false, id };
 }
 
 /** The tools agents get in task runs, from whatever the owner has set up. */
-function agentTools() {
+async function agentTools() {
   const printify = printifyPublic().configured;
+  // Canva's tools come from Canva's own server, so a failure there only leaves them out of this run
+  let canva = [];
+  if (canvaPublic().configured) { try { canva = await canvaTools(); } catch (e) { console.error(`[origin] Canva: ${e.message}`); } }
   // images go straight into Printify as designs, so the image tool needs both
   // images are uploaded to Printify when it is set up, and always saved in the app's design gallery
   const images = openaiPublic().configured;
-  const list = [DESIGN_TOOL, ...(etsyPublic().configured ? ETSY_TOOLS : []), ...(printify ? PRINTIFY_TOOLS : []), ...(images ? [IMAGE_TOOL] : [])];
+  const list = [DESIGN_TOOL, ...(etsyPublic().configured ? ETSY_TOOLS : []), ...(printify ? PRINTIFY_TOOLS : []), ...(images ? [IMAGE_TOOL] : []), ...canva];
   return {
     tools: list,
+    canva: (name, input) => callCanva(name, input),
+    canvaFiles: (r, name) => canvaFiles(r, name),
+    upload: printify ? (fileName, b64) => uploadImage(fileName, b64) : null,
     run: (name, input) => (name.startsWith('etsy_') ? runEtsyTool(name, input) : runPrintifyTool(name, input)),
     preview: (id) => productPreview(id),
     image: async (input) => {
@@ -318,6 +328,44 @@ async function makeImage(s, task, input, w, tools) {
     w.images = (w.images || 0) + 1; w.imageUsd = round6((w.imageUsd || 0) + g.usd);
     return { content: JSON.stringify({ image_id: g.image_id ?? null, ...(g.upload_error ? { upload_error: g.upload_error } : {}), ...(g.note ? { note: g.note } : {}), width: g.width, height: g.height, preview: g.preview, cost_usd: g.usd, saved_to_gallery: true, image_budget_left_usd: round6(imageCap(s) - spent.spentUsd) }), isError: false };
   } catch (err) {
+    return { content: String(err.message || err).slice(0, 400), isError: true };
+  }
+}
+
+/** This month's Canva AI use; a new month starts at zero. */
+function rollCanva(s) { const m = month(); if (s.canva?.month !== m) s.canva = { month: m, aiCalls: 0, exports: 0 }; return s.canva; }
+const canvaLimit = (s) => (Number.isFinite(s.canvaAiLimit) ? s.canvaAiLimit : CANVA_AI_LIMIT);
+
+/**
+ * An agent uses the owner's Canva: only in a task the owner gave, within the monthly limit on AI
+ * designs. Every image Canva returns or exports is saved in the design gallery on this PC and, with
+ * Printify set up, uploaded there as a design, so it reaches the shop only as a product the owner approves.
+ */
+async function useCanva(s, task, tc, w, tools) {
+  const name = canvaName(tc.name);
+  if (!task || task.by !== 'owner' || isSkillTask(task)) return { content: 'Canva is only for tasks the owner gave you.', isError: true };
+  const use = rollCanva(s);
+  const ai = CANVA_AI.includes(name);
+  if (ai && use.aiCalls >= canvaLimit(s)) return { content: `The owner's Canva limit for this month (${canvaLimit(s)} AI designs and images) is reached. Make the design as SVG with design_save instead, and say so in notifyOwner.`, isError: true };
+  const agent = taskAgent(s, task);
+  const log = (e) => { s.canvaLog = [...(s.canvaLog || []), { id: newId('canva'), at: new Date().toISOString(), tool: name, agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'JARVIS', taskId: task.id, taskTitle: task.title, ...e }].slice(-CANVA_LOG_KEEP); };
+  try {
+    if (ai) use.aiCalls++;
+    const r = await tools.canva(tc.name, tc.input);
+    const saved = [];
+    for (const [i, f] of (await tools.canvaFiles(r, tc.name)).entries()) {
+      const fileName = `${String(tc.input?.query || tc.input?.prompt || task.title || 'canva').replace(/[^\w -]/g, '').trim().slice(0, 50) || 'canva'}${i ? `-${i + 1}` : ''}.${f.ext}`;
+      const up = tools.upload ? await tools.upload(fileName, f.b64).catch((e) => ({ upload_error: e.message })) : null;
+      const d = saveDesign(s, task, { file_name: fileName, png: f.b64, ext: f.ext, title: `Canva: ${String(tc.input?.query || tc.input?.prompt || task.title).slice(0, 120)}`, imageId: up?.image_id, source: 'canva' }, w);
+      saved.push({ design_id: d.id, ...(up?.image_id ? { printify_image_id: up.image_id } : {}), ...(up?.upload_error ? { upload_error: up.upload_error } : {}) });
+    }
+    if (name === 'export-design') use.exports++;
+    log({ ok: !r?.isError, ai, files: saved.length });
+    w.canvaCalls = (w.canvaCalls || 0) + 1;
+    const note = saved.length ? `\nSAVED BY THE RUNNER: ${JSON.stringify(saved)} (in the owner's design gallery${tools.upload ? '; printify_image_id goes straight into printify_create_product' : ''}).` : name === 'export-design' && !r?.isError ? '\nThe runner could not download that export as PNG or JPG: export as png.' : '';
+    return { content: `${canvaText(r)}${note}${ai ? `\nCanva AI used this month: ${use.aiCalls} of ${canvaLimit(s)}.` : ''}`, isError: !!r?.isError };
+  } catch (err) {
+    log({ ok: false, ai, error: String(err.message || err).slice(0, 200) });
     return { content: String(err.message || err).slice(0, 400), isError: true };
   }
 }
@@ -448,7 +496,7 @@ function briefFor(s, task, deadline, etsy = null) {
     task?.kind === 'skill-file'
       ? `Your one task this run (the owner approved it): [${task.id}] write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId})${task.sharedWith?.length ? `. ${task.sharedWith.length} other agents do exactly the same job (${task.sharedWith.join(', ')}) and will share this file, so write it for the role, not the one name` : ''}. What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions${task.version > 1 ? ' and its earlier, thinner SKILL.md (replace it with a much more detailed one)' : ''}:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}\nResearch only if it makes the playbook more specific (for example current platform rules or prices). Return it as "skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"} and list the task id in completedTaskIds.`
       : task
-      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}${task.focus ? `\n${focusBrief(s, task, etsy)}` : ''}\nPLAN AND STEPS: work the task from start to finish through an ordered plan. ${task.steps?.length ? `Your plan so far:\n${task.steps.map((x, i) => `${i + 1}. [${x.done ? 'x' : ' '}] ${x.text}`).join('\n')}\nDo the first unchecked step now.` : 'This is the first run on it: write a plan of 3 to 8 concrete, ordered steps that end in a finished deliverable, then do step 1 now.'}${task.notes ? `\nWhere it stood after the last run: ${task.notes}` : ''}\nReturn the whole plan in "steps" with each finished step marked done, and in "taskNotes" exactly where the task stands (findings so far, sources, what is next). You get up to ${roundsFor(task)} rounds this run: after each reply you may be asked to continue with the next step. When every step is done, list the task id in completedTaskIds and put the deliverable in taskNotes and notifyOwner.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. ${etsy?.tools.some((t) => t.name === 'etsy_search') ? `ETSY (read-only, free): etsy_search shows real active listings with prices, favorites, views and tags; use it to measure demand, competition and price ranges. ${etsyPublic().connected ? "etsy_my_shop shows the owner's own shop and its numbers." : ''} ` : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? `PRINTIFY (the owner's shop "${printifyPublic().shopTitle || 'shop'}", ${printifyPublic().channel || 'connected store'}): you can make products to sell. Find a product type (printify_find_product_type), a provider and variants, upload a design (write it yourself as clean SVG, typography or simple vector art, sized for print), then printify_create_product with a researched price, SEO title, full description and 13 tags. ${etsy?.tools.some((t) => t.name === IMAGE_TOOL.name) ? `For illustrated or photo-style art, design_generate_image makes it with the owner's ChatGPT image model and uploads it for you ($${Math.max(0, imageCap(s) - rollImages(s).spentUsd).toFixed(2)} of the $${imageCap(s).toFixed(2)} monthly image budget left); text-only designs are better as SVG. ` : ''}Products stay unpublished in Printify (no cost). When one is finished and your research supports it, call printify_request_publish: the owner approves each one before it goes live on their store, where the store charges its listing fee. At most ${perRun} product${perRun === 1 ? '' : 's'} this run. ` : ''}DESIGNS: you can make real artwork yourself. Write it as complete SVG (lettering, badges, retro and vintage type, icons, patterns, simple illustration) sized for the product, and save it with design_save so the owner sees it in the app${etsy?.tools.some((t) => t.name === IMAGE_TOOL.name) ? '; for illustrated or photo-style art use design_generate_image' : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? '; then turn each finished design into a Printify product as above' : ''}. Never answer that you have no design tool. You cannot publish, buy or contact anyone yourself; for that, say what you need in notifyOwner. SKILLS: if the task is (or needs) SKILL.md files or bank skills for agents, do not write them here: list them in "skillRequests" ({"files": ["agent names"], "bank": [{"name": "...", "description": "...", "agents": ["agent names"]}]}) and the runner writes each one in full right after this run, saves it to the bank and attaches it; count that step as done.\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
+      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}${task.focus ? `\n${focusBrief(s, task, etsy)}` : ''}\nPLAN AND STEPS: work the task from start to finish through an ordered plan. ${task.steps?.length ? `Your plan so far:\n${task.steps.map((x, i) => `${i + 1}. [${x.done ? 'x' : ' '}] ${x.text}`).join('\n')}\nDo the first unchecked step now.` : 'This is the first run on it: write a plan of 3 to 8 concrete, ordered steps that end in a finished deliverable, then do step 1 now.'}${task.notes ? `\nWhere it stood after the last run: ${task.notes}` : ''}\nReturn the whole plan in "steps" with each finished step marked done, and in "taskNotes" exactly where the task stands (findings so far, sources, what is next). You get up to ${roundsFor(task)} rounds this run: after each reply you may be asked to continue with the next step. When every step is done, list the task id in completedTaskIds and put the deliverable in taskNotes and notifyOwner.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. ${etsy?.tools.some((t) => t.name === 'etsy_search') ? `ETSY (read-only, free): etsy_search shows real active listings with prices, favorites, views and tags; use it to measure demand, competition and price ranges. ${etsyPublic().connected ? "etsy_my_shop shows the owner's own shop and its numbers." : ''} ` : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? `PRINTIFY (the owner's shop "${printifyPublic().shopTitle || 'shop'}", ${printifyPublic().channel || 'connected store'}): you can make products to sell. Find a product type (printify_find_product_type), a provider and variants, upload a design (write it yourself as clean SVG, typography or simple vector art, sized for print), then printify_create_product with a researched price, SEO title, full description and 13 tags. ${etsy?.tools.some((t) => t.name === IMAGE_TOOL.name) ? `For illustrated or photo-style art, design_generate_image makes it with the owner's ChatGPT image model and uploads it for you ($${Math.max(0, imageCap(s) - rollImages(s).spentUsd).toFixed(2)} of the $${imageCap(s).toFixed(2)} monthly image budget left); text-only designs are better as SVG. ` : ''}Products stay unpublished in Printify (no cost). When one is finished and your research supports it, call printify_request_publish: the owner approves each one before it goes live on their store, where the store charges its listing fee. At most ${perRun} product${perRun === 1 ? '' : 's'} this run. ` : ''}DESIGNS: you can make real artwork yourself. Write it as complete SVG (lettering, badges, retro and vintage type, icons, patterns, simple illustration) sized for the product, and save it with design_save so the owner sees it in the app${etsy?.tools.some((t) => t.name === IMAGE_TOOL.name) ? '; for illustrated or photo-style art use design_generate_image' : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? '; then turn each finished design into a Printify product as above' : ''}. ${etsy?.tools.some((t) => t.name.startsWith('canva_')) && canvaOk(task) ? ` CANVA (the owner's own account): canva_create_design / canva_generate_design make finished layouts (posters, logos, cards and more) and canva_generate_image makes standalone art; then canva_export_design as png (transparent_background true for shirts and stickers, width at least 3000 for print) saves the file to the owner's gallery${etsy?.tools.some((t) => t.name === 'printify_create_product') ? ' and uploads it to Printify, giving you a printify_image_id for printify_create_product' : ''}. Each AI design uses the owner's Canva AI credits (${Math.max(0, canvaLimit(s) - rollCanva(s).aiCalls)} of ${canvaLimit(s)} left this month), so plan it first. Only sell designs that are original: never put a single Canva library photo or illustration on a product as it is.` : ''} Never answer that you have no design tool. You cannot publish, buy or contact anyone yourself; for that, say what you need in notifyOwner. SKILLS: if the task is (or needs) SKILL.md files or bank skills for agents, do not write them here: list them in "skillRequests" ({"files": ["agent names"], "bank": [{"name": "...", "description": "...", "agents": ["agent names"]}]}) and the runner writes each one in full right after this run, saves it to the bank and attaches it; count that step as done.\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
       : canSelfApprove(s)
       ? 'No task is ready. Do not research this run. Review your notes, make sure each venture has the skill agents it needs (below), and set the single most valuable next task in proposedTasks; in empire mode it is approved at once and worked next run.'
       : 'No approved task is ready. Do not research. Review your notes, make sure each venture has the skill agents it needs (below), and propose the single most valuable, cheap task for the owner to approve.',
@@ -495,6 +543,9 @@ export function pickTasks(s, n = PARALLEL, only = null) {
   return out;
 }
 
+/** Canva only on an explicit request: a task the owner gave (Canva's rule for background use). */
+const canvaOk = (task) => !!task && task.by === 'owner' && !isSkillTask(task);
+
 const CONTINUE = 'Good. Now do the next step of your plan right away, in this same work window, using your tools. Then reply again with the same JSON object, updated: steps (mark what is done), progress, taskNotes, and completedTaskIds if the whole task is finished.';
 
 /** Later rounds of the same task update the result; lists from every round are kept. */
@@ -511,7 +562,7 @@ async function work(s, task, ctx) {
   const w = { taskId: task?.id ?? null, agentId: task?.agentId || AGENT_ID, agentName: agent?.name ?? 'JARVIS', title: task?.title ?? null, costUsd: 0, costKnown: true, calls: 0, searches: 0, fetches: 0, rounds: 0, status: 'running', publishAsks: 0 };
   const messages = [{ role: 'user', content: briefFor(s, task, deadline, etsy) }];
   // research tools: search to find sources, fetch to read a page in full, plus the owner's connected services
-  const tools = task ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: MAX_SEARCHES }, { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: MAX_FETCHES, max_content_tokens: FETCH_TOKENS }, ...(etsy ? etsy.tools : [])] : [];
+  const tools = task ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: MAX_SEARCHES }, { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: MAX_FETCHES, max_content_tokens: FETCH_TOKENS }, ...(etsy ? etsy.tools.filter((t) => !t.name.startsWith('canva_') || canvaOk(task)) : [])] : [];
   let out = null, stopReason = null;
   try {
     while (w.calls < MAX_CALLS * roundsFor(task)) {
@@ -540,12 +591,14 @@ async function work(s, task, ctx) {
           const res = tc.name === 'printify_request_publish' ? await requestPublish(s, task, tc.input, w, etsy)
             : tc.name === IMAGE_TOOL.name ? await makeImage(s, task, tc.input, w, etsy)
             : tc.name === DESIGN_TOOL.name ? saveDesign(s, task, tc.input || {}, w)
+            : tc.name.startsWith('canva_') ? await useCanva(s, task, tc, w, etsy)
             : await etsy.run(tc.name, tc.input);
           // an SVG sent to Printify is kept in the gallery too
           if (tc.name === 'printify_upload_design' && tc.input?.svg && !res.isError) { try { saveDesign(s, task, { file_name: tc.input.file_name, svg: tc.input.svg, imageId: JSON.parse(res.content).image_id }, w); } catch { /* the upload still counts */ } }
           if (tc.name.startsWith('etsy_')) record.etsyCalls = (record.etsyCalls || 0) + 1;
           else if (tc.name.startsWith('printify_')) record.printifyCalls = (record.printifyCalls || 0) + 1;
           else if (tc.name === DESIGN_TOOL.name) record.designs = (record.designs || 0) + 1;
+          else if (tc.name.startsWith('canva_')) record.canvaCalls = (record.canvaCalls || 0) + 1;
           results.push({ type: 'tool_result', tool_use_id: tc.id, content: res.content, ...(res.isError ? { is_error: true } : {}) });
         }
         messages.push({ role: 'user', content: results });
@@ -687,7 +740,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   const runLimit = Math.min(RUN_LIMIT_USD * Math.max(1, picks.length) * (focus ? 2 : 1), remaining(s));
   const record = { id: `run_${start.getTime().toString(36)}`, trigger, model: MODEL, startedAt: start.toISOString(), endedAt: null, costUsd: 0, costKnown: true, calls: 0, searches: 0, fetches: 0, status: 'running', summary: '' };
   running = record;
-  const etsy = 'etsy' in deps ? deps.etsy : agentTools();
+  const etsy = 'etsy' in deps ? deps.etsy : await agentTools();
   const ctx = { deps, deadline, limit: runLimit / picks.length, etsy, record };
   let results;
   try {
@@ -760,6 +813,12 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
     now.totals.images[e.agentId] = round6((now.totals.images[e.agentId] || 0) + e.usd);
     now.imageLog = [...(now.imageLog || []), e].slice(-IMAGE_LOG_KEEP);
     if (e.at.slice(0, 7) === month()) { const m = rollImages(now); m.spentUsd = round6(m.spentUsd + e.usd); }
+  }
+  // Canva used this run: its log lines and the month's counts
+  for (const e of s.canvaLog || []) {
+    if ((now.canvaLog || []).some((x) => x.id === e.id)) continue;
+    now.canvaLog = [...(now.canvaLog || []), e].slice(-CANVA_LOG_KEEP);
+    if (e.at.slice(0, 7) === month()) { const c = rollCanva(now); if (e.ai) c.aiCalls++; if (e.tool === 'export-design' && e.ok) c.exports++; }
   }
   // spend goes to the agent each worker was; SKILL.md writing is JARVIS's
   for (const w of ws) charge(now, w.agentId, w.costUsd);
@@ -918,7 +977,7 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
       : 'The owner is asking you a question in the console, outside your work window. Answer directly and briefly from what you know; you have no tools here and this does not count as a run. Do not propose tasks or agents here.',
     `Recent progress${agent ? ` on your work` : ''}:\n${progress.map((e) => `- ${e.at.slice(0, 16)} ${e.agentName}${e.taskTitle ? ` on "${e.taskTitle}"` : ''}${e.pct != null ? ` (${e.pct}%)` : ''}: ${e.note}`).join('\n') || '(none yet)'}`,
     `OWNER CONSENT: the owner's plain words are approval, inside the $${CAP} monthly cap and the per-task budget. "allow etsy store to run", "go ahead", "yes do it", "1 dollar approval" all count; never ask them to repeat it in exact wording or to restate a scope. A request to do something ("make 5 items for my etsy store", "find me 3 trending niches") is approval of that work too. When their message approves or asks for work, say in one sentence what you will do, then end your answer with one line exactly like this: APPROVE {"title": "short task title", "detail": "what to do and what a good result looks like, in the owner's words", "agentId": "id from AGENTS IN THE BRAIN NOW of the agent who should do it, or null for you", "count": how many items they asked for or null, "budgetUsd": the dollar amount they named or null, "approveIds": ["ids of waiting proposals they approved"]}. It becomes your focus: worked first, right away, before anything else. Write that line only when they approved or asked for work. Ventures create the skill agents they need without asking; that never needs approval.`,
-    `WHAT YOUR AGENTS CAN DO IN THEIR WORK RUNS (not here): web search and reading pages; make real artwork as SVG (lettering, logos, badges, vector art) saved to the owner's design gallery${openaiPublic().configured ? "; illustrated or photo-style art with the owner's ChatGPT image model" : ''}${printifyPublic().configured ? `; turn designs into products in the owner's Printify shop "${printifyPublic().shopTitle || 'shop'}" (shirts, mugs, posters and more) that the owner approves one by one before they go live` : ''}. So when the owner asks for designs, products or any other work, never say you or an agent can't, and never refuse because it is outside an agent's usual scope: approve it as a task with the APPROVE line (it becomes the focus and starts right away), give it to the best agent, and say what they will get and where. If what they asked for is unclear (for example a brand or name you don't know), still approve it, put what you know in detail, and ask one short question in your answer.`,
+    `WHAT YOUR AGENTS CAN DO IN THEIR WORK RUNS (not here): web search and reading pages; make real artwork as SVG (lettering, logos, badges, vector art) saved to the owner's design gallery${openaiPublic().configured ? "; illustrated or photo-style art with the owner's ChatGPT image model" : ''}${canvaPublic().configured ? "; designs and images in the owner's Canva account, exported to the gallery (in tasks the owner gives)" : ''}${printifyPublic().configured ? `; turn designs into products in the owner's Printify shop "${printifyPublic().shopTitle || 'shop'}" (shirts, mugs, posters and more) that the owner approves one by one before they go live` : ''}. So when the owner asks for designs, products or any other work, never say you or an agent can't, and never refuse because it is outside an agent's usual scope: approve it as a task with the APPROVE line (it becomes the focus and starts right away), give it to the best agent, and say what they will get and where. If what they asked for is unclear (for example a brand or name you don't know), still approve it, put what you know in detail, and ask one short question in your answer.`,
     `SKILLS: you can write skills yourself; never tell the owner you can't, and never ask them for agent ids (the runner finds agents by name). A SKILL.md is an agent's own detailed playbook; a bank skill is a shared skill in the owner's skill bank given to the agents that need it. When the owner asks for SKILL.md files or skills (or names skills an agent is missing), say in one sentence what you will write, then end your answer with one line exactly like this: SKILLS {"files": ["agent names, a venture name + \" team\" for its whole team, or \"all\""], "bank": [{"name": "Web research", "description": "one line on what it covers", "agents": ["agent names, \"<venture> team\", or \"all\""]}]}. Writing starts right away and each file is saved to the bank and attached to its agents automatically. You may write both an APPROVE line and a SKILLS line.`,
     'Old runs that failed with a 401 or "no API key" were before the owner set their key. The key works now (this answer proves it), so never say it is broken.',
     `Your current task: ${task ? `${task.title}: ${task.detail}${task.progress != null ? ` (${task.progress}% done)` : ''} (cost so far $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} runs)` : 'none approved yet'}.`,
@@ -966,7 +1025,7 @@ function publicState() {
   return {
     configured: Boolean(KEY), model: MODEL, capUsd: CAP, everyMinutes: EVERY_MIN, maxMinutes: MAX_MIN, schedule: SCHEDULE,
     spentUsd: s.ledger.spentUsd, spentByAgent: s.ledger.byAgent, ...dailyAllowance(s), parallel: PARALLEL, rounds: MAX_ROUNDS, taskBudgetUsd: TASK_BUDGET_USD, unknownCostRuns: s.ledger.unknownCostRuns, month: s.ledger.month, running: running ? running.startedAt : null,
-    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, etsy: etsyPublic(), printify: printifyPublic(), openai: openaiPublic(), designs: (s.designs || []).slice(-40).reverse(), voice: voicePublic(DIR), money: { byAgent: moneyByAgent({ ...s, totals: s.totals ?? { claude: { ...s.ledger.byAgent }, images: {} } }), entries: (s.moneyEntries || []).slice(-50).reverse(), sales: (s.sales || []).slice(0, 50), salesSync: s.salesSync ?? null }, images: { month: rollImages(s).month, spentUsd: s.images.spentUsd, capUsd: imageCap(s), log: (s.imageLog || []).slice(-30).reverse() }, publishRequests: (s.publishRequests || []).slice(-30), skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
+    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, etsy: etsyPublic(), printify: printifyPublic(), openai: openaiPublic(), canva: { ...canvaPublic(), month: rollCanva(s).month, aiCalls: s.canva.aiCalls, exports: s.canva.exports, limit: canvaLimit(s), log: (s.canvaLog || []).slice(-30).reverse() }, designs: (s.designs || []).slice(-40).reverse(), voice: voicePublic(DIR), money: { byAgent: moneyByAgent({ ...s, totals: s.totals ?? { claude: { ...s.ledger.byAgent }, images: {} } }), entries: (s.moneyEntries || []).slice(-50).reverse(), sales: (s.sales || []).slice(0, 50), salesSync: s.salesSync ?? null }, images: { month: rollImages(s).month, spentUsd: s.images.spentUsd, capUsd: imageCap(s), log: (s.imageLog || []).slice(-30).reverse() }, publishRequests: (s.publishRequests || []).slice(-30), skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
     // with no scheduled run yet, the next one starts within a minute
     nextScheduledAt: SCHEDULE ? new Date(s.lastScheduledAt ? Math.max(Date.now(), Date.parse(s.lastScheduledAt) + (pickTasks(s).some((t) => t.focus) ? Math.min(FOCUS_EVERY_MIN, EVERY_MIN) : EVERY_MIN) * 60_000) : Date.now() + 60_000).toISOString() : null,
     focusEveryMinutes: Math.min(FOCUS_EVERY_MIN, EVERY_MIN),
@@ -1019,7 +1078,7 @@ async function handle(req, res) {
     try { bytes = fs.readFileSync(path.join(designDir(), `${d.id}.${d.kind}`)); } catch { return send(req, res, 404, { error: 'file missing' }); }
     const origin = req.headers.origin;
     const allow = origin && /^(app:\/\/campus|https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/.test(origin) ? origin : '';
-    res.writeHead(200, { 'content-type': d.kind === 'png' ? 'image/png' : 'image/svg+xml', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:", 'x-content-type-options': 'nosniff', 'cache-control': 'max-age=86400', ...(allow ? { 'access-control-allow-origin': allow } : {}) });
+    res.writeHead(200, { 'content-type': d.kind === 'png' ? 'image/png' : d.kind === 'jpg' ? 'image/jpeg' : 'image/svg+xml', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:", 'x-content-type-options': 'nosniff', 'cache-control': 'max-age=86400', ...(allow ? { 'access-control-allow-origin': allow } : {}) });
     return res.end(bytes);
   }
   if (req.method === 'GET' && url === '/api/origin/printify/image') {
@@ -1149,8 +1208,10 @@ async function handle(req, res) {
     if (typeof body.autoTasks === 'boolean') s.autoTasks = body.autoTasks;
     // the owner's monthly limit on design images (billed to their OpenAI account)
     if (Number.isFinite(body.imageCapUsd) && body.imageCapUsd >= 0) s.imageCapUsd = Math.min(100, Math.round(body.imageCapUsd * 100) / 100);
+    // and on Canva AI designs and images a month (they use the owner's Canva AI credits)
+    if (Number.isFinite(body.canvaAiLimit) && body.canvaAiLimit >= 0) s.canvaAiLimit = Math.min(500, Math.round(body.canvaAiLimit));
     saveState(s);
-    return send(req, res, 200, { ok: true, autoAgents: s.autoAgents, autoTasks: s.autoTasks !== false, imageCapUsd: imageCap(s) });
+    return send(req, res, 200, { ok: true, autoAgents: s.autoAgents, autoTasks: s.autoTasks !== false, imageCapUsd: imageCap(s), canvaAiLimit: canvaLimit(s) });
   }
   if (url === '/api/origin/skillfiles') {
     // the app saved the file to the skill bank and gave it to the agent

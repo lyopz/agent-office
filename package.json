@@ -18,6 +18,7 @@
     "set-etsy": "node server/set-etsy.mjs",
     "set-printify": "node server/set-printify.mjs",
     "set-openai": "node server/set-openai.mjs",
+    "connect-canva": "node server/connect-canva.mjs",
     "desktop": "npm run build && electron .",
     "desktop:dev": "node desktop/dev.cjs",
     "desktop:dist": "npm run build && electron-builder",

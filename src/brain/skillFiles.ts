@@ -10,10 +10,8 @@ import { useOrigin } from './useOrigin';
 import { ORIGIN_ID, branchAgentOps, branchKind } from './opportunity';
 import { agentProposalAction, skillFileImported, taskAction, type AgentProposal, type RunnerStatus } from './originLink';
 
-/** The bank id of an agent's own SKILL.md. */
-export const skillFileId = (agentId: string) => `skill_file_${agentId}`;
-/** The current SKILL.md format: the full ten-section playbook. Older files are rewritten in it. */
-export const SKILL_FILE_VERSION = 2;
+import { SKILL_FILE_VERSION, skillFileId } from './originSkillFile';
+export { SKILL_FILE_VERSION, skillFileId };
 const versionTag = `skill-file-v${SKILL_FILE_VERSION}`;
 
 /** The agents that still need a current SKILL.md: every agent but JARVIS, whose rules are its prompt. */

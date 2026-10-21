@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { ORIGIN_ID, describeWindow } from '../brain/opportunity';
 import { AgentSkillFile, AgentTasks } from '../brain/agentWork';
+import { BranchMoneyCards } from '../brain/BranchMoneyCards';
 import { useStore } from '../store/store';
 import type { Agent, MemoryItem } from '../model/types';
 import type { DeepPartial } from '../engine/ops';
@@ -14,7 +15,7 @@ import { deleteAgent } from './actions';
 
 const TABS = [
   ['identity', 'Identity'], ['skillfile', 'SKILL.md'], ['personality', 'Personality'], ['skills', 'Skills & roles'], ['ai', 'AI model'], ['memory', 'Memory'],
-  ['schedule', 'Schedule & tasks'], ['activity', 'Activity & logs'], ['permissions', 'Permissions'],
+  ['schedule', 'Schedule & tasks'], ['money', 'Money'], ['activity', 'Activity & logs'], ['permissions', 'Permissions'],
 ] as const;
 
 type Up = (patch: DeepPartial<Omit<Agent, 'id'>>, label?: string) => void;
@@ -280,6 +281,7 @@ export function ProfileDrawer() {
         {tab === 'ai' && <AIModel a={agent} up={up} />}
         {tab === 'memory' && <Memory a={agent} up={up} />}
         {tab === 'schedule' && <Schedule a={agent} up={up} />}
+        {tab === 'money' && <BranchMoneyCards agentId={agent.id} />}
         {tab === 'activity' && <Activity a={agent} />}
         {tab === 'permissions' && <Permissions a={agent} up={up} />}
       </div>

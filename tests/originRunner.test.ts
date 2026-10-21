@@ -596,3 +596,38 @@ describe('origin runner: designs', () => {
     expect(fs.readFileSync(path.join(path.dirname(file), 'designs', `${d.id}.svg`), 'utf8')).toMatch(/<svg/);
   });
 });
+
+describe('origin runner: Canva', () => {
+  const canvaTools = (calls: any[], owner = true) => ({
+    tools: [{ name: 'canva_export_design', description: 'd', input_schema: { type: 'object', properties: {} } }],
+    run: async () => ({ content: 'x', isError: false }),
+    canva: async (name: string, input: any) => { calls.push({ name, input }); return { content: [{ type: 'text', text: '{"url":"https://export-download.canva.com/x.png"}' }] }; },
+    canvaFiles: async () => [{ ext: 'png', b64: Buffer.from('png-bytes').toString('base64') }],
+    upload: async () => ({ image_id: 'pf_img_1' }),
+    owner,
+  });
+  const once = (name: string) => { let n = 0; return async () => { n++; return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'u1', name, input: { design_id: 'DAAAAAAAAAA', format: { type: 'png' } } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); }; };
+
+  test("an export from the owner's Canva is saved to the gallery and uploaded to Printify", async () => {
+    write({ ...base, agents: [{ id: 'd1', name: 'Mockup & Design' }], tasks: [{ id: 't1', title: 'Jersey Avenue posters', detail: '', status: 'approved', by: 'owner', agentId: 'd1', focus: true, createdAt: '' }] });
+    const calls: any[] = [];
+    const r: any = await runner.runOnce('focus', { fetch: once('canva_export_design'), file, key: 'test', etsy: canvaTools(calls) } as any);
+    expect(calls).toHaveLength(1);
+    expect(r.run.canvaCalls).toBe(1);
+    const s = read();
+    expect(s.designs[0]).toMatchObject({ kind: 'png', source: 'canva', imageId: 'pf_img_1', taskId: 't1' });
+    expect(s.canva.exports).toBe(1);
+    expect(s.canvaLog[0]).toMatchObject({ tool: 'export-design', ok: true, files: 1 });
+  });
+
+  test('Canva is left out of tasks the owner did not give', async () => {
+    write({ ...base, agents: [{ id: 'd1', name: 'Mockup & Design' }], tasks: [{ id: 't1', title: 'Research mugs', detail: '', status: 'approved', by: 'origin', agentId: 'd1', createdAt: '' }] });
+    const calls: any[] = [];
+    let sent: any = null;
+    const f = once('canva_export_design');
+    const fetch = async (_u: string, o: any) => { sent ??= JSON.parse(o.body); return f(); };
+    await runner.runOnce('manual', { fetch, file, key: 'test', etsy: canvaTools(calls) } as any);
+    expect((sent.tools || []).some((t: any) => t.name.startsWith('canva_'))).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+});

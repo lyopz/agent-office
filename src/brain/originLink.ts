@@ -20,7 +20,8 @@ export interface MoneyRow { claudeUsd: number; imageUsd: number; listingFeesUsd:
 export interface MoneyEntry { id: string; agentId: string; kind: 'income' | 'expense'; usd: number; note: string; at: string }
 export interface SaleLine { id: string; orderId: string; at: string; status: string; productId: string; title: string; quantity: number; revenueUsd: number | null; costUsd: number; agentId: string | null; agentName: string | null }
 /** A design an agent made, kept on the owner's PC: SVG it wrote or a PNG from the image model. */
-export interface DesignEntry { id: string; kind: 'svg' | 'png'; fileName: string; title: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string | null; at: string }
+export interface CanvaEntry { id: string; at: string; tool: string; agentId: string; agentName: string; taskId: string; taskTitle: string; ok: boolean; ai: boolean; files?: number; error?: string }
+export interface DesignEntry { id: string; kind: 'svg' | 'png' | 'jpg'; source?: 'canva'; fileName: string; title: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string | null; at: string }
 /** One design image an agent made with the owner's OpenAI key, and what it cost. */
 export interface ImageEntry { id: string; at: string; model: string; quality: string; size: string; usd: number; estimated?: boolean; prompt: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string }
 /** One line of progress, filed under the agent the work was for. */
@@ -36,7 +37,7 @@ export interface RunnerRun { workers?: RunnerWorker[]; id: string; agentId?: str
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
   spentUsd: number; spentByAgent?: Record<string, number>; allowanceUsd?: number; spentTodayUsd?: number; parallel?: number; rounds?: number; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
-  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; designs?: DesignEntry[]; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; money?: { byAgent: Record<string, MoneyRow>; entries: MoneyEntry[]; sales: SaleLine[]; salesSync: { at: string; error: string | null; orders: number | null } | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
+  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; canva?: { configured: boolean; connectedAt: string | null; month: string; aiCalls: number; exports: number; limit: number; log: CanvaEntry[] }; designs?: DesignEntry[]; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; money?: { byAgent: Record<string, MoneyRow>; entries: MoneyEntry[]; sales: SaleLine[]; salesSync: { at: string; error: string | null; orders: number | null } | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
 }
 
 // in the browser the dev server forwards /api/origin; the desktop app talks to the runner directly
@@ -138,6 +139,11 @@ export async function moneyAction(body: { action: 'add'; agentId: string; kind: 
 /** The owner's monthly limit on design images, billed to their OpenAI account. */
 export async function setImageCap(imageCapUsd: number) {
   return !!(await call('/settings', { imageCapUsd }));
+}
+
+/** The owner's monthly limit on Canva AI designs and images (they use their Canva AI credits). */
+export async function setCanvaLimit(canvaAiLimit: number) {
+  return !!(await call('/settings', { canvaAiLimit }));
 }
 
 export async function skillFileImported(id: string) {

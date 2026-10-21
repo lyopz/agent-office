@@ -69,6 +69,7 @@ export function AgentSkillFile({ a }: { a: Agent }) {
   const others = doc.skillBank.filter((k) => k.id !== skillFileId(a.id) && (a.bankSkills ?? []).includes(k.id));
   const kind = branchKind(doc, a.id);
   const request = status?.tasks.find((t) => t.kind === 'skill-file' && t.agentId === a.id && t.status === 'approved') ?? status?.tasks.find((t) => t.kind === 'skill-file' && t.agentId === a.id);
+  const builtIn = kind === 'root' && !own?.tags.includes('owner-file');
   const [ownFile, setOwnFile] = useState<OwnSkillFile | null>(null);
   const [saved, setSaved] = useState('');
   // the owner's own .md becomes this agent's SKILL.md; a request for JARVIS to write one is withdrawn so it isn't replaced
@@ -91,19 +92,19 @@ export function AgentSkillFile({ a }: { a: Agent }) {
       <div className="card">
         <div className="row"><h4 className="grow">{own ? own.name : `${a.identity.name}'s SKILL.md`}</h4>{own && <button className="btn sm" onClick={() => download(own)}><Download size={13} /> Download</button>}</div>
         {own ? <>
-          {own.description && <p className="note">{own.description}</p>}
+          {own.description && <p className="note">{own.description}{builtIn ? ' Built in; replace it below with your own .md if you want JARVIS to work differently.' : ''}</p>}
           <pre className="skill-file">{own.instructions}</pre>
         </> : <p className="note">{
-          kind === 'root' ? "JARVIS's playbook is its instructions, under AI model. Each agent it creates gets its own SKILL.md here."
+          kind === 'root' ? 'JARVIS gets its SKILL.md the next time the brain opens its creator desk.'
             : request ? `JARVIS is writing it: “${request.title}” is ${request.status === 'approved' ? (request.requested ? 'being written now' : 'queued for its next run') : request.status}. It appears here when it's done.`
             : status ? 'JARVIS will be asked to write it on its next check.' : "JARVIS writes it in its runs. Start the runner on your PC with npm.cmd run origin."
         }</p>}
       </div>
-      {kind !== 'root' && <div className="card">
+      <div className="card">
         <h4>{own ? 'Replace it with your own .md' : 'Attach your own .md'}</h4>
         <SkillFileDrop value={ownFile} onChange={attachOwn} label="Choose a .md file" />
         {saved && <p className="note" role="status">{saved}</p>}
-      </div>}
+      </div>
       {others.length > 0 && <div className="card">
         <h4>Skills from the bank</h4>
         {others.map((k) => <details key={k.id}><summary>{k.name}{k.description ? ` · ${k.description}` : ''}</summary><pre className="skill-file">{k.instructions}</pre></details>)}

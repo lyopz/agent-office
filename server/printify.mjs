@@ -131,7 +131,7 @@ export async function productPreview(productId, deps) {
 /** Upload a finished image (base64 PNG) as a design; returns its Printify image id and preview. */
 export async function uploadImage(fileName, b64, deps) {
   const name = String(fileName || 'design.png').replace(/[^\w.-]/g, '_').slice(0, 80);
-  const img = await pf('/uploads/images.json', { deps, method: 'POST', body: { file_name: name.endsWith('.png') ? name : `${name}.png`, contents: b64 } });
+  const img = await pf('/uploads/images.json', { deps, method: 'POST', body: { file_name: /\.(png|jpe?g)$/i.test(name) ? name : `${name}.png`, contents: b64 } });
   return { image_id: img.id, width: img.width, height: img.height, preview: img.preview_url };
 }
 

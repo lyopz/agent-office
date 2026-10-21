@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Play, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useStore } from '../store/store';
-import { agentProposalAction, designUrl, mockupUrl, publishDecision, runnerStatus, setAutoAgents, setAutoTasks, setImageCap, syncOrigin, taskAction, type AgentProposal, type DesignEntry, type PublishRequest, type RunnerStatus, type RunnerTask } from './originLink';
+import { agentProposalAction, designUrl, mockupUrl, publishDecision, runnerStatus, setAutoAgents, setAutoTasks, setCanvaLimit, setImageCap, syncOrigin, taskAction, type AgentProposal, type DesignEntry, type PublishRequest, type RunnerStatus, type RunnerTask } from './originLink';
 import { branchKind, describeWindow } from './opportunity';
 import { createProposedAgent } from './skillFiles';
 import { ProgressBar, ProgressLog } from './Progress';
@@ -24,7 +24,7 @@ const Mockup = ({ id, title }: { id: string; title: string }) => <RunnerImage lo
 function Designs({ list }: { list: DesignEntry[] }) {
   return <div className="design-grid">{list.map((d) => <figure key={d.id} className="design-card" title={`${d.title} · ${d.agentName}${d.taskTitle ? ` · ${d.taskTitle}` : ''}`}>
     <RunnerImage load={designUrl} id={d.id} alt={d.title} className="design-img" />
-    <figcaption><b>{d.title}</b><span>{d.agentName} · {new Date(d.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{d.imageId ? ' · in Printify' : ''}</span></figcaption>
+    <figcaption><b>{d.title}</b><span>{d.agentName} · {new Date(d.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{d.source === 'canva' ? ' · Canva' : ''}{d.imageId ? ' · in Printify' : ''}</span></figcaption>
   </figure>)}</div>;
 }
 
@@ -40,6 +40,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   const [detail, setDetail] = useState('');
   const [logAgent, setLogAgent] = useState('');
   const [capDraft, setCapDraft] = useState('');
+  const [canvaDraft, setCanvaDraft] = useState('');
   const refresh = async () => { const s = await runnerStatus(); setSt(s); if (s && !s.synced) await syncOrigin(doc); };
   useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 15_000); return () => clearInterval(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -166,6 +167,22 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
           <button className="creator-secondary" disabled={capDraft === ''}>Set</button>
         </form>
         {st.images.log.length > 0 && <table className="spend-table"><thead><tr><th>Image</th><th>Cost</th><th>By</th></tr></thead><tbody>{st.images.log.slice(0, 12).map((e) => <tr key={e.id}><td title={e.prompt}>{new Date(e.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · {e.quality} · {e.prompt.slice(0, 70)}{e.prompt.length > 70 ? '…' : ''}</td><td>{money(e.usd)}{e.estimated ? ' (est.)' : ''}</td><td>{e.agentName}</td></tr>)}</tbody></table>}
+      </>}
+      <p className="creator-privacy"><b>Canva:</b> {st.canva?.configured
+        ? <>connected{st.canva.connectedAt ? ` since ${new Date(st.canva.connectedAt).toLocaleDateString()}` : ''}. In tasks you give, agents make designs and images in your Canva account and export them to the gallery{st.printify?.configured ? ' and into Printify as unpublished products' : ''}; nothing is listed until you approve it. AI designs use your Canva AI credits. To disconnect, run <code>npm.cmd run connect-canva -- --forget</code>.</>
+        : <>not connected. Run <code>npm.cmd run connect-canva</code> once and press Allow in your browser; agents can then make designs in your Canva account (in tasks you give) and export them for your approval.</>}</p>
+      {st.canva && (st.canva.configured || st.canva.log.length > 0) && <>
+        <div className="spend-grid">
+          <div><b>{st.canva.aiCalls}</b><span>Canva AI designs and images this month, of your limit of {st.canva.limit}</span></div>
+          <div><b>{st.canva.exports}</b><span>designs exported from Canva this month</span></div>
+          <div><b>{Math.max(0, st.canva.limit - st.canva.aiCalls)}</b><span>AI designs left this month</span></div>
+        </div>
+        <form className="creator-request-row" style={{ justifyContent: 'flex-start' }} onSubmit={(e) => { e.preventDefault(); const v = Number(canvaDraft); if (Number.isFinite(v) && v >= 0) { void act(() => setCanvaLimit(v), `Canva limit set to ${Math.round(v)} AI designs a month.`); setCanvaDraft(''); } }}>
+          <label className="creator-privacy" htmlFor="canva-limit">Monthly Canva AI limit (designs)</label>
+          <input id="canva-limit" type="number" min={0} max={500} step={1} value={canvaDraft} placeholder={String(st.canva.limit)} onChange={(e) => setCanvaDraft(e.target.value)} style={{ flex: '0 0 90px' }} />
+          <button className="creator-secondary" disabled={canvaDraft === ''}>Set</button>
+        </form>
+        {st.canva.log.length > 0 && <table className="spend-table"><thead><tr><th>Canva</th><th>Result</th><th>By</th></tr></thead><tbody>{st.canva.log.slice(0, 12).map((e) => <tr key={e.id}><td>{new Date(e.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · {e.tool}{e.ai ? ' (AI)' : ''} · {e.taskTitle}</td><td>{e.ok ? `${e.files ? `${e.files} file${e.files === 1 ? '' : 's'} saved` : 'done'}` : `failed: ${e.error ?? 'error'}`}</td><td>{e.agentName}</td></tr>)}</tbody></table>}
       </>}
       {st.etsy?.configured && <p className="creator-privacy"><b>Etsy research:</b> on (read-only).</p>}
       {created.length > 0 && <p className="creator-privacy">Recently created by JARVIS: {created.map((p) => `${p.name} (for ${doc.agents[p.parentId]?.identity.name ?? p.parentId})`).join(', ')}.</p>}

@@ -6,6 +6,7 @@
 // runs JARVIS live within the owner's cap.
 import type { DocOp } from '../engine/ops';
 import type { Agent, BankSkill, KnowledgeEntry, OfficeDoc, RunWindow } from '../model/types';
+import { originSkillFileUpsert, originSkillFileOutdated, skillFileId } from './originSkillFile';
 
 export const ORIGIN_ID = 'agent_origin';
 export const OPPORTUNITY_TAG = 'opportunity-agent';
@@ -222,7 +223,11 @@ export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
     } as Partial<Agent>,
   }];
   if (!doc.skillBank?.some((k) => k.id === BUDGET_WATCH_ID)) ops.push({ op: 'skillBank.upsert', skill: BUDGET_WATCH });
-  if (!origin.bankSkills?.includes(BUDGET_WATCH_ID)) ops.push({ op: 'agent.setBankSkills', id: ORIGIN_ID, skillIds: [...(origin.bankSkills ?? []), BUDGET_WATCH_ID] });
+  // JARVIS's own SKILL.md (how it takes the owner's orders) and its budget watch, both attached
+  const file = originSkillFileUpsert(doc, ORIGIN_ID);
+  if (file) ops.push(file);
+  const want = [...new Set([...(origin.bankSkills ?? []), BUDGET_WATCH_ID, skillFileId(ORIGIN_ID)])];
+  if (want.length !== (origin.bankSkills ?? []).length) ops.push({ op: 'agent.setBankSkills', id: ORIGIN_ID, skillIds: want });
   const now = new Date().toISOString();
   for (const m of MEMORY) {
     if (doc.library[m.id]) continue; // keep what JARVIS has already recorded
@@ -234,7 +239,7 @@ export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
 
 export const isOpportunityOrigin = (doc: OfficeDoc) => !!doc.agents[ORIGIN_ID]?.ai.agentInstructions.startsWith(OPPORTUNITY_PROMPT.slice(0, 60));
 /** JARVIS has the prompt but older rules (an earlier version of the branch notes or schedule). */
-export const originOutdated = (doc: OfficeDoc) => isOpportunityOrigin(doc) && (doc.agents[ORIGIN_ID].ai.agentInstructions !== `${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}` || !doc.agents[ORIGIN_ID].bankSkills?.includes(BUDGET_WATCH_ID));
+export const originOutdated = (doc: OfficeDoc) => isOpportunityOrigin(doc) && (doc.agents[ORIGIN_ID].ai.agentInstructions !== `${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}` || !doc.agents[ORIGIN_ID].bankSkills?.includes(BUDGET_WATCH_ID) || originSkillFileOutdated(doc, ORIGIN_ID));
 
 /** How to design an agent; JARVIS uses it for ventures, ventures for their skill agents. */
 export const AGENT_BLUEPRINT = `HOW TO CREATE AN AGENT

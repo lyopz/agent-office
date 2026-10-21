@@ -19,7 +19,7 @@ describe('skill bank', () => {
   test('ORIGIN starts with the budget watch skill and sees the bank when it creates agents', () => {
     const doc = creatorBrain();
     expect(doc.skillBank.map((k) => k.id)).toContain(BUDGET_WATCH_ID);
-    expect(doc.agents[ORIGIN_ID].bankSkills).toEqual([BUDGET_WATCH_ID]);
+    expect(doc.agents[ORIGIN_ID].bankSkills).toContain(BUDGET_WATCH_ID);
     expect(originOutdated(doc)).toBe(false);
     const p = agentPrompt(doc, ORIGIN_ID);
     expect(p).toMatch(/## Budget watch/);
