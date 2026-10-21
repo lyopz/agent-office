@@ -85,9 +85,11 @@ function hemisphere(side: 1 | -1, detail: number): THREE.BufferGeometry {
     const ux = v.x, uy = v.y, uz = v.z;
     const lateral = ux * side; // +1 = outer side, -1 = facing the other hemisphere
     // basic proportions: long front to back, tall in the middle
-    let x = ux * 0.42, y = uy * 0.56, z = uz * 0.84;
-    // the medial wall is flat, leaving the longitudinal fissure between the halves
-    if (lateral < 0) x *= 0.22 + 0.78 * (1 + lateral) ** 2;
+    // the crest sits next to the midline and the hemisphere bulges outwards from it
+    let x = ux * 0.72, y = uy * 0.56, z = uz * 0.84;
+    // the medial wall is flat and meets the other half at the midline, with only the
+    // narrow longitudinal fissure between them
+    if (lateral < 0) x = -side * 0.032 * Math.pow(-lateral, 0.5);
     // flatter underside, a little lower at the front (frontal lobe slopes down)
     if (uy < -0.15) y = -0.15 * 0.56 + (uy + 0.15) * 0.56 * 0.5;
     y -= 0.07 * Math.max(0, uz) ** 2;
@@ -123,8 +125,8 @@ function hemisphere(side: 1 | -1, detail: number): THREE.BufferGeometry {
     tint.set([col.r, col.g, col.b], i * 3);
     const depth = 0.045 * (crown - 0.8) - 0.05 * syl - 0.025 * cen;
     // push along the sphere's outward direction, scaled to the lobe shape
-    const n = new THREE.Vector3(x / 0.42 ** 2, y / 0.56 ** 2, z / 0.84 ** 2).normalize();
-    pos.setXYZ(i, x + side * 0.43 + n.x * depth, y + 0.1 + n.y * depth, z + n.z * depth);
+    const n = new THREE.Vector3(lateral < 0 ? -side * 2 : x / 0.72 ** 2, y / 0.56 ** 2, z / 0.84 ** 2).normalize();
+    pos.setXYZ(i, x + side * 0.046 + n.x * depth, y + 0.1 + n.y * depth, z + n.z * depth);
   }
   geo.setAttribute('fold', new THREE.BufferAttribute(fold, 1));
   geo.setAttribute('tint', new THREE.BufferAttribute(tint, 3));

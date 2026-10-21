@@ -29,7 +29,7 @@ export interface NerveTree { rootId: string | null; nodes: Record<string, NerveN
 export const STEM_BASE: Vec3 = [0, -0.98, -0.3];
 export const CORE: Vec3 = [0, -0.04, -0.06];
 /** Half-sizes of the cerebrum used to keep nerves inside it. */
-export const CEREBRUM: Vec3 = [0.8, 0.56, 0.86];
+export const CEREBRUM: Vec3 = [0.72, 0.56, 0.86];
 const CEREBRUM_CENTER: Vec3 = [0, 0.08, 0];
 
 export function hash(s: string) { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; }
