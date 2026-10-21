@@ -6,7 +6,7 @@ import { teamsOf } from './connectome';
 import { AgentMenu } from './AgentMenu';
 import BrainSwitcher from './BrainSwitcher';
 import CreatorDesk from './CreatorDesk';
-import BrainScene from './BrainScene';
+import BrainScene, { brainAgents } from './BrainScene';
 import '../styles/brain.css';
 
 /** Shared focus state for the brain, sector menu, and brain picker. */
@@ -17,8 +17,10 @@ export default function ConnectomeView() {
   const departments = useStore((s) => s.doc.departments);
   const ideasCount = useStore((s) => Object.values(s.doc.library).filter((entry) => (entry.tags.includes('idea-review') || entry.tags.includes('idea')) && !entry.tags.some((t) => t.startsWith('grown:'))).length);
   const teams = useMemo(() => teamsOf({ agents, departments }), [agents, departments]);
-  const running = useStore((s) => Object.values(s.runtime.agents).filter((agent) => ['working', 'researching', 'thinking', 'communicating'].includes(agent.status)).length);
-  const total = Object.keys(agents).length;
+  // counts cover the agents the brain shows: ORIGIN and its branches
+  const shownIds = useMemo(() => brainAgents(agents).map((a) => a.id), [agents]);
+  const running = useStore((s) => shownIds.filter((id) => ['working', 'researching', 'thinking', 'communicating'].includes(s.runtime.agents[id]?.status ?? '')).length);
+  const total = shownIds.length;
   const activeTeamId = useBrainFocus((s) => s.selectedTeamId);
   const activeTeam = teams.find((team) => team.id === activeTeamId);
 
@@ -34,7 +36,7 @@ export default function ConnectomeView() {
         <div className="brain-stage-glow" aria-hidden="true"/>
         <div className="brain-hud brain-hud-top"><span><Network size={14}/> BRAIN MODEL <b>{total.toString().padStart(2, '0')} AGENTS</b></span><span>NERVES GROW FROM THE MAIN AGENT · {ideasCount} IDEAS</span></div>
         <BrainScene/>
-        <div className="brain-hud brain-hud-bottom"><div><span className="brain-hud-icon"><Users size={15}/></span><span><b>{total} connected agents</b><small>Click a glowing bud to grow an idea into a branch</small></span></div><div className="brain-hud-divider"/><div><span className="brain-hud-icon pulse-icon"><Activity size={15}/></span><span><b>{running} active now</b><small>Drag the brain to view it from every angle</small></span></div></div>
+        <div className="brain-hud brain-hud-bottom"><div><span className="brain-hud-icon"><Users size={15}/></span><span><b>{total} connected agent{total === 1 ? '' : 's'}</b><small>Click a glowing bud to grow an idea into a branch</small></span></div><div className="brain-hud-divider"/><div><span className="brain-hud-icon pulse-icon"><Activity size={15}/></span><span><b>{running} active now</b><small>Drag the brain to view it from every angle</small></span></div></div>
         {!total && <div className="brain-empty"><b>Your network starts here</b><span>Create a specialist to grow the first branch.</span></div>}
       </section>
     </div>
