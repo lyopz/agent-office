@@ -10,6 +10,8 @@ export type DeepPartial<T> = { [K in keyof T]?: T[K] extends (infer _U)[] ? T[K]
 export type DocOp =
   | { op: 'agent.createFromArchetype'; archetype: string; name: string; id?: string }
   | { op: 'appearance.update'; patch: Partial<Pick<AppearanceSettings, 'mode' | 'themeId'>> }
+  /** The holographic colour of one brain ('main', a team id or an agent id); null goes back to the default. */
+  | { op: 'brain.setColor'; brain: string; color: string | null }
   | { op: 'theme.upsert'; theme: ThemeDef }
   | { op: 'theme.delete'; id: string }
   | { op: 'alerts.update'; patch: DeepPartial<AlertSettings> }
@@ -62,6 +64,15 @@ function applyOne(doc: Draft<OfficeDoc>, o: DocOp, summary: string[], errors: st
       Object.assign(doc.appearance, o.patch);
       summary.push(o.patch.mode ? `Interface mode: ${o.patch.mode}` : 'Changed interface theme');
       return;
+    case 'brain.setColor': {
+      if (!o.brain) { errors.push('Which brain?'); return; }
+      doc.appearance.brainColors ??= {};
+      if (o.color === null) { delete doc.appearance.brainColors[o.brain]; summary.push('Brain colour back to default'); return; }
+      if (!/^#[0-9a-f]{6}$/i.test(o.color)) { errors.push('Colour must be #rrggbb'); return; }
+      doc.appearance.brainColors[o.brain] = o.color.toLowerCase();
+      summary.push(`Brain colour ${o.color.toLowerCase()}`);
+      return;
+    }
     case 'theme.upsert': {
       const i = doc.appearance.themes.findIndex((t) => t.id === o.theme.id);
       if (i >= 0) doc.appearance.themes[i] = o.theme; else doc.appearance.themes.push(o.theme);

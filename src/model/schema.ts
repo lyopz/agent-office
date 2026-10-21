@@ -22,7 +22,8 @@ const tokens = z.object({
   selection: color, success: color, warning: color, error: color, highlight: color,
 });
 const theme = z.object({ id, name: z.string().max(80), builtin: z.boolean().optional(), dark: tokens, light: tokens });
-const appearanceSettings = z.object({ mode: z.enum(['dark', 'light', 'system']), themeId: id, themes: z.array(theme).min(1).max(60) });
+const hexColor = z.string().regex(/^#[0-9a-f]{6}$/i);
+const appearanceSettings = z.object({ mode: z.enum(['dark', 'light', 'system']), themeId: id, themes: z.array(theme).min(1).max(60), brainColors: z.record(z.string().max(120), hexColor).default({}) });
 
 const severity = z.enum(['critical', 'high', 'warning', 'info']);
 const sevSound = z.object({ soundId: z.string().max(80), volume: num.min(0).max(1), repeatSec: num.min(0), ackRequired: z.boolean() });

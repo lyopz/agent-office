@@ -57,7 +57,7 @@ function fromSeed(s: Seed): ThemeDef {
 export const BUILTIN_THEMES: ThemeDef[] = SEEDS.map(fromSeed);
 
 export function defaultAppearanceSettings(): AppearanceSettings {
-  return { mode: 'dark', themeId: 'brain-red', themes: BUILTIN_THEMES.map((t) => JSON.parse(JSON.stringify(t))) };
+  return { mode: 'dark', themeId: 'brain-red', themes: BUILTIN_THEMES.map((t) => JSON.parse(JSON.stringify(t))), brainColors: {} };
 }
 
 export function resolveMode(mode: AppearanceSettings['mode'], prefersDark: boolean): 'dark' | 'light' {

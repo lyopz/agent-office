@@ -37,7 +37,7 @@ describe('Brain Red theme', () => {
     expect(defaultAppearanceSettings().themeId).toBe('brain-red');
   });
   test('moves an old save off the old green default but keeps a theme the owner chose', () => {
-    const old = { mode: 'dark' as const, themeId: 'obsidian-green', themes: BUILTIN_THEMES.filter((t) => t.id !== 'brain-red') };
+    const old = { mode: 'dark' as const, themeId: 'obsidian-green', themes: BUILTIN_THEMES.filter((t) => t.id !== 'brain-red'), brainColors: {} };
     const moved = withBrainTheme(old);
     expect(moved.themeId).toBe('brain-red');
     expect(moved.themes[0].id).toBe('brain-red');

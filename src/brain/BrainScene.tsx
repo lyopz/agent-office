@@ -6,7 +6,8 @@
 // manager, and finished work reports back to the core. Ideas, the owner's or
 // the main agent's own, sprout as buds; growing one adds a new agent and the
 // bud becomes a full branch. Bloom, drifting neural dust and synapse flashes
-// make the activity readable at a glance.
+// make the activity readable at a glance. Every brain is a hologram in the
+// colour the owner picked for it (the brain picker chooses which brain).
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -19,7 +20,8 @@ import { RotateCcw } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { Agent } from '../model/types';
 import { teamOfAgent, teamsOf, type Team } from './connectome';
-import { REGIONS, buildBrainGeometry, glassBrainMaterial, solidBrainMaterial } from './brainMesh';
+import { MAIN_BRAIN, REGIONS, brainColor, buildBrainGeometry, holoBrainMaterial } from './brainMesh';
+import BrainColorPicker from './BrainColor';
 import { CEREBRUM, buildNerveTree, ideaSprouts, insideCerebrum, pathToRoot, route, subtree, type IdeaSprout, type NerveTree, type Path3 } from './nerveTree';
 import { growIdeaOps, openIdeas, treeIdeas } from './ideas';
 import { confirmAction } from '../ui/primitives';
@@ -63,7 +65,7 @@ const dustVertex = `uniform float uTime; uniform float uScale; attribute float a
   void main(){ vec3 p=position; p+=vec3(sin(uTime*.21+aSeed*6.3),cos(uTime*.17+aSeed*4.1),sin(uTime*.13+aSeed*9.7))*.025;
     vec4 mv=modelViewMatrix*vec4(p,1.); gl_Position=projectionMatrix*mv; vA=.35+.65*(.5+.5*sin(uTime*1.3+aSeed*40.));
     gl_PointSize=uScale*(1.+aSeed*1.6)/-mv.z; }`;
-const dustFragment = `varying float vA; void main(){ vec2 c=gl_PointCoord-.5; float d=length(c); if(d>.5) discard; gl_FragColor=vec4(vec3(.55,.78,1.)*vA,(1.-d*2.)*vA*.28); }`;
+const dustFragment = `uniform vec3 uColor; varying float vA; void main(){ vec2 c=gl_PointCoord-.5; float d=length(c); if(d>.5) discard; gl_FragColor=vec4(mix(uColor,vec3(1.),.45)*vA,(1.-d*2.)*vA*.28); }`;
 
 function backdrop() {
   const c = document.createElement('canvas'); c.width = c.height = 512;
@@ -119,6 +121,18 @@ function sample(p: Path3, cum: number[], d: number, out: THREE.Vector3) {
   return out.set(p[a] + (p[b] - p[a]) * u, p[a + 1] + (p[b + 1] - p[a + 1]) * u, p[a + 2] + (p[b + 2] - p[a + 2]) * u);
 }
 
+/** The brain the owner has picked in the brain picker: its key, its name and the colour it falls back to. */
+export function selectedBrain(focus: { brainAgentId: string | null; selectedTeamId: string | null }, teams: Team[], agents: Record<string, Agent>): { key: string; name: string; fallback: string } {
+  if (focus.brainAgentId && agents[focus.brainAgentId]) {
+    const team = teams.find((t) => t.agentIds.includes(focus.brainAgentId!));
+    return { key: focus.brainAgentId, name: `${agents[focus.brainAgentId].identity.name} Brain`, fallback: team?.color ?? HOLO_FALLBACK };
+  }
+  const team = focus.selectedTeamId ? teams.find((t) => t.id === focus.selectedTeamId) : null;
+  if (team) return { key: team.id, name: `${team.name} Brain`, fallback: team.color };
+  return { key: MAIN_BRAIN, name: 'Main Brain', fallback: HOLO_FALLBACK };
+}
+const HOLO_FALLBACK = '#5fb8ff';
+
 /** Ask the owner before an idea grows into a new agent under the main agent. */
 export function askGrow(ideaId: string) {
   const s = useStore.getState();
@@ -138,9 +152,8 @@ export function askGrow(ideaId: string) {
 export default function BrainScene() {
   const host = useRef<HTMLDivElement>(null);
   const labels = useRef<HTMLDivElement>(null);
-  const api = useRef<{ reset(): void; setSurface(s: 'glass' | 'solid'): void; setRegions(on: boolean): void } | null>(null);
+  const api = useRef<{ reset(): void; setRegions(on: boolean): void } | null>(null);
   const [regions, setRegions] = useState(() => { try { return localStorage.getItem('brain:regions') !== 'off'; } catch { return true; } });
-  const [surface, setSurface] = useState<'glass' | 'solid'>(() => { try { return localStorage.getItem('brain:surface') === 'solid' ? 'solid' : 'glass'; } catch { return 'glass'; } });
   const [hover, setHover] = useState<{ id: string; x: number; y: number; idea?: boolean } | null>(null);
   const agents = useStore((s) => s.doc.agents);
   const teams = teamsOf({ agents });
@@ -184,12 +197,13 @@ export default function BrainScene() {
     orbit.addEventListener('start', () => { orbit.autoRotate = false; });
     orbit.addEventListener('end', () => { idleSince = performance.now(); });
 
-    // the brain itself
+    // the brain itself: a hologram, drawn far surface first and near surface over it
     const geo = buildBrainGeometry(64);
-    const glass = glassBrainMaterial(), solid = solidBrainMaterial();
-    const brain = new THREE.Mesh(geo, surface === 'solid' ? solid : glass);
-    brain.renderOrder = 1;
-    scene.add(brain);
+    const pick0 = selectedBrain(useBrainFocus.getState(), teamsOf(useStore.getState().doc), useStore.getState().doc.agents);
+    const holo = holoBrainMaterial(brainColor(useStore.getState().doc.appearance, pick0.key, pick0.fallback));
+    const brainBack = new THREE.Mesh(geo, holo.back); brainBack.renderOrder = 0;
+    const brain = new THREE.Mesh(geo, holo.front); brain.renderOrder = 1;
+    scene.add(brainBack, brain);
 
     const glow = glowTexture();
     // neural dust inside the cerebrum
@@ -197,7 +211,7 @@ export default function BrainScene() {
     { let i = 0, r = Math.random; while (i < DUST) { const p: [number, number, number] = [(r() * 2 - 1) * CEREBRUM[0], (r() * 2 - 1) * CEREBRUM[1] + 0.08, (r() * 2 - 1) * CEREBRUM[2]]; if (insideCerebrum(p) > 0.95) continue; dustPos.set(p, i * 3); dustSeed[i] = r(); i++; } }
     const dustGeo = new THREE.BufferGeometry();
     dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3)); dustGeo.setAttribute('aSeed', new THREE.BufferAttribute(dustSeed, 1));
-    const dustMat = new THREE.ShaderMaterial({ vertexShader: dustVertex, fragmentShader: dustFragment, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uTime: { value: 0 }, uScale: { value: 7 } } });
+    const dustMat = new THREE.ShaderMaterial({ vertexShader: dustVertex, fragmentShader: dustFragment, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uTime: { value: 0 }, uScale: { value: 7 }, uColor: { value: new THREE.Color(HOLO_FALLBACK) } } });
     const dust = new THREE.Points(dustGeo, dustMat); dust.renderOrder = 2; scene.add(dust);
     const nerves = new THREE.Group(); nerves.renderOrder = 2; scene.add(nerves);
     const nodeGroup = new THREE.Group(); scene.add(nodeGroup);
@@ -356,11 +370,11 @@ export default function BrainScene() {
 
     api.current = {
       reset: () => orbit.reset(),
-      setSurface: (s) => { brain.material = s === 'solid' ? solid : glass; bloom.strength = s === 'solid' ? 0.12 : 0.22; bloom.threshold = s === 'solid' ? 0.9 : 0.72; },
-      setRegions: (on) => { glass.uniforms.uRegions.value = solid.uniforms.uRegions.value = on ? 1 : 0; },
+      setRegions: (on) => holo.setRegions(on),
     };
 
     let raf = 0, last = performance.now(), nextAmbient = 0;
+    let prevDoc: unknown = null, prevFocus: unknown = null;
     const v = new THREE.Vector3();
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
@@ -371,6 +385,14 @@ export default function BrainScene() {
       const st = useStore.getState();
       const focus = useBrainFocus.getState();
       const t = tree.current;
+      // the hologram wears the colour of the brain the owner picked
+      if (st.doc !== prevDoc || focus !== prevFocus) {
+        prevDoc = st.doc; prevFocus = focus;
+        const pick = selectedBrain(focus, teamsOf(st.doc), st.doc.agents);
+        holo.setColor(brainColor(st.doc.appearance, pick.key, pick.fallback));
+      }
+      holo.update(time, dt);
+      (dustMat.uniforms.uColor.value as THREE.Color).copy(holo.front.uniforms.uColor.value as THREE.Color);
       // which agents are lit: hover or menu focus on an agent shows its line to the core and everyone under it
       const agentFocus = hovered ?? focus.agentId ?? focus.brainAgentId;
       const teamFocus = focus.teamId ?? focus.selectedTeamId;
@@ -391,7 +413,7 @@ export default function BrainScene() {
         const id = busy.length ? busy[Math.floor(Math.random() * busy.length)] : null;
         if (id) outTo(id, t.nodes[id].color);
         // JARVIS's live run: its core fires while the runner works
-        if (useOrigin.getState().status?.running && t.rootId) { const rn = nodes.find((q) => q.id === t.rootId); if (rn) { rn.flash = 1; ring(rn.pos, t.nodes[t.rootId].color, rn.base); } }
+        if (useOrigin.getState().status?.running && t.rootId) { const rn = nodes.find((q) => q.id === t.rootId); if (rn) { rn.flash = 1; ring(rn.pos, t.nodes[t.rootId].color, rn.base); holo.pulse(0.35); } }
         if (buds.length && Math.random() < 0.35) { const b = buds[Math.floor(Math.random() * buds.length)]; if (b.grow >= 1) { b.sprite.scale.multiplyScalar(1.8); ring(b.pos, b.owner ? '#ffd27a' : '#9ff4ff', 0.06); } }
         nextAmbient = now + (busy.length ? 650 : 1800) + Math.random() * 600;
       }
@@ -470,7 +492,7 @@ export default function BrainScene() {
       disposeNerves(); disposeBuds();
       for (const p of pulses) for (const sp of [p.sprite, ...p.trail]) (sp.material as THREE.Material).dispose();
       for (const r of rings) (r.sprite.material as THREE.Material).dispose();
-      orbit.dispose(); geo.dispose(); glass.dispose(); solid.dispose(); glow.dispose(); ringTex.dispose(); sky.dispose();
+      orbit.dispose(); geo.dispose(); holo.dispose(); glow.dispose(); ringTex.dispose(); sky.dispose();
       dustGeo.dispose(); dustMat.dispose(); composer.dispose();
       renderer.dispose(); renderer.domElement.remove();
       api.current = null; rebuild.current = null; regrowBuds.current = null;
@@ -489,8 +511,6 @@ export default function BrainScene() {
   }, [ideaKey, key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { api.current?.setRegions(regions); try { localStorage.setItem('brain:regions', regions ? 'on' : 'off'); } catch { /* storage unavailable */ } }, [regions]);
-
-  useEffect(() => { api.current?.setSurface(surface); try { localStorage.setItem('brain:surface', surface); } catch { /* storage unavailable */ } }, [surface]);
 
   const hoverIdea = hover?.idea ? library[hover.id] : null;
   const hoverAgent = hover && !hover.idea ? agents[hover.id] : null;
@@ -511,10 +531,7 @@ export default function BrainScene() {
     {regions && <ul className="brain-regions" aria-label="Brain regions">{REGIONS.map((r) => <li key={r.id}><i style={{ background: r.color }} />{r.name}</li>)}</ul>}
     <div className="brain-rotate-tools">
       <span>DRAG TO ORBIT · SCROLL TO ZOOM · CLICK A NODE FOR ITS AGENT</span>
-      <div className="seg brain-surface" role="group" aria-label="Brain surface">
-        <button className="btn sm" aria-pressed={surface === 'glass'} onClick={() => setSurface('glass')}>Glass</button>
-        <button className="btn sm" aria-pressed={surface === 'solid'} onClick={() => setSurface('solid')}>Tissue</button>
-      </div>
+      <BrainColorPicker teams={teams} agents={agents} />
       <button className="btn sm brain-regions-toggle" aria-pressed={regions} onClick={() => setRegions((r) => !r)} title="Colour the brain by region">Regions</button>
       <button className="btn icon sm" aria-label="Reset brain view" title="Reset view" onClick={() => api.current?.reset()}><RotateCcw size={13}/></button>
     </div>

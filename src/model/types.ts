@@ -134,7 +134,11 @@ export interface ThemeTokens {
   selection: string; success: string; warning: string; error: string; highlight: string;
 }
 export interface ThemeDef { id: ID; name: string; builtin?: boolean; dark: ThemeTokens; light: ThemeTokens }
-export interface AppearanceSettings { mode: 'dark' | 'light' | 'system'; themeId: ID; themes: ThemeDef[] }
+export interface AppearanceSettings {
+  mode: 'dark' | 'light' | 'system'; themeId: ID; themes: ThemeDef[];
+  /** The holographic colour of each brain, by brain key: 'main', a team id ('team:Design') or an agent id. Unset brains use the default holo blue. */
+  brainColors: Record<string, string>;
+}
 
 // ---------- Alerts ----------
 
