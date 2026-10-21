@@ -476,3 +476,4 @@
 .creator-field .creator-window input { width: 64px; }
 .creator-field .creator-window select { flex: 1; }
 .am-grow { border-radius: 0; }
+.creator-rule { margin: 0; padding: 10px 11px; border: 1px dashed rgba(172,199,231,.17); border-radius: 9px; color: #bdc9d9; font: 400 12px/1.5 var(--font-sans); }

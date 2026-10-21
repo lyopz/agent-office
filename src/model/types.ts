@@ -321,7 +321,12 @@ export interface Agent {
   uniformId?: ID | null;
   budget: AgentBudget;
   assets: VisualAssets;
+  /** Where the agent sits in the brain's branches (see brain/opportunity.ts); missing = ORIGIN's core staff. */
+  branch?: AgentBranch;
 }
+
+/** A venture is a business ORIGIN started; a skill agent works for exactly one venture. */
+export interface AgentBranch { kind: 'core' | 'venture' | 'skill'; ventureId: ID | null }
 
 export interface AgentBudget {
   monthlyCredits: number;     // spending allowance
@@ -477,8 +482,6 @@ export interface ControlSettings {
   policy: ResourcePolicy;
   simplifyAbove: number;            // visible agents before characters switch to simple markers (0 = never)
   blenderBridgeUrl: string;         // local Blender bridge (server/blender-bridge.mjs); empty = planning mode
-  /** How many levels of branches may grow below the main agent; null = no limit. */
-  maxBranchDepth: number | null;
 }
 
 export type GameId = 'flappy' | 'pacman' | 'pong';

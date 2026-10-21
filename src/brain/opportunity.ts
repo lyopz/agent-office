@@ -140,16 +140,18 @@ FIRST RUN
 Check whether an operating allowance, authorized information sources, and scheduling support exist. If no allowance exists, request a capped budget before any chargeable execution or delegation. Never claim that a schedule, agent, product, or revenue exists unless you have verified it.`;
 
 /**
- * How the brain's branches relate to the prompt's "child agents" rule: a branch
- * is a standing specialist the owner approved into the brain; a child agent is
- * a run of one inside ORIGIN's hourly window. The branch limit is the owner's
- * `control.maxBranchDepth`.
+ * The owner's branching rules. Only ORIGIN starts branches, and each one is a
+ * venture: a business or project ORIGIN took on (say, Roblox development). A
+ * venture may only add the skill agents it needs to succeed (research, 3D
+ * modelling, design, ads…); it can't start a different business, and skill
+ * agents can't add anyone. Running any of them inside a work window is a child
+ * agent and follows the prompt's delegation and spending rules.
  */
 export const BRANCH_NOTE = `BRANCHES IN THE BRAIN
-Specialists you need become branches of the brain: you propose one, the owner approves it, and it grows out of you as a nerve. A specialist may propose its own sub-specialists, and they grow off it, down to the owner's branch depth limit. Proposing a branch costs nothing; running one inside a work window is a child agent and follows the delegation and spending rules above (at most two running at once, none running outside the window).
+Only you start branches. Each branch is a venture: one business or project you took on after researching it, such as Roblox development, and you need the owner's approval to start it. A venture may add only the skill agents it needs to succeed, such as research, 3D modelling, design or ads, and every skill agent works for that venture alone. A venture can never start a different business; it sends any new business idea to your backlog instead. Skill agents cannot create agents. Proposing a branch costs nothing; running one inside a work window is a child agent and follows the delegation and spending rules above (at most two running at once, none running outside the window).
 
 WORK WINDOWS PER BRANCH
-Each specialist gets its own work window sized to its task, not your hourly window. For example, research may need 10 minutes every 5 hours while design needs 5 minutes every hour. Set each window from your own research on what the task needs, record the reason, and change it when the evidence changes. The owner can override any window. A window is a plan until the owner approves the scheduler and the spend it implies; never start one without that approval.`;
+Each venture and skill agent gets its own work window sized to its task, not your hourly window. For example, research may need 10 minutes every 5 hours while design needs 5 minutes every hour. Set each window from your own research on what the task needs, record the reason, and change it when the evidence changes. The owner can override any window. A window is a plan until the owner approves the scheduler and the spend it implies; never start one without that approval.`;
 
 /** ORIGIN's own window from the owner's prompt: once an hour, at most 10 minutes. */
 export const ORIGIN_WINDOW: RunWindow = { everyMinutes: 60, maxMinutes: 10, setBy: 'owner', reason: 'Owner\'s operating schedule: wake once every hour, work at most 10 minutes.' };
@@ -164,6 +166,9 @@ export const SUGGESTED_WINDOWS: Record<string, Omit<RunWindow, 'setBy'>> = {
   Finance: { everyMinutes: 1440, maxMinutes: 5, reason: 'Costs and revenue reconcile once a day.' },
   Community: { everyMinutes: 240, maxMinutes: 5, reason: 'Feedback arrives in batches.' },
   Operations: { everyMinutes: 60, maxMinutes: 5, reason: 'Routing keeps pace with the main agent.' },
+  '3D Design': { everyMinutes: 120, maxMinutes: 10, reason: 'Models take longer passes but not every hour.' },
+  Advertising: { everyMinutes: 360, maxMinutes: 5, reason: 'Ad results need hours of data between checks.' },
+  Ventures: { everyMinutes: 60, maxMinutes: 5, reason: 'A venture checks its skill agents\' progress and plans the next step.' },
 };
 export const suggestedWindow = (team: string): RunWindow => ({ ...(SUGGESTED_WINDOWS[team] ?? { everyMinutes: 240, maxMinutes: 5, reason: 'Default until ORIGIN researches this task.' }), setBy: 'origin' });
 
@@ -211,16 +216,36 @@ export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
 
 export const isOpportunityOrigin = (doc: OfficeDoc) => !!doc.agents[ORIGIN_ID]?.ai.agentInstructions.startsWith(OPPORTUNITY_PROMPT.slice(0, 60));
 
-/** How many reports-to links separate an agent from the top of its tree (the root is 0). */
-export function branchDepth(doc: OfficeDoc, id: string): number {
-  let depth = 0;
-  const seen = new Set<string>();
-  for (let q = doc.agents[id]?.skills.supervisorId ?? null; q && doc.agents[q] && !seen.has(q); q = doc.agents[q].skills.supervisorId ?? null) { seen.add(q); depth++; }
-  return depth;
+export type BranchKind = 'root' | 'core' | 'venture' | 'skill';
+
+/** ORIGIN is the root; agents with no branch record are ORIGIN's core staff, who don't grow branches. */
+export function branchKind(doc: OfficeDoc, id: string): BranchKind | null {
+  const a = doc.agents[id];
+  if (!a) return null;
+  return id === ORIGIN_ID ? 'root' : a.branch?.kind ?? 'core';
 }
 
-/** Whether a new branch may grow off `parentId` under the owner's depth limit. */
-export function canGrowFrom(doc: OfficeDoc, parentId: string): boolean {
-  const limit = doc.control.maxBranchDepth;
-  return !!doc.agents[parentId] && (limit == null || branchDepth(doc, parentId) + 1 <= limit);
+/** What may grow off `parentId`: ORIGIN starts ventures, a venture adds skills, nobody else adds anything. */
+export function growKind(doc: OfficeDoc, parentId: string): 'venture' | 'skill' | null {
+  const k = branchKind(doc, parentId);
+  return k === 'root' ? 'venture' : k === 'venture' ? 'skill' : null;
+}
+
+/** The venture an agent belongs to: itself for a venture, its venture for a skill agent. */
+export function ventureOf(doc: OfficeDoc, id: string): string | null {
+  const a = doc.agents[id];
+  if (!a) return null;
+  return a.branch?.kind === 'venture' ? id : a.branch?.kind === 'skill' ? a.branch.ventureId : null;
+}
+
+/** The skills a venture can add, each a team in the brain. */
+export const SKILL_TEAMS = ['Research', '3D Design', 'Creative', 'Advertising', 'Engineering', 'Product', 'Quality', 'Finance', 'Community'] as const;
+export const SKILL_LABELS: Record<string, string> = { '3D Design': '3D modelling', Creative: 'Design', Advertising: 'Ads & marketing', Product: 'Product & game design' };
+export const VENTURE_TEAM = 'Ventures';
+
+export function ventureInstructions(name: string, focus: string) {
+  return `You are ${name}, the venture branch for: ${focus}. ORIGIN started you. Work only on this venture. You may propose skill agents only for skills this venture needs to succeed, such as research, 3D modelling, design or ads; each works for this venture alone. You may not start or pursue a different business; send any new business idea to ORIGIN's backlog. The owner approves every new skill agent.`;
+}
+export function skillInstructions(name: string, skill: string, venture: string, purpose: string) {
+  return `You are ${name}, the ${skill} skill for the ${venture} venture. ${purpose}\n\nWork only on ${skill} for ${venture}. You cannot create agents or start other ventures; raise anything outside your skill with ${venture}.`;
 }

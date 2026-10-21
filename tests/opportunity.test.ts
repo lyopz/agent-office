@@ -3,13 +3,15 @@ import { describe, expect, test } from 'vitest';
 import { creatorBrain } from '../src/model/sample';
 import { applyOps } from '../src/engine/ops';
 import { buildNerveTree } from '../src/brain/nerveTree';
-import { OPPORTUNITY_PROMPT, branchDepth, canGrowFrom, describeWindow, isOpportunityOrigin, opportunityOriginOps } from '../src/brain/opportunity';
+import { OPPORTUNITY_PROMPT, branchKind, describeWindow, growKind, isOpportunityOrigin, opportunityOriginOps, ventureOf } from '../src/brain/opportunity';
 import { exportOffice, parseOffice } from '../src/model/schema';
 import type { OfficeDoc } from '../src/model/types';
 
 const grow = (doc: OfficeDoc, id: string, parent: string) => {
+  const kind = growKind(doc, parent);
+  expect(kind).not.toBeNull();
   const r = applyOps(doc, [{ op: 'agent.createFromArchetype', archetype: 'custom', name: id.toUpperCase(), id }]);
-  const u = applyOps(r.doc, [{ op: 'agent.update', id, patch: { skills: { supervisorId: parent }, schedule: { runWindow: { everyMinutes: 300, maxMinutes: 10, setBy: 'origin', reason: 'test' } } } }]);
+  const u = applyOps(r.doc, [{ op: 'agent.update', id, patch: { branch: { kind: kind!, ventureId: kind === 'venture' ? id : parent }, skills: { supervisorId: parent }, schedule: { runWindow: { everyMinutes: 300, maxMinutes: 10, setBy: 'origin', reason: 'test' } } } }]);
   expect(u.errors).toEqual([]);
   return u.doc;
 };
@@ -38,28 +40,34 @@ describe('opportunity agent', () => {
     expect(again.library.kb_opp_backlog.summary).toBe('idea A');
   });
 
-  test('branches nest under any agent and each grows the nerve map', () => {
+  test('only ORIGIN starts ventures, a venture adds skills, and each grows the nerve map', () => {
     let doc = creatorBrain();
-    const deepest = Math.max(...Object.keys(doc.agents).map((id) => branchDepth(doc, id)));
-    doc = grow(doc, 'agent_a', 'agent_origin');
-    doc = grow(doc, 'agent_b', 'agent_a');
-    doc = grow(doc, 'agent_c', 'agent_b');
+    expect(branchKind(doc, 'agent_origin')).toBe('root');
+    expect(growKind(doc, 'agent_origin')).toBe('venture');
+    // ORIGIN's starter staff can't grow branches
+    expect(growKind(doc, 'agent_scout')).toBeNull();
+    doc = grow(doc, 'agent_roblox', 'agent_origin');
+    expect(growKind(doc, 'agent_roblox')).toBe('skill');
+    doc = grow(doc, 'agent_3d', 'agent_roblox');
+    doc = grow(doc, 'agent_ads', 'agent_roblox');
+    // a skill agent can't add anyone, so it can't spin off another business
+    expect(growKind(doc, 'agent_3d')).toBeNull();
+    expect(ventureOf(doc, 'agent_3d')).toBe('agent_roblox');
+    expect(ventureOf(doc, 'agent_roblox')).toBe('agent_roblox');
     const t = tree(doc);
-    expect(t.nodes.agent_c.parentId).toBe('agent_b');
-    expect(t.nodes.agent_c.depth).toBe(3);
-    expect(t.bundles.some((b) => b.from === 'agent_b' && b.to === 'agent_c')).toBe(true);
-    expect(deepest).toBeGreaterThanOrEqual(3);
+    expect(t.nodes.agent_3d.parentId).toBe('agent_roblox');
+    expect(t.nodes.agent_3d.depth).toBe(2);
+    expect(t.bundles.some((b) => b.from === 'agent_roblox' && b.to === 'agent_ads')).toBe(true);
   });
 
-  test('the branch depth limit decides where a new branch may grow, and survives save and load', () => {
-    let doc = grow(creatorBrain(), 'agent_a', 'agent_origin');
-    expect(doc.control.maxBranchDepth).toBeNull();
-    expect(canGrowFrom(doc, 'agent_a')).toBe(true);
-    doc = applyOps(doc, [{ op: 'control.update', patch: { maxBranchDepth: 1 } }]).doc;
-    expect(canGrowFrom(doc, 'agent_origin')).toBe(true);
-    expect(canGrowFrom(doc, 'agent_a')).toBe(false);
+  test('branch records and work windows survive save and load', () => {
+    let doc = grow(creatorBrain(), 'agent_roblox', 'agent_origin');
+    doc = grow(doc, 'agent_3d', 'agent_roblox');
     const loaded = parseOffice(JSON.parse(exportOffice(doc)));
-    expect(loaded.ok && loaded.doc.control.maxBranchDepth).toBe(1);
-    expect(loaded.ok && loaded.doc.agents.agent_a.schedule.runWindow?.everyMinutes).toBe(300);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    expect(loaded.doc.agents.agent_3d.branch).toEqual({ kind: 'skill', ventureId: 'agent_roblox' });
+    expect(growKind(loaded.doc, 'agent_3d')).toBeNull();
+    expect(loaded.doc.agents.agent_3d.schedule.runWindow?.everyMinutes).toBe(300);
   });
 });

@@ -113,7 +113,6 @@ const control = z.object({
   policy: z.object({ prioritizeRendering: z.boolean(), backgroundLimit: num.int().min(1).max(200), pauseNonessential: z.boolean(), autoResume: z.boolean() }),
   simplifyAbove: num.int().min(0).max(1000),
   blenderBridgeUrl: z.string().max(300).refine((u) => u === '' || /^https?:\/\/[^\s]+$/.test(u), 'must be an http(s) URL'),
-  maxBranchDepth: num.int().min(1).max(12).nullable().default(null),
 });
 const gameLimit = z.object({ maxScore: num.int().min(1).max(1_000_000), maxSessionSec: num.min(10).max(3600) });
 const arcade = z.object({
