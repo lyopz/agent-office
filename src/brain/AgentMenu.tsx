@@ -17,6 +17,7 @@ export function AgentMenu() {
   const agents = useStore((s) => s.doc.agents);
   const departments = useStore((s) => s.doc.departments);
   const selected = useStore((s) => (s.selection.kind === 'agent' ? s.selection.id : null));
+  const selectedTeamId = useBrainFocus((s) => s.selectedTeamId);
   const live = useStore(useShallow((s) => {
     const queued: Record<string, number> = {};
     for (const t of Object.values(s.runtime.tasks)) if (t.status === 'queued' && t.agentId) queued[t.agentId] = (queued[t.agentId] ?? 0) + 1;
@@ -35,8 +36,11 @@ export function AgentMenu() {
   const match = (id: string) => { const a = agents[id]; return !q.trim() || `${a.identity.name} ${a.identity.title} ${a.identity.department}`.toLowerCase().includes(q.trim().toLowerCase()); };
   const busy = Object.values(live).filter((v) => BUSY.includes(v.split('|')[0] as AgentStatus)).length;
   const sorted = Object.values(agents).sort((a, b) => a.identity.name.localeCompare(b.identity.name));
-  const to = target || selected || sorted[0]?.id || '';
-  const focus = (teamId: string | null, agentId: string | null = null) => useBrainFocus.setState({ teamId, agentId });
+  const activeTeam = teams.find((t) => t.id === selectedTeamId);
+  const shown = sorted.filter((a) => (!activeTeam || activeTeam.agentIds.includes(a.id)) && match(a.id));
+  const to = target && shown.some((a) => a.id === target) ? target : shown.some((a) => a.id === selected) ? selected! : shown[0]?.id || '';
+  const focus = (teamId: string | null, agentId: string | null = null) => useBrainFocus.setState({ teamId: teamId ?? selectedTeamId, agentId });
+  const selectTeam = (teamId: string | null) => useBrainFocus.setState({ teamId, agentId: null, selectedTeamId: teamId, brainAgentId: null });
 
   const give = () => {
     const a = agents[to];
@@ -52,18 +56,19 @@ export function AgentMenu() {
   };
 
   return (
-    <aside className="agent-menu" aria-label="Agents" onPointerLeave={() => focus(null)}>
+    <aside className="agent-menu" aria-label="Agents" onPointerLeave={() => focus(selectedTeamId)}>
       <header className="am-head">
-        <div><b>Agents</b> <span className="muted small">{busy} of {sorted.length} busy</span></div>
+        <div className="am-sector-head"><div><b>{activeTeam ? activeTeam.name : 'Agent sectors'}</b> <span className="muted small">{activeTeam ? `${shown.length} agents` : `${busy} of ${sorted.length} busy`}</span></div>{activeTeam && <button className="am-all" onClick={() => selectTeam(null)}>All sectors</button>}</div>
+        {!activeTeam && <span className="am-hint">Select a brain sector to see its agents</span>}
         <label className="am-search"><Search size={13} aria-hidden /><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an agent" aria-label="Find an agent" /></label>
       </header>
       <div className="am-list">
-        {teams.map((t) => {
+        {(activeTeam ? [activeTeam] : teams).map((t) => {
           const ids = t.agentIds.filter(match);
           if (!ids.length) return null;
           return (
             <section key={t.id} onPointerEnter={() => focus(t.id)}>
-              <h4 style={{ color: t.color }}><i style={{ background: t.color }} />{t.name}<span className="muted">{ids.length}</span></h4>
+              <h4 style={{ color: t.color }}><button className="am-team-select" aria-pressed={selectedTeamId === t.id} onClick={() => selectTeam(selectedTeamId === t.id ? null : t.id)}><i style={{ background: t.color }} />{t.name}<span className="muted">{ids.length} · view</span></button></h4>
               <ul>
                 {ids.map((id) => {
                   const a = agents[id];
@@ -76,6 +81,7 @@ export function AgentMenu() {
                         <span className="am-status" style={{ background: STATUS_COLOR[st] }} aria-hidden />
                         <span className="am-text">
                           <span className="am-name">{a.identity.name}<span className="muted"> · {a.identity.title}</span>{Number(queued) > 0 && <span className="am-queue" title={`${queued} queued`}>+{queued}</span>}</span>
+                          <span className="am-report">{a.skills.supervisorId && agents[a.skills.supervisorId] ? `Reports to ${agents[a.skills.supervisorId].identity.name}` : 'Top-level agent'}</span>
                           <span className="am-task">{taskName || st}</span>
                           {taskName && <span className="am-progress" aria-hidden><i style={{ width: `${progress}%`, background: t.color }} /></span>}
                         </span>
@@ -90,12 +96,12 @@ export function AgentMenu() {
             </section>
           );
         })}
-        {!sorted.some((a) => match(a.id)) && <p className="muted small am-none">No agent matches “{q}”.</p>}
+        {!shown.length && <p className="muted small am-none">{q ? `No agent matches “${q}”.` : 'No agents are assigned to this sector yet.'}</p>}
       </div>
       <form className="am-give" onSubmit={(e) => { e.preventDefault(); give(); }}>
         <span className="label">Give a task</span>
         <select aria-label="Agent to give the task to" value={to} onChange={(e) => setTarget(e.target.value)}>
-          {sorted.map((a) => <option key={a.id} value={a.id}>{a.identity.name}</option>)}
+          {shown.map((a) => <option key={a.id} value={a.id}>{a.identity.name}</option>)}
         </select>
         <div className="row">
           <input value={task} onChange={(e) => setTask(e.target.value)} placeholder="What should they do?" aria-label="Task to give" />

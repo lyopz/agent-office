@@ -6,7 +6,6 @@ import { AutoSortPanel } from './ui/AutoSort';
 import { useHqView } from './ui/HqSwitch';
 import { OverviewPanel } from './ui/OverviewPanel';
 import ConnectomeView from './brain/ConnectomeView';
-import { AgentMenu } from './brain/AgentMenu';
 import { AgentGraphPow } from './brain/AgentGraphPow';
 import { AgentPanel } from './ui/AgentPanel';
 import { Inspector } from './ui/Inspector';
@@ -90,10 +89,7 @@ export function App() {
       <TopBar />
       {page === 'office' && hqView !== 'overview' && (
         <main className="brain-stage view-fade" key="brain">
-          <AgentMenu />
-          <div style={{ position: 'relative', minHeight: 0, minWidth: 0, display: 'grid' }}>
-            <ConnectomeView />
-          </div>
+          <ConnectomeView />
         </main>
       )}
       {page === 'office' && hqView === 'overview' && (

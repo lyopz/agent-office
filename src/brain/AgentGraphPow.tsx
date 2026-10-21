@@ -21,7 +21,7 @@ function savePage(data: PowData) {
   const blob = new Blob([agentGraphPowHtml(data)], { type: 'text/html' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `${(data.project || 'agents').replace(/[^\w-]+/g, '-').toLowerCase()}-graph-pow.html`;
+  a.href = url; a.download = `${(data.project || 'agents').replace(/[^\w-]+/g, '-').toLowerCase()}-brain-map.html`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
@@ -98,9 +98,9 @@ function GraphPowPanel() {
   const conns = sel ? data.links.filter((l) => l.s === sel.id || l.t === sel.id) : [];
 
   return (
-    <div className="pow-overlay" role="dialog" aria-modal="true" aria-label="Graph POW: agents and their knowledge">
+    <div className="pow-overlay" role="dialog" aria-modal="true" aria-label="The Brain: agents and their knowledge">
       <header className="pow-head">
-        <div className="pow-brand"><b>Graph POW</b> <span>· {data.project} agents</span>
+        <div className="pow-brand"><b>The Brain</b> <span>· {data.project} agents</span>
           <div className="pow-meta">{data.files.filter((f) => f.kind === 'agent').length} agents · {data.files.filter((f) => f.kind === 'work').length} finished tasks · {data.files.filter((f) => f.kind === 'knowledge').length} knowledge entries · {data.links.length} links</div>
         </div>
         <div className="pow-search">
@@ -121,8 +121,8 @@ function GraphPowPanel() {
         <div className="pow-tools">
           <button className="btn sm" aria-pressed={labels} onClick={() => setLabels((v) => !v)}>All labels</button>
           <button className="btn sm" onClick={fit}><Maximize size={13} />Fit</button>
-          <button className="btn sm" title="Save this graph as a standalone Graph POW page" onClick={() => savePage(data)}><Download size={13} />Save page</button>
-          <button className="btn icon sm" aria-label="Close Graph POW" onClick={closeAgentGraphPow}><X size={15} /></button>
+          <button className="btn sm" title="Save this brain map as a standalone page" onClick={() => savePage(data)}><Download size={13} />Save page</button>
+          <button className="btn icon sm" aria-label="Close the brain map" onClick={closeAgentGraphPow}><X size={15} /></button>
         </div>
         <div className="pow-chips teams" role="group" aria-label="Teams">
           {layout.lobes.map((l) => (

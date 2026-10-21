@@ -1,13 +1,12 @@
 import { saveFile } from '../persistence/saveFile';
 import { useRef, useState } from 'react';
-import { Download, FolderOpen, History, Network, OctagonX, Pause, Play, Redo2, Undo2, Upload } from 'lucide-react';
+import { BrainCircuit, Download, FolderOpen, History, OctagonX, Pause, Play, Redo2, Undo2, Upload } from 'lucide-react';
 import { openAgentGraphPow } from '../brain/agentGraph';
 import { useStore } from '../store/store';
 import { repo } from '../store/store';
 import { confirmAction } from './primitives';
 import { providerStatus } from '../ai/providers';
 import { AlertBell } from './AlertCenter';
-import { HqSwitch } from './HqSwitch';
 import { SaveStatus } from './SaveStatus';
 import { LogoLockup } from '../brand/Logo';
 
@@ -37,7 +36,6 @@ export function TopBar() {
     <header className="topbar">
       <span className="brand"><LogoLockup /><small className="hide-sm">sim v0.2</small></span>
       <input className="office-name" aria-label="Office name" defaultValue={name} key={name} onBlur={(e) => e.target.value.trim() && e.target.value !== name && s.commit([{ op: 'office.rename', name: e.target.value.trim() }], 'Rename office')} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
-      <HqSwitch />
       <nav className="seg" aria-label="Pages">
         {(['dashboard', 'control', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'control' ? 'Control' : p[0].toUpperCase() + p.slice(1)}</button>)}
       </nav>
@@ -83,6 +81,7 @@ function VersionsMenu({ onClose }: { onClose: () => void }) {
         <button className="btn sm" title="Load the classic NEXUS-7 sample office" onClick={() => confirmAction({ title: 'Load the NEXUS-7 sample?', confirmLabel: 'Load NEXUS-7', body: 'Replaces the current layout with the classic NEXUS-7 sample office. Undo brings your layout back, and saved versions are kept.', onConfirm: () => { s.newOffice(true); onClose(); } })}>NEXUS-7</button>
         <button className="btn sm" onClick={() => confirmAction({ title: 'Start a blank office?', confirmLabel: 'New blank office', body: 'Replaces the current layout with an empty one. Undo brings your layout back, and saved versions are kept.', onConfirm: () => { s.newOffice(false); onClose(); } })}>Blank</button>
       </div>
+      <button className="btn sm primary" style={{ marginTop: 6, width: '100%', justifyContent: 'center' }} onClick={() => confirmAction({ title: 'Load your Creator Brain?', confirmLabel: 'Load Creator Brain', body: 'Loads a general-purpose collective agent firm with an Agent Creator, an operations lead and specialist teams for research, product, creative, engineering, quality, finance and community. This is a local starter configuration; agents remain simulated unless a live provider is connected. Your current layout remains undoable and saved versions are kept.', onConfirm: () => { s.newOffice('creator'); onClose(); } })}>Creator Brain · Agent Firm</button>
       <div className="label" style={{ margin: '10px 0 4px' }}>Saved versions ({versions.length})</div>
       {versions.length === 0 && <div className="muted small">None yet.</div>}
       <div style={{ maxHeight: 220, overflow: 'auto' }}>
@@ -98,9 +97,9 @@ function VersionsMenu({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Opens Graph POW: the map of every agent, the work they finished and the knowledge they wrote. */
+/** Opens the expanded agent, work, and knowledge brain map. */
 function GraphPowButton() {
-  return <button className="btn sm" title="Open Graph POW, the map of what the agents made and know" onClick={() => openAgentGraphPow()}><Network size={14} /><span className="hide-sm">Graph POW</span></button>;
+  return <button className="btn sm" title="Open the brain map of agents, work and knowledge" onClick={() => openAgentGraphPow()}><BrainCircuit size={14} /><span className="hide-sm">Brain</span></button>;
 }
 
 function EmergencyButton() {

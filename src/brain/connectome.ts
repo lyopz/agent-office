@@ -13,7 +13,8 @@ export type Path = number[];
 export interface Fiber { regionId: string; pts: Path; color: string; width: number; alpha: number }
 export interface Tract { a: string; b: string; weight: number; curves: Path[] }
 export interface RimDot { x: number; y: number; r: number; color: string }
-export interface Connectome { width: number; height: number; regions: Region[]; fibers: Fiber[]; tracts: Tract[]; rim: RimDot[] }
+export interface SatelliteBrain { teamId: string; name: string; color: string; x: number; y: number; rx: number; ry: number; agentIds: string[]; fibers: Fiber[]; branches: Path[] }
+export interface Connectome { width: number; height: number; regions: Region[]; fibers: Fiber[]; tracts: Tract[]; rim: RimDot[]; satellites: SatelliteBrain[] }
 
 export interface TeamLink { a: string; b: string; weight: number }
 export interface InfoNode {
@@ -166,12 +167,12 @@ export function buildConnectome(teams: Team[], links: TeamLink[], seed = 7): Con
 
   const fibers: Fiber[] = [];
   for (const r of regions) {
-    const count = Math.round(90 + 34 * r.agentIds.length + (r.rim ? 80 : 0));
+    const count = Math.round(62 + 22 * r.agentIds.length + (r.rim ? 56 : 0));
     const step = Math.min(r.rx, r.ry) * 0.075;
     for (let i = 0; i < count; i++) {
       const fine = rand() < 0.7;
       fibers.push({
-        regionId: r.id, pts: walk(r, rand, 10 + Math.floor(rand() * 26), step * (fine ? 0.8 : 1.4)),
+        regionId: r.id, pts: walk(r, rand, 8 + Math.floor(rand() * 20), step * (fine ? 0.8 : 1.4)),
         color: tint(r.color, (rand() - 0.5) * 70, (rand() - 0.5) * 0.2), width: fine ? 0.5 + rand() * 0.5 : 1 + rand() * 0.9, alpha: fine ? 0.22 + rand() * 0.25 : 0.35 + rand() * 0.3,
       });
     }
@@ -213,5 +214,50 @@ export function buildConnectome(teams: Team[], links: TeamLink[], seed = 7): Con
       if (i % 2 === 0) rim.push({ x: r.x + Math.cos(a) * r.rx * 0.92, y: r.y + Math.sin(a) * r.ry * 0.92, r: 1.2 + rand(), color: '#4a63ff' });
     }
   }
-  return { width: WIDTH, height: HEIGHT, regions, fibers, tracts, rim };
+  // Each team also grows a small child connectome on a nerve bundle from the
+  // main map. Its fibers use a stable seed so the 3D tree doesn't reshuffle.
+  const satellites: SatelliteBrain[] = regions.map((r, i) => {
+    const angle = -Math.PI / 2 + (i / Math.max(1, regions.length)) * Math.PI * 2;
+    const x = cx + Math.cos(angle) * 760, y = cy + Math.sin(angle) * 500;
+    const rx = 78 + Math.min(30, Math.sqrt(r.agentIds.length) * 8);
+    const ry = 49 + Math.min(18, Math.sqrt(r.agentIds.length) * 5);
+    const randChild = rng(hash(`${seed}:${r.id}:child-brain`));
+    const vx = Math.cos(angle), vy = Math.sin(angle), px = -vy, py = vx;
+    const ax = r.x + vx * r.rx * 0.84, ay = r.y + vy * r.ry * 0.84;
+    const bx = x - vx * rx * 0.72, by = y - vy * ry * 0.72;
+    const branches: Path[] = [];
+    const branchCount = 7 + Math.min(9, r.agentIds.length);
+    for (let j = 0; j < branchCount; j++) {
+      const spread = (j - (branchCount - 1) / 2) * 4.4;
+      const wobble = (randChild() - 0.5) * 38;
+      branches.push(curve(
+        { x: ax + px * spread, y: ay + py * spread },
+        { x: (ax + bx) / 2 + px * (wobble + spread * 0.4), y: (ay + by) / 2 + py * (wobble + spread * 0.4) - 26 },
+        { x: bx + px * spread * 0.5, y: by + py * spread * 0.5 },
+        24,
+      ));
+    }
+    const lobes = [
+      { x: x - rx * 0.27, y: y - ry * 0.02, rx: rx * 0.5, ry: ry * 0.83 },
+      { x: x + rx * 0.27, y: y + ry * 0.02, rx: rx * 0.5, ry: ry * 0.83 },
+      { x, y: y + ry * 0.06, rx: rx * 0.3, ry: ry * 0.4 },
+    ];
+    const childFibers: Fiber[] = [];
+    const childCount = 32 + Math.min(48, r.agentIds.length * 8);
+    for (let f = 0; f < childCount; f++) {
+      const lobeIndex = f < childCount * 0.43 ? 0 : f < childCount * 0.86 ? 1 : 2;
+      const lobe = lobes[lobeIndex];
+      const shift = ((f * 137.508) % 300) - 150;
+      const fine = randChild() < 0.76;
+      childFibers.push({
+        regionId: r.id,
+        pts: walk({ ...r, x: lobe.x, y: lobe.y, rx: lobe.rx, ry: lobe.ry }, randChild, 8 + Math.floor(randChild() * 12), Math.min(lobe.rx, lobe.ry) * (fine ? 0.12 : 0.19)),
+        color: tint(r.color, shift, (randChild() - 0.5) * 0.24),
+        width: fine ? 0.65 + randChild() * 0.75 : 1.3 + randChild() * 1.1,
+        alpha: fine ? 0.38 + randChild() * 0.32 : 0.5 + randChild() * 0.35,
+      });
+    }
+    return { teamId: r.id, name: r.name, color: r.color, x, y, rx, ry, agentIds: r.agentIds, fibers: childFibers, branches };
+  });
+  return { width: WIDTH, height: HEIGHT, regions, fibers, tracts, rim, satellites };
 }

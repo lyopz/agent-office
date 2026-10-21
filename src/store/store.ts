@@ -14,7 +14,7 @@ import { applyOps, type DocOp } from '../engine/ops';
 import { newErrors, validate, type Issue } from '../engine/validate';
 import { buildNav, type NavGraph } from '../engine/navigation';
 import { createTask, emptyRuntime, goTo, log, reconcileLayout, step, syncRuntime } from '../engine/simulation';
-import { robloxHQ, sampleOffice, seedSampleRuntime } from '../model/sample';
+import { creatorBrain, robloxHQ, sampleOffice, seedSampleRuntime } from '../model/sample';
 import { emptyOffice } from '../model/defaults';
 import { createRepository, type LoadResult, type OfficeRepository, type Preferences, type SaveResult } from '../persistence/repository';
 import { exportOffice, parseOffice } from '../model/schema';
@@ -112,7 +112,7 @@ interface State {
   importText(text: string): { ok: boolean; errors: string[]; warnings: string[] };
   exportText(): string;
   /** true = the classic NEXUS-7 sample, 'roblox' = the Roblox development headquarters, false = blank. */
-  newOffice(sample: boolean | 'roblox'): void;
+  newOffice(sample: boolean | 'roblox' | 'creator'): void;
 }
 
 export const repo: OfficeRepository = createRepository();
@@ -124,13 +124,13 @@ function initial() {
   // a damaged save is reported (recovery dialog), never replaced: the sample below is only a placeholder
   const recovery = loaded.status === 'corrupt' ? loaded : null;
   const saved = loaded.status === 'ok' ? loaded : null;
-  const doc = saved?.doc ?? robloxHQ(); // first run opens the Roblox development headquarters
+  const doc = saved?.doc ?? creatorBrain(); // first run opens the user-led agent brain
   const runtime: RuntimeState = { ...emptyRuntime(), ...(saved?.runtime ?? {}) } as RuntimeState;
   runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {}; runtime.usage ??= []; runtime.approvals ??= {}; runtime.alerts ??= {}; runtime.capsules ??= {}; runtime.policyHeld ??= []; runtime.arcadeSessions ??= []; runtime.assets ??= {};
   const nav = buildNav(doc);
   syncRuntime(doc, runtime, nav);
   if (!saved) seedSampleRuntime(doc, runtime);
-  if (!saved) log(runtime, { kind: 'system', agentId: null, simulated: false, message: 'Loaded sample office. Agents are simulated; no AI model is connected.' });
+  if (!saved) log(runtime, { kind: 'system', agentId: null, simulated: false, message: 'Loaded Creator Brain. Agent activity is simulated; no live model or research provider is connected.' });
   let lastSaved = saved ? { doc, at: saved.savedAt } : null;
   if (loaded.status === 'empty') { try { lastSaved = { doc, at: repo.saveCurrent(doc, runtime).savedAt }; } catch { /* storage unavailable: stay unsaved */ } }
   return { doc, runtime, nav, lastSaved, recovery };
@@ -376,12 +376,13 @@ export const useStore = create<State>((set, get) => {
       return exportOffice(doc, { runtime: { tasks: runtime.tasks } });
     },
     newOffice(sample) {
-      const doc = sample === 'roblox' ? robloxHQ() : sample ? sampleOffice() : emptyOffice('Blank Office');
+      const doc = sample === 'roblox' ? robloxHQ() : sample === 'creator' ? creatorBrain() : sample ? sampleOffice() : emptyOffice('Blank Office');
       const prev = get().doc;
       const rt = emptyRuntime(); const nav = buildNav(doc); syncRuntime(doc, rt, nav);
       if (sample) seedSampleRuntime(doc, rt);
       set({ runtime: rt });
-      setDoc(doc, prev, { past: [...get().past, { doc: prev, label: 'New office' }].slice(-100), future: [], selection: { kind: 'none' } });
+      if (sample === 'creator') get().setPrefs({ hqView: 'brain' });
+      setDoc(doc, prev, { past: [...get().past, { doc: prev, label: 'New office' }].slice(-100), future: [], selection: { kind: 'none' }, page: 'office' });
     },
   };
 });

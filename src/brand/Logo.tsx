@@ -1,8 +1,7 @@
-// Neural Command Campus brand: an agent head (visor, antenna node, neural link between the eyes,
-// circuit-trace mouth) inside a rounded badge. Three colours from the app palette: panel black,
-// signal green (--green-5) and data blue (--blue-5). The colours are fixed so the mark looks the
-// same in every theme. public/logo.svg and public/favicon.svg are the same drawing as files;
-// build/icon.png and build/icon.ico are rendered from them (see README → Logo).
+import { BrainCircuit } from 'lucide-react';
+
+// The Brain application mark and the retained compact legacy symbol. The shared brain
+// lockup uses a cool, luminous blue to match the live connectome workspace.
 
 export const LOGO_COLORS = { ink: '#050a08', signal: '#39ff88', data: '#4cc9ff' } as const;
 
@@ -30,15 +29,16 @@ export function LogoMark({ size = 24, simple = false, title }: { size?: number; 
   );
 }
 
-/** Mark plus "Neural Command Campus", sized for the 44 px top bar. The words hide on small screens. */
+/** Brain mark and name, sized for the 44 px top bar. The words hide on small screens. */
 export function LogoLockup({ size = 26 }: { size?: number }) {
   return (
-    <span className="logo-lockup" aria-label="Neural Command Campus" role="img">
-      <LogoMark size={size} />
+    <span className="logo-lockup" aria-label="The Brain" role="img">
+      <BrainCircuit size={size} strokeWidth={1.8} color="#9beaff" style={{ filter: 'drop-shadow(0 0 7px rgba(83,210,255,.48))' }} aria-hidden="true" />
       <span className="logo-words hide-sm" aria-hidden="true">
-        <span className="logo-line1">NEURAL COMMAND</span>
-        <span className="logo-line2">CAMPUS</span>
+        <span className="logo-line1">THE</span>
+        <span className="logo-line2">BRAIN</span>
       </span>
     </span>
   );
 }
+
