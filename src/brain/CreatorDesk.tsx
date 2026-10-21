@@ -1,25 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, Check, FileText, GitBranch, Library, Mic2, Plus, Search, ShieldCheck, Sparkles, Upload, X } from 'lucide-react';
+import { BookOpen, Check, FileText, GitBranch, Library, Mic2, Plus, ShieldCheck, Sparkles, Upload, X } from 'lucide-react';
 import { useStore } from '../store/store';
-import type { KnowledgeEntry, RunWindow } from '../model/types';
+import type { RunWindow } from '../model/types';
 import { ORIGIN_ID, SKILL_LABELS, SKILL_TEAMS, VENTURE_TEAM, agentPrompt, branchAgentOps, describeWindow, growKind, isOpportunityOrigin, opportunityOriginOps, originOutdated, suggestedWindow } from './opportunity';
 import SkillRequests from './SkillRequests';
 import OriginRuns from './OriginRuns';
 import SkillBank, { BankSkillPicker } from './SkillBank';
-import { brainMap, syncOrigin } from './originLink';
+import { brainMap, syncOrigin, taskAction } from './originLink';
+import { growIdeaOps, ownerIdeaOps } from './ideas';
 import { useSkillFiles } from './skillFiles';
 import { useOrigin } from './useOrigin';
 
 type DeskTab = 'ideas' | 'agent' | 'requests' | 'runs' | 'bank' | 'tutorial';
 const TABS: DeskTab[] = ['ideas', 'agent', 'requests', 'runs', 'bank', 'tutorial'];
 const EVERY = [[15, 'every 15 min'], [30, 'every 30 min'], [60, 'every hour'], [120, 'every 2 hours'], [180, 'every 3 hours'], [300, 'every 5 hours'], [480, 'every 8 hours'], [720, 'every 12 hours'], [1440, 'once a day']] as const;
-
-function saveTextFile(name: string, text: string) {
-  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = name; a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function CreatorDesk() {
   const doc = useStore((s) => s.doc);
@@ -28,8 +22,7 @@ export default function CreatorDesk() {
   const leaderId = leader?.id ?? null;
   const leaderName = leader?.identity.name ?? 'ORIGIN';
   const [tab, setTab] = useState<DeskTab | null>(null);
-  const [ideaMine, setIdeaMine] = useState('');
-  const [ideaFriend, setIdeaFriend] = useState('');
+  const [idea, setIdea] = useState('');
   const [fileName, setFileName] = useState('');
   const [fileText, setFileText] = useState('');
   const [notice, setNotice] = useState('');
@@ -96,16 +89,22 @@ export default function CreatorDesk() {
     } catch { setNotice('I could not read that file. Try a plain text, Markdown, JSON or CSV file.'); }
   };
 
-  const makeIdeaPacket = () => {
-    if (!ideaMine.trim() || !ideaFriend.trim()) { setNotice('Add both ideas before preparing a comparison.'); return; }
-    const id = () => `idea_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const makeEntry = (title: string, summary: string): KnowledgeEntry => ({ id: id(), title, summary, topic: 'market research', tags: ['idea-review', 'owner-submitted'], sources: [], createdAt: new Date().toISOString(), authorAgentId: leaderId, projectId: doc.projects['proj_firm_playbook'] ? 'proj_firm_playbook' : null, confidence: 0, verification: 'unverified', sensitive: false, allowedAgentIds: [] });
-    const entries = [makeEntry('Owner idea for comparison', ideaMine.trim()), makeEntry('Friend idea for comparison', `${ideaFriend.trim()}${fileText ? `\n\nAttached file: ${fileName}\n${fileText}` : ''}`)];
-    const result = useStore.getState().commit(entries.map((entry) => ({ op: 'library.upsert' as const, entry })), 'Attach ideas to Creator Brain');
-    if (!result.ok) { setNotice(result.errors.join(' · ') || 'The ideas could not be attached.'); return; }
-    const packet = `# Idea comparison research request\n\nPrepared ${new Date().toLocaleString()}\n\n## Ideas\n\n### My idea\n${ideaMine.trim()}\n\n### Friend's idea\n${ideaFriend.trim()}\n${fileText ? `\nAttached file: ${fileName}\n\n${fileText}\n` : ''}\n## Research required before ranking\n\n1. Find current, dated demand signals and audience evidence for each idea.\n2. Identify direct competitors and comparable products; cite URLs and dates.\n3. Separate popularity, downloads or concurrent users from verified revenue evidence.\n4. Map monetization options, platform fees, likely conversion assumptions and operating costs. Show ranges, formulas and uncertainty; do not promise earnings.\n5. Compare build effort, maintenance, legal/platform risks, acquisition channels and a low-cost first experiment.\n6. Assess genuine user value and retention: clear first-session payoff, progression, social loops, content cadence, performance and accessibility. Do not use fake users or manipulative retention.\n7. Finish with an evidence table, assumptions, confidence, source links, and a recommendation for the smallest cheap test.\n\n## Current state\n\nThe submitted ideas are attached to the local Creator Brain library as unverified owner-provided notes. This packet is a research brief, not a live market analysis. Connect a current web research provider before reporting findings or revenue estimates.\n`;
-    saveTextFile('idea-comparison-research-request.md', packet);
-    setNotice('Both ideas are attached to the brain. A research packet was downloaded; connect a live research provider before treating anything as market findings.');
+  // One idea in, one venture out: ORIGIN grows it into a venture at once, then picks the agents it needs; every one of them gets its own SKILL.md
+  const submitIdea = async () => {
+    const text = `${idea.trim()}${fileText ? `\n\nAttached file: ${fileName}\n${fileText}` : ''}`.trim();
+    if (!text) { setNotice('Type your idea first.'); return; }
+    const d = useStore.getState().doc;
+    const rootId = d.agents[ORIGIN_ID] ? ORIGIN_ID : leaderId;
+    if (!rootId) { setNotice('There is no main agent to give the idea to.'); return; }
+    const [saveIdea] = ownerIdeaOps(text, rootId);
+    if (saveIdea.op !== 'library.upsert') return;
+    const { agentId, name, ops } = growIdeaOps(d, saveIdea.entry, rootId);
+    const r = useStore.getState().commit([saveIdea, ...ops], `Idea: ${saveIdea.entry.title}`);
+    if (!r.ok) { setNotice(r.errors.join(' · ') || 'The idea could not be added.'); return; }
+    setIdea(''); setFileText(''); setFileName('');
+    await syncOrigin(useStore.getState().doc);
+    const t = await taskAction({ action: 'add', agentId, title: `Build the team for ${name}`, detail: `The owner just gave this idea:\n${text.slice(0, 3000)}\n\nWork as ${name} (venture id ${agentId}). Decide which skill agents this idea needs to make money, usually 3 to 6 (for example product research, design, listing copy and SEO, pricing, marketing), and create them now in proposedAgents with parentId "${agentId}", each with a clear two or three sentence purpose. Each gets its own detailed SKILL.md in the next runs. Then record the first research steps in your notes and report progress.` });
+    setNotice(t ? `${name} is now a venture of ${leaderName}. ${leaderName} picks the agents it needs in its next run and writes a SKILL.md for each one. Press Run 10 min in ${leaderName} runs to start now.` : `${name} is now a venture. Start ${leaderName}'s runner (npm.cmd run origin) so it can pick the agents and write their SKILL.md files.`);
   };
 
   const proposeAgent = () => {
@@ -155,22 +154,16 @@ export default function CreatorDesk() {
       {tab && <div className="creator-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setTab(null); }}>
         <section className="creator-dialog" role="dialog" aria-modal="true" aria-labelledby="creator-title">
           <header className="creator-dialog-head">
-            <div><span className="creator-kicker"><Sparkles size={13} /> AGENT CREATOR / {leaderName}</span><h2 id="creator-title">{tab === 'ideas' ? 'Compare two ideas' : tab === 'agent' ? (kind === 'skill' ? 'Add a skill to a venture' : 'Start a venture branch') : tab === 'requests' ? 'Skill requests' : tab === 'runs' ? `${leaderName}'s runs and budget` : tab === 'bank' ? 'Skill bank' : 'A quick tour'}</h2></div>
+            <div><span className="creator-kicker"><Sparkles size={13} /> AGENT CREATOR / {leaderName}</span><h2 id="creator-title">{tab === 'ideas' ? 'Add an idea' : tab === 'agent' ? (kind === 'skill' ? 'Add a skill to a venture' : 'Start a venture branch') : tab === 'requests' ? 'Skill requests' : tab === 'runs' ? `${leaderName}'s runs and budget` : tab === 'bank' ? 'Skill bank' : 'A quick tour'}</h2></div>
             <button className="creator-close" aria-label="Close dialog" onClick={() => setTab(null)}><X size={17} /></button>
           </header>
 
           {tab === 'ideas' && <div className="creator-body">
-            <div className="creator-context"><ShieldCheck size={16} /><span><b>Evidence first.</b> This prepares a research request that requires current sources; the local prototype does not fetch live market data or forecast earnings.</span></div>
-            <div className="creator-idea-grid">
-              <label className="creator-field"><span>Your idea</span><textarea value={ideaMine} onChange={(e) => setIdeaMine(e.target.value)} placeholder="What are you considering building? Who is it for?" rows={5} /></label>
-              <label className="creator-field"><span>Friend's idea</span><textarea value={ideaFriend} onChange={(e) => setIdeaFriend(e.target.value)} placeholder="Paste the idea or summarize the attached file." rows={5} /></label>
-            </div>
+            <label className="creator-field"><span>Your idea</span><textarea value={idea} onChange={(e) => setIdea(e.target.value)} placeholder="e.g. An Etsy store selling custom pet portraits" rows={6} /></label>
             <input ref={inputRef} className="creator-file-input" type="file" accept=".txt,.md,.json,.csv,text/plain,text/markdown,application/json,text/csv" onChange={(e) => void attachFile(e.target.files?.[0])} />
-            <div className="creator-upload-row"><button className="creator-upload" onClick={() => inputRef.current?.click()}><Upload size={15} /> Attach friend's idea</button><span>{fileName ? <><FileText size={13} /> {fileName}</> : 'TXT, MD, JSON or CSV · max 1 MB'}</span><button className="creator-upload-remove" disabled={!fileText} onClick={() => { setFileText(''); setFileName(''); }}>Remove</button></div>
-            <p className="creator-privacy">Submitted notes are saved in this local office library so the brain can reference them later. Do not attach secrets or personal details.</p>
-            <div className="creator-research-points"><span>Demand signals</span><span>Comparable games</span><span>Unit economics</span><span>Build cost</span><span>Retention quality</span></div>
-            <p className="creator-privacy">When saved, each idea becomes its own small brain branch growing from the main brain.</p>
-            <div className="creator-dialog-foot"><button className="creator-secondary" onClick={() => setTab(null)}>Cancel</button><button className="creator-primary" onClick={makeIdeaPacket}><Search size={15} /> Add ideas & prepare research brief</button></div>
+            <div className="creator-upload-row"><button className="creator-upload" onClick={() => inputRef.current?.click()}><Upload size={15} /> Attach a file</button><span>{fileName ? <><FileText size={13} /> {fileName}</> : 'Optional · TXT, MD, JSON or CSV · max 1 MB'}</span><button className="creator-upload-remove" disabled={!fileText} onClick={() => { setFileText(''); setFileName(''); }}>Remove</button></div>
+            <p className="creator-privacy">{leaderName} turns the idea into a venture branch right away, decides which agents it needs, creates them, and writes a detailed SKILL.md for each one. All of it stays inside your monthly cap.</p>
+            <div className="creator-dialog-foot"><button className="creator-secondary" onClick={() => setTab(null)}>Cancel</button><button className="creator-primary" disabled={!idea.trim() && !fileText} onClick={() => void submitIdea()}><Sparkles size={15} /> Give {leaderName} this idea</button></div>
           </div>}
 
           {tab === 'agent' && <div className="creator-body">
@@ -200,7 +193,7 @@ export default function CreatorDesk() {
 
           {tab === 'tutorial' && <div className="creator-body">
             <ol className="creator-steps">
-              <li><b>Start with {leaderName}.</b><span>Use Compare ideas to save your idea and your friend's idea into the brain's local knowledge library.</span></li>
+              <li><b>Start with {leaderName}.</b><span>Type an idea under Add idea. {leaderName} makes it a venture, picks the agents it needs and writes each one its SKILL.md.</span></li>
               <li><b>Attach context.</b><span>Upload a plain text, Markdown, JSON or CSV idea file. The app keeps its contents in the local office save.</span></li>
               <li><b>Review evidence before money decisions.</b><span>Download the research packet and connect a live research provider to gather current sources. The current prototype does not look up the market yet.</span></li>
               <li><b>Approve specialists deliberately.</b><span>{leaderName} starts each venture as a branch; a venture adds only the skill agents it needs, inspect its purpose and approval boundaries, then approve adding its local blueprint to the brain.</span></li>
