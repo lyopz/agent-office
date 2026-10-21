@@ -20,7 +20,7 @@ export function TopBar() {
   const origin = useOrigin((o) => o.status);
   const prov = origin?.configured
     ? { kind: 'live', label: origin.running ? 'ORIGIN: working' : 'ORIGIN: live', detail: `${origin.model} · $${origin.spentUsd.toFixed(2)} of $${origin.capUsd} this month${origin.nextScheduledAt ? ` · next run ${new Date(origin.nextScheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}` }
-    : origin ? { kind: 'off', label: 'ORIGIN: no key', detail: 'The runner is up but has no API key. Set ANTHROPIC_API_KEY and restart it.' }
+    : origin ? { kind: 'off', label: 'ORIGIN: no key', detail: 'The runner is up but has no API key. In the app folder run npm.cmd run set-key once, then restart the runner.' }
     : { kind: 'off', label: 'ORIGIN: offline', detail: 'The live runner is not running. On your PC run: npm.cmd run origin' };
 
   const exportFile = async () => {

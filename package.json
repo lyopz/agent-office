@@ -13,6 +13,7 @@
     "test": "vitest run",
     "typecheck": "tsc -b --noEmit",
     "origin": "node server/origin-runner.mjs",
+    "set-key": "node server/set-key.mjs",
     "desktop": "npm run build && electron .",
     "desktop:dev": "node desktop/dev.cjs",
     "desktop:dist": "npm run build && electron-builder"

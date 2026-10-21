@@ -68,7 +68,7 @@ ORIGIN, the main agent at the core of the brain, is the owner's **Opportunity Re
 
 ```powershell
 # Windows PowerShell, in the app folder
-$env:ANTHROPIC_API_KEY = "sk-ant-..."     # your key; it stays in this window only
+npm.cmd run set-key                        # once: paste your key (hidden); it is checked and saved on this PC
 npm.cmd run origin                         # listens on 127.0.0.1:8788
 npm.cmd run dev                            # in a second window; /api/origin is forwarded
 ```
@@ -77,7 +77,7 @@ npm.cmd run dev                            # in a second window; /api/origin is 
 - **The cap is hard.** Before every model call, the runner checks that a worst-case call ($0.20) still fits under both the run's $0.50 limit and what's left of the month. When it doesn't, the run stops. Costs come from each response's token usage and search count at list price; a model without a known price is recorded as unknown, never as $0.
 - **The window is enforced.** Every call has a deadline at the end of the window.
 - **Scheduled runs only happen while the runner is on.** Stop them by closing it, or set `ORIGIN_SCHEDULE=off` to allow manual runs only. Other settings: `ORIGIN_MODEL`, `ORIGIN_MONTHLY_CAP_USD`, `ORIGIN_EVERY_MIN`, `ORIGIN_MAX_MIN`, `ORIGIN_RUN_LIMIT_USD`.
-- **State** (ORIGIN's rules synced from the app, tasks, notes, runs, the ledger) is saved in `origin-data/state.json`, which is git-ignored. The key is never written to disk or logged.
+- **State** (ORIGIN's rules synced from the app, tasks, notes, runs, the ledger) is saved in `origin-data/state.json`, which is git-ignored. The key is saved by `set-key` outside the app folder (`%APPDATA%\\the-brain\\anthropic-key`), so it is never in git, never logged and never sent to the app. `ANTHROPIC_API_KEY` in the environment still wins if you set it.
 - **One task at a time.** Each run works on the oldest approved task only, and continues it next run until it's done. ORIGIN proposes at most one task or agent per run, and nothing new while you still have one to decide.
 - **Budget watch.** Spend is tracked per agent and per task, all on the one key and cap. Each task gets a budget (a tenth of the cap, `ORIGIN_TASK_BUDGET_USD`). ORIGIN stops a task on its own when its spend pattern shows it will cost far more than it's worth. The runner also stops any task that passes its budget, or whose average cost per run would pass twice its budget by the end of the month. You get one notice, and you can restart a stopped task with a fresh budget.
 - **Ask ORIGIN.** The console at the bottom sends your question straight to ORIGIN. It answers at any time, with no approval and no tools, as one short call on the same cap (usually well under a cent).

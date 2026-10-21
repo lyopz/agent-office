@@ -121,7 +121,7 @@ function AIModel({ a, up }: { a: Agent; up: Up }) {
         <NumberField label="Max retries" value={c.maxRetries} min={0} max={10} onCommit={(maxRetries) => up({ ai: { maxRetries } })} />
         <div className="card">
           <h4>Credentials</h4>
-          <p className="note">API keys are never stored in a profile, the browser, logs or saved/exported files. ORIGIN's live runs go through <code>server/origin-runner.mjs</code> on your PC, which reads <code>ANTHROPIC_API_KEY</code> from its own environment.</p>
+          <p className="note">API keys are never stored in a profile, the browser, logs or saved/exported files. ORIGIN's live runs go through <code>server/origin-runner.mjs</code> on your PC, which reads the key you saved once with <code>npm.cmd run set-key</code> (kept on your PC, outside the app).</p>
         </div>
       </div>
     </div>

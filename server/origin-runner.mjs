@@ -7,7 +7,8 @@
 // It can also propose one new agent per run (with skills from the owner's
 // skill bank); the owner approves it in the app, which creates it.
 //
-//   ANTHROPIC_API_KEY=sk-... npm run origin        (listens on 127.0.0.1:8788)
+//   npm run set-key   (once: saves the key on this PC, outside the app folder)
+//   npm run origin    (listens on 127.0.0.1:8788; ANTHROPIC_API_KEY in the environment wins if set)
 //   ORIGIN_MODEL=claude-haiku-5-5 ORIGIN_MONTHLY_CAP_USD=15 ORIGIN_EVERY_MIN=120 ORIGIN_MAX_MIN=10 ORIGIN_SCHEDULE=on
 //
 // State (instructions synced from the app, tasks, ORIGIN's notes, the cost
@@ -16,10 +17,11 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { readKey } from './key-file.mjs';
 
 const PORT = Number(process.env.ORIGIN_PORT || 8788);
 const MODEL = process.env.ORIGIN_MODEL || 'claude-haiku-5-5';
-const KEY = process.env.ANTHROPIC_API_KEY;
+const { key: KEY, from: KEY_FROM } = readKey();
 const CAP = Number(process.env.ORIGIN_MONTHLY_CAP_USD || 15);
 const EVERY_MIN = Number(process.env.ORIGIN_EVERY_MIN || 120);
 const MAX_MIN = Number(process.env.ORIGIN_MAX_MIN || 10);
@@ -212,7 +214,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   if (running) return { ok: false, reason: 'A run is already in progress.' };
   const s = loadState(deps.file);
   rollMonth(s);
-  if (!KEY && !deps.key) return { ok: false, reason: 'ANTHROPIC_API_KEY is not set for the runner.' };
+  if (!KEY && !deps.key) return { ok: false, reason: 'No API key. In the app folder run npm.cmd run set-key once, then restart the runner.' };
   if (!s.instructions) return { ok: false, reason: 'Open the app once with the runner on so it can send ORIGIN\'s instructions.' };
   if (remaining(s) < CALL_WORST_USD) {
     return { ok: false, reason: `The $${CAP} monthly cap is reached ($${s.ledger.spentUsd.toFixed(2)} spent). Runs stop until next month or a new approved cap.` };
@@ -397,7 +399,7 @@ export function applyConsent(s, c) {
 export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE }) {
   const q = String(question || '').trim().slice(0, 2000);
   if (!q) return { ok: false, reason: 'Type a question.' };
-  if (!KEY && !deps.key) return { ok: false, reason: 'ANTHROPIC_API_KEY is not set for the runner.' };
+  if (!KEY && !deps.key) return { ok: false, reason: 'No API key. In the app folder run npm.cmd run set-key once, then restart the runner.' };
   const s = loadState(deps.file);
   rollMonth(s);
   if (!s.instructions) return { ok: false, reason: 'Open the app once with the runner on so it can send ORIGIN\'s instructions.' };
@@ -568,7 +570,7 @@ function tick() {
 
 if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('origin-runner.mjs')) {
   http.createServer((req, res) => { handle(req, res).catch((e) => { console.error(`[origin] ${e.name}`); send(req, res, 500, { error: 'runner error' }); }); })
-    .listen(PORT, '127.0.0.1', () => console.log(`[origin] listening on 127.0.0.1:${PORT} model=${MODEL} cap=$${CAP}/month window=${MAX_MIN} min every ${EVERY_MIN} min schedule=${SCHEDULE ? 'on' : 'off'} key=${KEY ? 'set' : 'MISSING'}`));
+    .listen(PORT, '127.0.0.1', () => console.log(`[origin] listening on 127.0.0.1:${PORT} model=${MODEL} cap=$${CAP}/month window=${MAX_MIN} min every ${EVERY_MIN} min schedule=${SCHEDULE ? 'on' : 'off'} key=${KEY ? `set (${KEY_FROM})` : 'MISSING: run npm.cmd run set-key once, then start this again'}`));
   setInterval(tick, 60_000);
   setTimeout(tick, 5_000);
 }

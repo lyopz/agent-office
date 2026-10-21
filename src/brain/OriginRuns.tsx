@@ -38,7 +38,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
     <div className="creator-body">
       <div className="creator-context"><ShieldCheck size={16} /><span><b>ORIGIN is offline.</b> The live runner isn't running, so nothing runs and nothing is spent.</span></div>
       <ol className="creator-steps">
-        <li><b>Start the runner on your PC.</b><span>In the app folder, run <code>npm run origin</code> with your Anthropic API key set (see the README, "ORIGIN live runs"). It uses Claude Haiku 5.5 and stops at your $15 monthly cap.</span></li>
+        <li><b>Start the runner on your PC.</b><span>In the app folder, run <code>npm.cmd run set-key</code> once to save your Anthropic API key, then <code>npm.cmd run origin</code>. It uses Claude Haiku 5.5 and stops at your $15 monthly cap.</span></li>
         <li><b>Keep the app open once.</b><span>It sends ORIGIN's current rules to the runner. After that, runs happen every 2 hours even with the app closed, while the runner is on.</span></li>
         <li><b>Approve tasks here.</b><span>ORIGIN works only on tasks you approve. With none approved it just proposes tasks, which costs almost nothing.</span></li>
       </ol>
@@ -63,7 +63,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   };
   return (
     <div className="creator-body">
-      <div className="creator-context"><ShieldCheck size={16} /><span><b>{st.configured ? `Live on ${st.model}.` : `Runner connected (${st.model}), but it has no API key.`}</b> {st.maxMinutes} min every {st.everyMinutes / 60} h{st.schedule ? '' : ' (schedule off: manual runs only)'}. {st.running ? 'A run is in progress now.' : st.nextScheduledAt ? `Next run about ${new Date(st.nextScheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : ''}{st.configured ? '' : ' Runs fail until you set one.'}</span></div>
+      <div className="creator-context"><ShieldCheck size={16} /><span><b>{st.configured ? `Live on ${st.model}.` : `Runner connected (${st.model}), but it has no API key.`}</b> {st.maxMinutes} min every {st.everyMinutes / 60} h{st.schedule ? '' : ' (schedule off: manual runs only)'}. {st.running ? 'A run is in progress now.' : st.nextScheduledAt ? `Next run about ${new Date(st.nextScheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : ''}{st.configured ? '' : ' Run npm.cmd run set-key once in the app folder, then restart the runner.'}</span></div>
       <div className="origin-budget" aria-label={`Spent ${money(st.spentUsd)} of ${money(st.capUsd)} this month`}>
         <span>{money(st.spentUsd)} of {money(st.capUsd)} this month{st.unknownCostRuns ? ` · ${st.unknownCostRuns} run(s) with unknown cost` : ''}</span>
         <i style={{ width: `${pct}%` }} />
