@@ -50,6 +50,7 @@ interface State {
   undo(): void; redo(): void;
   setUi(p: Partial<Pick<State, 'selection' | 'profileAgentId' | 'profileTab' | 'page'>>): void;
   setPrefs(p: Partial<Preferences>): void;
+  toast: { id: number; text: string; level: 'info' | 'warn' | 'error' } | null;
   notify(text: string, level?: 'info' | 'warn' | 'error'): void;
   tick(): void;
   /** Write the office now (skipped when unchanged since the last save). Returns null when it could not save. */
@@ -148,7 +149,7 @@ export const useStore = create<State>((set, get) => {
     ...init,
     past: [], future: [], dirty: false, saveError: null,
     prefs,
-    selection: { kind: 'none' }, profileAgentId: null, profileTab: 'identity', page: 'office',
+    selection: { kind: 'none' }, profileAgentId: null, profileTab: 'identity', page: 'office', toast: null,
 
     dryRun(ops) {
       const r = applyOps(get().doc, ops);
@@ -233,8 +234,7 @@ export const useStore = create<State>((set, get) => {
 
     setUi(p) { set(p as Partial<State>); },
     setPrefs(p) { const prefs = { ...get().prefs, ...p }; repo.savePrefs(prefs); set({ prefs }); },
-    // notifications are off: ed asked for no pop-ups, sounds or desktop notices. Results show where the work is.
-    notify() {},
+    notify(text, level = 'info') { set({ toast: { id: Date.now(), text, level } }); },
 
     tick() {
       const rt = cloneRuntime(get().runtime);

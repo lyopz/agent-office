@@ -30,7 +30,7 @@ A fresh brain holds ORIGIN alone. The app needs no account; ORIGIN only runs liv
 - **Brain picker.** The menu at the top left switches between the **Main Brain** (ORIGIN and every branch it grew), **specialist brains** and single-agent brains. Specialist brains, such as Engineering, stay empty until ORIGIN creates an agent with that skill; each new skill adds its own tab.
 - **Dashboard.** Agent activity, task queues, approvals, budgets, alerts and the knowledge library.
 - **Settings.** General (autosave) and theme.
-- **Notifications are off.** No pop-ups, sounds, desktop notices or alert bell. Results show where the work is: ORIGIN runs, the agent's profile and the Dashboard.
+- **Notifications are real only.** A short notice appears for what you just did and for ORIGIN's runner: a run that flags something, a task waiting for your approval, a task it stopped, and 80% or 100% of the monthly cap. There are no simulated alerts, alert bell or alarm sounds.
 - **Nothing is simulated.** Tasks exist only when you give one. **Give a task** (in the Branches menu or an agent's profile) sends it to ORIGIN's runner; a task for another agent is done by ORIGIN as that agent, with its SKILL.md. Tasks made up by the old in-browser loop are cleared when a save loads.
 - **Console.** Press **/** to ask ORIGIN a question.
 - **Profiles.** Click an agent to open its profile: Identity, **SKILL.md** (the playbook ORIGIN wrote for it, with a download button), Personality, Skills, AI model, Memory, Schedule and tasks, Activity, and Permissions.
