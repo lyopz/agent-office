@@ -9,3 +9,4 @@ export function ask(question: string, deps?: { fetch: typeof fetch; file: string
 export function nextTask(s: { tasks: { status: string; kind?: string; by?: string; id?: string }[] }): { status: string; kind?: string; id?: string } | null;
 export function parseConsent(text: string): Record<string, unknown> | null;
 export function applyConsent(s: Record<string, unknown>, c: Record<string, unknown>): string[] | null;
+export function pruneGone(s: Record<string, unknown>, at: string): number;

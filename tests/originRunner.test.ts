@@ -342,3 +342,19 @@ describe('origin runner: empire mode, progress and routing', () => {
     expect(calls).toBe(1);
   });
 });
+
+describe('origin runner: a fresh brain', () => {
+  test('work for agents that are no longer in the brain is closed, and ORIGIN\'s own work is kept', () => {
+    const s: any = { agents: [{ id: 'v1', name: 'Store' }], tasks: [
+      { id: 'a', title: "Write NOVA's SKILL.md in full detail", kind: 'skill-file', agentId: 'agent_nova', status: 'approved' },
+      { id: 'b', title: 'Store task', agentId: 'v1', status: 'approved' },
+      { id: 'c', title: 'ORIGIN task', status: 'approved' },
+      { id: 'd', title: 'old', agentId: 'agent_idea_x', status: 'proposed', waitingOnOwner: true },
+    ], agentProposals: [{ id: 'p1', parentId: 'agent_idea_x', status: 'proposed' }, { id: 'p2', parentId: 'agent_origin', status: 'proposed' }], skillFiles: [{ id: 'f', agentId: 'agent_nova', status: 'new' }] };
+    expect(runner.pruneGone(s, 'now')).toBe(4);
+    expect(s.tasks.map((t: any) => t.status)).toEqual(['stopped', 'approved', 'approved', 'stopped']);
+    expect(s.tasks[0].stopReason).toBe('agent no longer in the brain');
+    expect(s.agentProposals.map((p: any) => p.status)).toEqual(['rejected', 'proposed']);
+    expect(s.skillFiles[0].status).toBe('imported');
+  });
+});

@@ -166,6 +166,23 @@ function workAs(s, task) {
   return a ? `\n\nWORK THIS TASK AS ${a.name}. Follow its instructions and SKILL.md below exactly: its workflow, methods, deliverable format and quality bar. Hand back what its SKILL.md says to hand back.\n--- ${a.name} ---\n${a.prompt}\n--- end of ${a.name} ---` : '';
 }
 
+/** Close open work for agents that are no longer in the brain the app synced, so it never spends the cap on them. */
+export function pruneGone(s, at) {
+  const here = new Set([AGENT_ID, ...(s.agents || []).map((a) => a.id)]);
+  const gone = 'agent no longer in the brain';
+  let n = 0;
+  for (const t of s.tasks) {
+    if ((t.status === 'approved' || t.status === 'proposed') && t.agentId && !here.has(t.agentId)) { Object.assign(t, { status: 'stopped', stopReason: gone, stoppedAt: at }); delete t.waitingOnOwner; n++; }
+  }
+  for (const p of s.agentProposals || []) {
+    if (p.status === 'proposed' && !here.has(p.parentId)) { Object.assign(p, { status: 'rejected', reason: `${p.reason ? `${p.reason} ` : ''}(${gone})` }); n++; }
+  }
+  for (const f of s.skillFiles || []) {
+    if (f.status === 'new' && !(f.agentIds ?? [f.agentId]).some((id) => here.has(id))) { f.status = 'imported'; n++; }
+  }
+  return n;
+}
+
 const PROGRESS_KEEP = 300;
 /** One line in the progress log, filed under the agent the work was for (ORIGIN when none). */
 function logProgress(s, task, e) {
@@ -554,6 +571,7 @@ async function handle(req, res) {
     if (Array.isArray(body.agents)) {
       s.agents = body.agents.filter((a) => a && typeof a.id === 'string' && typeof a.name === 'string').slice(0, 100)
         .map((a) => ({ id: a.id.slice(0, 80), name: a.name.slice(0, 80), title: String(a.title || '').slice(0, 120), kind: String(a.kind || 'core'), ventureId: a.ventureId ? String(a.ventureId).slice(0, 80) : null, hasSkillFile: !!a.hasSkillFile, prompt: String(a.prompt || '').slice(0, 40_000) }));
+      pruneGone(s, new Date().toISOString());
     }
     saveState(s);
     return send(req, res, 200, { ok: true });

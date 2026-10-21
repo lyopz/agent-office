@@ -51,7 +51,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   const proposed = st.tasks.filter((t) => t.status === 'proposed');
   // the runner's order: your tasks first, oldest first, then SKILL.md writing
   const approved = st.tasks.filter((t) => t.status === 'approved').sort((a, b) => Number(a.kind === 'skill-file') - Number(b.kind === 'skill-file'));
-  const stopped = st.tasks.filter((t) => t.status === 'stopped').slice(-5);
+  const stopped = st.tasks.filter((t) => t.status === 'stopped' && t.stopReason !== 'agent no longer in the brain').slice(-5);
   // with auto-create on, ORIGIN's agents are added for you; only ones made while you were asked first still wait
   const agentAsks = (st.agentProposals ?? []).filter((p) => p.status === 'proposed' && !st.autoAgents);
   const created = (st.agentProposals ?? []).filter((p) => p.status === 'approved' && (p.auto || st.autoAgents)).slice(-6).reverse();
