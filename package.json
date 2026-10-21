@@ -1,5 +1,5 @@
 {
-  "name": "agent-office",
+  "name": "the-brain",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -45,7 +45,7 @@
   },
   "build": {
     "appId": "app.neuralcommandcampus.desktop",
-    "productName": "Neural Command Campus",
+    "productName": "The Brain",
     "directories": {
       "output": "release",
       "buildResources": "build"

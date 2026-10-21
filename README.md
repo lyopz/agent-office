@@ -1,6 +1,6 @@
-# Agent Office
+# The Brain
 
-An interactive, AI-assisted office simulator. You design a floor plan of rooms, hallways, workstations, and furniture, then populate it with configurable AI agent characters who walk the halls and work through tasks. You can do every edit by hand, or describe it in plain English in the command console.
+The Brain (formerly Agent Office) is an interactive, AI-assisted agent workspace. Its main screen is a 3D brain whose nerves are your agents: the main agent sits at the core and every agent it creates grows a new nerve bundle off it. Behind the brain is the original office simulator. You design a floor plan of rooms, hallways, workstations, and furniture, then populate it with configurable AI agent characters who walk the halls and work through tasks. You can do every edit by hand, or describe it in plain English in the command console.
 
 Everything on screen is data. The room layout, hallway routes, character looks, personalities and tasks all live in one schema-validated document, and every change, whether it comes from the mouse, a form, or the AI console, goes through the same structured operations.
 
@@ -327,15 +327,13 @@ To switch between samples, open **Versions** and choose **Creator Brain · Agent
 
 ### The agent brain
 
-The main screen draws the operation as a dimensional nerve network. Each sector represents a team and is clickable. Selecting one filters the agent roster to that sector; choose **All sectors** to clear the filter.
+The main screen is a 3D brain built in three.js (`src/brain/BrainScene.tsx`). The brain itself is generated in code (`src/brain/brainMesh.ts`): two folded hemispheres with a central and Sylvian sulcus, a cerebellum with folia and a brainstem. No model file is needed. Use **Glass** for a see-through brain that shows the nerves inside, or **Tissue** for a solid, realistic surface. Drag to turn it and scroll to zoom; it slowly turns on its own after 9 seconds of no input.
 
-- **Regions are teams.** Each department is a dense tangle of fibres in its team colour. The two biggest teams are the large side lobes, with a beaded pink and blue rim.
-- **Nerves between teams.** Bundles of fibres join teams that hand work to each other or report to each other; the more handoffs, the thicker the bundle. Faint bundles join near neighbours so the brain reads as one.
-- **Signals.** Sparks run through a region while its agents are busy. A handoff sends sparks along the nerve from the sender's team to the receiver's. A finished task sends a white spark to a new node, which flashes when it lands.
-- **Information nodes.** Small nodes are the information the brain can go back to: diamonds are knowledge entries, dots are finished work (the latest 160), and brighter dots are high-priority or handed-over work. Each node keeps its spot. Hover one for its title, click it for a card with the summary, the agent, **Open agent profile** and **Show in Graph POW**. Sensitive entries only show "Restricted entry".
-- Scroll to zoom, drag to pan, and use the buttons at the bottom right to zoom or fit.
-
-The brain is grown from a fixed seed (`src/brain/connectome.ts`), so the same office always gives the same brain, and it grows when a team does. Sparks stop when the system asks for reduced motion.
+- **Nerves are agents.** The main agent (ORIGIN) sits at the core, fed by a trunk that rises from the brainstem. Every agent is a bundle of nerve fibres that branches off the agent that made it (its supervisor), so when an agent creates another agent, a new bundle grows out of the creator's branch towards the cortex. Bundles are thicker the more agents they carry, and end in a tuft of fine dendrites. The tree is built in `src/brain/nerveTree.ts` from a fixed seed, so the same agents always give the same brain.
+- **Growth.** On load the nerves grow outward from the core, one level at a time. A newly created agent grows its own branch while the rest stays in place.
+- **Signals.** Pulses run from the core out to agents that are working, along the shortest path between two agents when one hands work to another, and back to the core when a task finishes.
+- **Focus.** Hover a node for its name, team and status; click it to open the agent profile. Hovering or choosing an agent in the menu lights its path back to the main agent and every agent below it, and dims the rest. Choosing a sector lights that team.
+- Motion stops when the system asks for reduced motion.
 
 **Agent menu.** On the left, every agent is listed by team with its reporting line, status, current task, a progress bar and how many tasks are queued. Hovering a team or an agent lights up its part of the brain and its information nodes and dims the rest. Click an agent to open the profile, use its button to pause or resume it, search by name, title or team, and use **Give a task** at the bottom (pick an agent, type the task, press Enter).
 
@@ -343,7 +341,7 @@ The brain is grown from a fixed seed (`src/brain/connectome.ts`), so the same of
 
 Uploaded idea notes are saved locally in the office file. A live research provider, shared mobile/computer intake and real multi-user task handoff still need backend integrations. Custom specialists are added with a simulated provider and manual approval until those integrations are configured.
 
-What was removed: the explorable 3D headquarters, the avatar studio, the Blender character renders and sprite sheets, and the drawn figures. three.js is no longer a dependency. Saved offices still load; the owner profile (`player`) stays in the file but is no longer shown.
+What was removed: the explorable 3D headquarters, the avatar studio, the Blender character renders and sprite sheets, and the drawn figures. three.js is used again, for the 3D brain only. Saved offices still load; the owner profile (`player`) stays in the file but is no longer shown.
 
 ### Schema version 6
 
