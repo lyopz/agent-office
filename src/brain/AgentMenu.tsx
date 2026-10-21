@@ -10,6 +10,7 @@ import type { AgentStatus } from '../model/types';
 import { STATUS_COLOR } from '../viewport/AgentsLayer';
 import { teamsOf } from './connectome';
 import { useBrainFocus } from './ConnectomeView';
+import { BranchMenu } from './BranchMenu';
 
 const BUSY: AgentStatus[] = ['working', 'researching', 'thinking', 'communicating'];
 
@@ -30,6 +31,8 @@ export function AgentMenu() {
     return out;
   }));
   const teams = useMemo(() => teamsOf({ agents, departments }), [agents, departments]);
+  const [view, setViewState] = useState<'branches' | 'teams'>(() => { try { return localStorage.getItem('brain:menu') === 'teams' ? 'teams' : 'branches'; } catch { return 'branches'; } });
+  const setView = (v: 'branches' | 'teams') => { setViewState(v); try { localStorage.setItem('brain:menu', v); } catch { /* storage unavailable */ } };
   const [q, setQ] = useState('');
   const [task, setTask] = useState('');
   const [target, setTarget] = useState('');
@@ -37,7 +40,7 @@ export function AgentMenu() {
   const busy = Object.values(live).filter((v) => BUSY.includes(v.split('|')[0] as AgentStatus)).length;
   const sorted = Object.values(agents).sort((a, b) => a.identity.name.localeCompare(b.identity.name));
   const activeTeam = teams.find((t) => t.id === selectedTeamId);
-  const shown = sorted.filter((a) => (!activeTeam || activeTeam.agentIds.includes(a.id)) && match(a.id));
+  const shown = sorted.filter((a) => (view === 'branches' || !activeTeam || activeTeam.agentIds.includes(a.id)) && match(a.id));
   const to = target && shown.some((a) => a.id === target) ? target : shown.some((a) => a.id === selected) ? selected! : shown[0]?.id || '';
   const focus = (teamId: string | null, agentId: string | null = null) => useBrainFocus.setState({ teamId: teamId ?? selectedTeamId, agentId });
   const selectTeam = (teamId: string | null) => useBrainFocus.setState({ teamId, agentId: null, selectedTeamId: teamId, brainAgentId: null });
@@ -58,11 +61,19 @@ export function AgentMenu() {
   return (
     <aside className="agent-menu" aria-label="Agents" onPointerLeave={() => focus(selectedTeamId)}>
       <header className="am-head">
+        <div className="seg am-view" role="tablist" aria-label="Group agents by">
+          <button className="btn sm" role="tab" aria-selected={view === 'branches'} aria-pressed={view === 'branches'} onClick={() => setView('branches')}>Branches</button>
+          <button className="btn sm" role="tab" aria-selected={view === 'teams'} aria-pressed={view === 'teams'} onClick={() => setView('teams')}>Teams</button>
+        </div>
+        {view === 'teams' && <>
         <div className="am-sector-head"><div><b>{activeTeam ? activeTeam.name : 'Agent sectors'}</b> <span className="muted small">{activeTeam ? `${shown.length} agents` : `${busy} of ${sorted.length} busy`}</span></div>{activeTeam && <button className="am-all" onClick={() => selectTeam(null)}>All sectors</button>}</div>
         {!activeTeam && <span className="am-hint">Select a brain sector to see its agents</span>}
+        </>}
+        {view === 'branches' && <div className="am-sector-head"><div><b>Agent branches</b> <span className="muted small">{busy} of {sorted.length} busy</span></div></div>}
         <label className="am-search"><Search size={13} aria-hidden /><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an agent" aria-label="Find an agent" /></label>
       </header>
       <div className="am-list">
+        {view === 'branches' ? <BranchMenu agents={agents} teams={teams} live={live} match={match} selected={selected} /> : <>
         {(activeTeam ? [activeTeam] : teams).map((t) => {
           const ids = t.agentIds.filter(match);
           if (!ids.length) return null;
@@ -97,6 +108,7 @@ export function AgentMenu() {
           );
         })}
         {!shown.length && <p className="muted small am-none">{q ? `No agent matches “${q}”.` : 'No agents are assigned to this sector yet.'}</p>}
+        </>}
       </div>
       <form className="am-give" onSubmit={(e) => { e.preventDefault(); give(); }}>
         <span className="label">Give a task</span>

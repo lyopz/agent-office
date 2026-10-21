@@ -32,9 +32,9 @@ export default function ConnectomeView() {
       <AgentMenu />
       <section className="brain-stage-view" aria-label="Agent brain visualization">
         <div className="brain-stage-glow" aria-hidden="true"/>
-        <div className="brain-hud brain-hud-top"><span><Network size={14}/> BRAIN MODEL <b>{total.toString().padStart(2, '0')} AGENTS</b></span><span>NERVES GROW FROM THE MAIN AGENT · {ideasCount} IDEAS</span></div>
+        <div className="brain-hud brain-hud-top"><span><Network size={14}/> BRAIN MODEL <b>{total.toString().padStart(2, '0')} AGENTS</b></span><span>{ideasCount} IDEAS</span></div>
         <BrainScene/>
-        <div className="brain-hud brain-hud-bottom"><div><span className="brain-hud-icon"><Users size={15}/></span><span><b>{total} connected agents</b><small>Every agent is a branch of the agent that made it</small></span></div><div className="brain-hud-divider"/><div><span className="brain-hud-icon pulse-icon"><Activity size={15}/></span><span><b>{running} active now</b><small>Drag the brain to view it from every angle</small></span></div></div>
+        <div className="brain-hud brain-hud-bottom"><div><span className="brain-hud-icon"><Users size={15}/></span><span><b>{total} connected agents</b><small>Pick a branch on the left to see it in the brain</small></span></div><div className="brain-hud-divider"/><div><span className="brain-hud-icon pulse-icon"><Activity size={15}/></span><span><b>{running} active now</b><small>Drag the brain to view it from every angle</small></span></div></div>
         {!total && <div className="brain-empty"><b>Your network starts here</b><span>Create a specialist to grow the first branch.</span></div>}
       </section>
     </div>

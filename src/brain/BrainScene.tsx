@@ -1,9 +1,8 @@
 // The 3D brain: a realistic brain (folded hemispheres, cerebellum and
-// brainstem) with the agents as its nerves. The main agent sits at the core,
-// fed by the brainstem; every agent it creates grows out as a nerve bundle,
-// and agents those agents create branch off again. Signals run along the
-// nerves: work flows out to busy agents, handoffs travel through the shared
-// manager, and finished work reports back to the core.
+// brainstem). The agent tree runs inside it without being drawn: soft signals
+// travel from the core out to busy agents, between agents on handoffs, and
+// back when work finishes. Only the branch chosen in the Branches menu (or
+// hovered) shows its agents, as glowing nodes with names.
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -151,7 +150,7 @@ export default function BrainScene() {
         a?.dispose(); tf?.dispose();
         if (!g) continue;
         const mat = new THREE.ShaderMaterial({ vertexShader: nerveVertex, fragmentShader: nerveFragment, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uColor: { value: new THREE.Color(b.color) }, uGrow: { value: 0 }, uOpacity: { value: 0.9 }, uTime: { value: 0 } } });
-        const mesh = new THREE.Mesh(g, mat); mesh.renderOrder = 2;
+        const mesh = new THREE.Mesh(g, mat); mesh.renderOrder = 2; mesh.visible = false;
         nerves.add(mesh);
         const isNew = !known.has(b.to);
         // on first load the tree grows out from the core one level at a time; later, only new agents grow
@@ -183,7 +182,7 @@ export default function BrainScene() {
       if (calm || pulses.length > 90 || !chain.length) return;
       const legs = chain.map(({ b, reverse }) => { const s = b.strands[Math.floor(Math.random() * b.strands.length)]; return { pts: s.pts, cum: s.cum, reverse }; });
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.5), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-      sprite.scale.setScalar(0.06); sprite.renderOrder = 4;
+      sprite.scale.setScalar(0.045); sprite.renderOrder = 4; (sprite.material as THREE.SpriteMaterial).opacity = 0.7;
       pulseGroup.add(sprite);
       pulses.push({ legs, leg: 0, dist: 0, speed, sprite });
     };
@@ -299,18 +298,18 @@ export default function BrainScene() {
       for (const n of nodes) {
         const node = t.nodes[n.id]; if (!node) continue;
         const grownIn = n.id === t.rootId || (bundleTo(n.id)?.grow ?? 1.25) >= 0.98;
-        const on = !lit || lit.has(n.id);
+        const on = !!lit && lit.has(n.id);
         const busy = BUSY.has(st.runtime.agents[n.id]?.status ?? '');
         const beat = busy && !calm ? 1 + 0.18 * Math.sin(time * 5 + n.base * 40) : 1;
-        n.sprite.scale.setScalar(grownIn ? n.base * beat * (on ? 1 : 0.6) : 0.0001);
-        (n.sprite.material as THREE.SpriteMaterial).opacity = on ? 1 : 0.25;
+        n.sprite.scale.setScalar(grownIn && on ? n.base * beat : 0.0001);
+        (n.sprite.material as THREE.SpriteMaterial).opacity = on ? 1 : 0;
         v.copy(n.pos).project(camera);
         const x = (v.x * 0.5 + 0.5) * width, y = (-v.y * 0.5 + 0.5) * height, front = v.z < 1;
         n.screen = { x, y, on: front };
-        const show = grownIn && front && (node.depth <= 1 || !many || (lit ? lit.has(n.id) : false) || hovered === n.id);
+        const show = grownIn && front && on && (!many || node.depth <= 1 || hovered === n.id || lit!.size < 14);
         n.label.style.transform = `translate(${x.toFixed(1)}px, ${(y - 10).toFixed(1)}px) translate(-50%, -100%)`;
-        n.label.style.opacity = show ? (on ? '1' : '.28') : '0';
-        if (mouse && grownIn && front) { const d = Math.hypot(mouse.x - x, mouse.y - y); if (d < 16 && (!best || d < best.d)) best = { id: n.id, d, x, y }; }
+        n.label.style.opacity = show ? '1' : '0';
+        if (mouse && grownIn && front && on) { const d = Math.hypot(mouse.x - x, mouse.y - y); if (d < 16 && (!best || d < best.d)) best = { id: n.id, d, x, y }; }
       }
       const nh = best?.id ?? null;
       if (nh !== hovered) { hovered = nh; el.style.cursor = nh ? 'pointer' : ''; setHover(best ? { id: best.id, x: best.x, y: best.y } : null); }
@@ -343,7 +342,7 @@ export default function BrainScene() {
   const hoverNode = hover ? tree.current.nodes[hover.id] : null;
   const reports = hoverNode?.childIds.length ?? 0;
   return <div className="brain-object-wrap">
-    <div ref={host} className="brain-scene" aria-label="Three-dimensional brain. The main agent sits at the core and every agent it creates branches out as a nerve. Drag to rotate, scroll to zoom, double-click to reset.">
+    <div ref={host} className="brain-scene" aria-label="Three-dimensional brain. Choose a branch in the Branches menu to see its agents. Drag to rotate, scroll to zoom, double-click to reset.">
       <div ref={labels} className="brain-node-labels" aria-hidden="true" />
       {hover && hoverAgent && <div className="brain-node-tip" style={{ left: hover.x, top: hover.y + 14 }}>
         <b>{hoverAgent.identity.name}</b><span>{hoverAgent.identity.title}</span>
@@ -351,7 +350,7 @@ export default function BrainScene() {
       </div>}
     </div>
     <div className="brain-rotate-tools">
-      <span>DRAG TO ORBIT · SCROLL TO ZOOM · CLICK A NODE FOR ITS AGENT</span>
+      <span>DRAG TO ORBIT · SCROLL TO ZOOM · PICK A BRANCH TO SEE ITS AGENTS</span>
       <div className="seg brain-surface" role="group" aria-label="Brain surface">
         <button className="btn sm" aria-pressed={surface === 'glass'} onClick={() => setSurface('glass')}>Glass</button>
         <button className="btn sm" aria-pressed={surface === 'solid'} onClick={() => setSurface('solid')}>Tissue</button>
