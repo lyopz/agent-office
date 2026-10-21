@@ -81,7 +81,6 @@ export function AgentSkillFile({ a }: { a: Agent }) {
           <pre className="skill-file">{own.instructions}</pre>
         </> : <p className="note">{
           kind === 'root' ? "ORIGIN's playbook is its instructions, under AI model. Each agent it creates gets its own SKILL.md here."
-            : kind === 'core' ? 'This agent was not grown by ORIGIN, so ORIGIN does not write a SKILL.md for it.'
             : request ? `ORIGIN is writing it: “${request.title}” is ${request.status === 'approved' ? 'queued for its next run' : request.status}. It appears here when it's done.`
             : status ? 'ORIGIN will be asked to write it on its next check.' : "ORIGIN writes it in its runs. Start the runner on your PC with npm.cmd run origin."
         }</p>}
