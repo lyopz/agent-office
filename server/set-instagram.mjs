@@ -4,26 +4,30 @@
 //      Needs no account id. Sees the owner's own account only (profile numbers, own posts).
 //   2. From Facebook Login for Business (Graph API Explorer) with instagram_basic, pages_show_list and
 //      the Instagram Public Content Access feature, plus the Instagram account id. Adds hashtag search.
-// The token is typed hidden and checked with Meta before saving.
-import readline from 'node:readline';
+// The token is typed hidden (or taken from the clipboard) and checked with Meta before saving.
 import { instagramConfig, pingInstagram, saveInstagram } from './instagram.mjs';
 import { secretsDir } from './key-file.mjs';
+import { ask, askSecret, describeToken, finish } from './secret-prompt.mjs';
 
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-let hidden = false;
-rl._writeToOutput = (s) => { if (!hidden || s.includes('\n')) process.stdout.write(hidden ? '\n' : s); };
-const ask = (q, hide) => new Promise((res) => { process.stdout.write(q); hidden = hide; rl.question('', (a) => { hidden = false; res(a.trim()); }); });
-
-console.log('Which token?\n  1  Instagram login token (app dashboard: Instagram > API setup with Instagram login > Generate token). Own account only.\n  2  Facebook Login for Business token (Graph API Explorer, instagram_basic + pages_show_list + Public Content Access). Adds hashtag search.');
-const choice = await ask('1 or 2: ', false);
-const kind = choice === '2' ? 'facebook' : 'instagram';
-const igUserId = kind === 'facebook' ? await ask('Instagram account id (Graph API Explorer: me/accounts, then <page-id>?fields=instagram_business_account): ', false) : '';
-const token = await ask('Access token (it will not show): ', true);
-rl.close();
-if ((kind === 'facebook' && !/^\d{5,}$/.test(igUserId)) || token.length < 20) { console.log('\nThat does not look right. Nothing was saved.'); process.exit(1); }
-const cfg = { ...(instagramConfig() || {}), kind, igUserId, token, savedAt: new Date().toISOString() };
-try { const me = await pingInstagram(cfg); cfg.igUserId = me.igUserId || igUserId; cfg.username = me.username; }
-catch (e) { console.log(`\n${e.message}. Nothing was saved.`); process.exit(1); }
-if (!cfg.igUserId) { console.log('\nMeta did not return the account id. Nothing was saved.'); process.exit(1); }
-saveInstagram(cfg);
-console.log(`\nSaved: connected as @${cfg.username || cfg.igUserId} (${kind === 'facebook' ? 'Facebook login: own account and hashtag search, 30 hashtags a week' : 'Instagram login: own account numbers and own posts; Meta gives no hashtag search on this token'}). Read-only: nothing in the app can post, like, comment or follow. Stored in ${secretsDir()}, outside the app folder. Dashboard and long-lived tokens last 60 days; run this again when it expires.`);
+async function main() {
+  console.log('Which token?\n  1  Instagram login token (app dashboard: Instagram > API setup with Instagram login > Generate token). Own account only.\n  2  Facebook Login for Business token (Graph API Explorer, instagram_basic + pages_show_list + Public Content Access). Adds hashtag search.');
+  const choice = await ask('1 or 2: ');
+  const kind = choice === '2' ? 'facebook' : 'instagram';
+  const igUserId = kind === 'facebook' ? await ask('Instagram account id (Graph API Explorer: me/accounts, then <page-id>?fields=instagram_business_account): ') : '';
+  const { token, from } = await askSecret('Access token');
+  if (kind === 'facebook' && !/^\d{5,}$/.test(igUserId)) { console.log('\nThat account id does not look right (digits only). Nothing was saved.'); return 1; }
+  if (token.length < 20) { console.log(`\nNo token arrived (${from === 'nothing' ? 'nothing typed and the clipboard is empty' : describeToken(token)}). Copy the token again and run this once more. Nothing was saved.`); return 1; }
+  console.log(`Checking the token with Meta (${describeToken(token)}, from the ${from})...`);
+  const cfg = { ...(instagramConfig() || {}), kind, igUserId, token, savedAt: new Date().toISOString() };
+  try { const me = await pingInstagram(cfg); cfg.igUserId = me.igUserId || igUserId; cfg.username = me.username; }
+  catch (e) {
+    console.log(`\n${e.message}. Nothing was saved.`);
+    if (kind === 'instagram') console.log('If you copied the token a moment ago, it is not expired: Meta says that for a token it cannot read. Copy it again from the dashboard (Instagram > API setup with Instagram login > Generate token), then run this and just press Enter at the token question so it is taken from the clipboard. If the dashboard shows no Generate token button yet, accept the tester invite first: instagram.com/accounts/manage_access, Tester invites, Accept.');
+    return 1;
+  }
+  if (!cfg.igUserId) { console.log('\nMeta did not return the account id. Nothing was saved.'); return 1; }
+  saveInstagram(cfg);
+  console.log(`\nSaved: connected as @${cfg.username || cfg.igUserId} (${kind === 'facebook' ? 'Facebook login: own account and hashtag search, 30 hashtags a week' : 'Instagram login: own account numbers and own posts; Meta gives no hashtag search on this token'}). Read-only: nothing in the app can post, like, comment or follow. Stored in ${secretsDir()}, outside the app folder. Dashboard and long-lived tokens last 60 days; run this again when it expires.`);
+  return 0;
+}
+finish(await main());

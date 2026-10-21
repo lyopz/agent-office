@@ -46,7 +46,7 @@ async function graphGet(p, params, cfg, f = globalThis.fetch) {
   const data = await r.json().catch(() => ({}));
   if (!r.ok || data.error) {
     const e = data.error || {};
-    const why = e.code === 190 ? 'the token has expired or was revoked: run npm.cmd run set-instagram again'
+    const why = e.code === 190 ? `Meta did not accept the token (${e.message || 'expired, revoked or unreadable'}): run npm.cmd run set-instagram again`
       : e.code === 10 || e.code === 200 || e.code === 3 ? `the token lacks permission for this (${e.message || 'permission error'}); hashtag search needs a Facebook Login for Business token with instagram_basic, pages_show_list and the Instagram Public Content Access feature`
       : e.message || `HTTP ${r.status}`;
     throw new Error(`Instagram: ${why}`);
