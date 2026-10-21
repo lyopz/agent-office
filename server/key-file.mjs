@@ -5,7 +5,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export const keyPath = () => path.join(process.env.APPDATA || path.join(os.homedir(), '.config'), 'the-brain', 'anthropic-key');
+/** The folder on this PC, outside the app, where keys and sign-ins are kept. */
+export const secretsDir = () => path.join(process.env.APPDATA || path.join(os.homedir(), '.config'), 'the-brain');
+export const keyPath = () => path.join(secretsDir(), 'anthropic-key');
 
 /** The key from the environment if set there, else the saved file, else ''. */
 export function readKey() {

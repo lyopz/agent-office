@@ -315,7 +315,7 @@ describe('origin runner: empire mode, progress and routing', () => {
     write({ ...base, agents: [{ id: 'v1', name: 'Etsy Store', kind: 'venture', prompt: 'p' }], tasks: [{ id: 't1', title: 'Research', detail: '', status: 'approved', by: 'owner', agentId: 'v1', createdAt: '' }] });
     let sent: any = null;
     const fetch = async (_u: string, init: any) => { sent ??= JSON.parse(init.body); return reply(result({ memory: 'm', progress: { percent: 35, note: 'Found 3 niches' }, summary: 's' }), { input_tokens: 100, output_tokens: 10 }); };
-    await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
+    await runner.runOnce('manual', { fetch, file, key: 'test', etsy: null } as any);
     const s = read();
     expect(sent.tools.map((t: any) => t.name)).toEqual(['web_search', 'web_fetch']);
     expect(s.tasks[0].progress).toBe(35);
@@ -356,5 +356,25 @@ describe('origin runner: a fresh brain', () => {
     expect(s.tasks[0].stopReason).toBe('agent no longer in the brain');
     expect(s.agentProposals.map((p: any) => p.status)).toEqual(['rejected', 'proposed']);
     expect(s.skillFiles[0].status).toBe('imported');
+  });
+});
+
+describe('origin runner: Etsy tools', () => {
+  test('an agent calls etsy_search mid-run; the runner runs it and hands back the result', async () => {
+    write({ ...base, tasks: [{ id: 't1', title: 'Mug demand', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
+    const bodies: any[] = [];
+    const ran: any[] = [];
+    const etsy = { tools: [{ name: 'etsy_search', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async (name: string, input: any) => { ran.push([name, input]); return { content: '{"total":1200}', isError: false }; } };
+    const fetch = async (_u: string, init: any) => {
+      bodies.push(JSON.parse(init.body));
+      if (bodies.length === 1) return { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'tu1', name: 'etsy_search', input: { keywords: 'cat mug' } }], usage: { input_tokens: 100, output_tokens: 10 }, stop_reason: 'tool_use' }) };
+      return reply(result({ memory: 'm', progress: { percent: 20, note: '1200 listings' }, summary: 's' }), { input_tokens: 100, output_tokens: 10 });
+    };
+    const r: any = await runner.runOnce('manual', { fetch, file, key: 'test', etsy } as any);
+    expect(ran).toEqual([['etsy_search', { keywords: 'cat mug' }]]);
+    expect(bodies[0].tools.map((t: any) => t.name)).toContain('etsy_search');
+    expect(bodies[1].messages.at(-1).content[0]).toMatchObject({ type: 'tool_result', tool_use_id: 'tu1', content: '{"total":1200}' });
+    expect(r.run).toMatchObject({ status: 'done', etsyCalls: 1 });
+    expect(read().tasks[0].progress).toBe(20);
   });
 });

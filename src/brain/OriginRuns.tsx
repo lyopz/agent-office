@@ -81,6 +81,9 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         <input type="checkbox" checked={st.autoTasks !== false} onChange={(e) => void act(() => setAutoTasks(e.target.checked), e.target.checked ? 'Empire mode on: ORIGIN picks ventures and sets its own research tasks, inside the cap.' : 'ORIGIN will ask you before working on tasks it thinks of.')} />
         Empire mode: ORIGIN picks the ventures and sets its own research tasks (3 open at most, each within its budget and the {money(st.capUsd)} cap). It still asks before using your accounts, publishing, or spending money.
       </label>
+      <p className="creator-privacy"><b>Etsy:</b> {!st.etsy?.configured ? <>not set up. In the app folder run <code>npm.cmd run set-etsy</code> once with your Etsy app key; agents then search real listings (read-only).</>
+        : st.etsy.connected ? <>agents search listings and read {st.etsy.shopName ? <b>{st.etsy.shopName}</b> : 'your shop'} (read-only; they can't list, change or buy anything).</>
+        : <>agents search real listings (read-only). <a className="link-btn" href="http://localhost:8788/api/origin/etsy/connect" target="_blank" rel="noreferrer">Connect my Etsy shop</a> so they can read your shop's numbers too (read-only).</>}</p>
       {created.length > 0 && <p className="creator-privacy">Recently created by ORIGIN: {created.map((p) => `${p.name} (for ${doc.agents[p.parentId]?.identity.name ?? p.parentId})`).join(', ')}.</p>}
 
       {ventures.length > 0 && <><span className="creator-kicker">VENTURES</span>
@@ -129,7 +132,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
       {st.nextAction && <><span className="creator-kicker">NEXT ACTION</span><p className="creator-privacy">{st.nextAction}</p></>}
       {st.memory && <><span className="creator-kicker">ORIGIN'S NOTES</span><pre className="origin-notes">{st.memory}</pre></>}
       {st.runs.length > 0 && <><span className="creator-kicker">RECENT RUNS</span>
-        <ul className="creator-request-log">{st.runs.map((r) => <li key={r.id}>{new Date(r.startedAt).toLocaleString()} · {r.trigger} · {r.status} · {r.costKnown ? money(r.costUsd) : 'cost unknown'}{r.searches ? ` · ${r.searches} searches` : ''}{r.skillFileFor ? ` · wrote ${r.skillFileFor}'s SKILL.md` : ''}{r.summary ? `: ${r.summary}` : ''}{r.notify ? <b> · {r.notify}</b> : null}</li>)}</ul></>}
+        <ul className="creator-request-log">{st.runs.map((r) => <li key={r.id}>{new Date(r.startedAt).toLocaleString()} · {r.trigger} · {r.status} · {r.costKnown ? money(r.costUsd) : 'cost unknown'}{r.searches ? ` · ${r.searches} searches` : ''}{r.fetches ? ` · ${r.fetches} pages read` : ''}{r.etsyCalls ? ` · ${r.etsyCalls} Etsy lookups` : ''}{r.skillFileFor ? ` · wrote ${r.skillFileFor}'s SKILL.md` : ''}{r.summary ? `: ${r.summary}` : ''}{r.notify ? <b> · {r.notify}</b> : null}</li>)}</ul></>}
     </div>
   );
 }

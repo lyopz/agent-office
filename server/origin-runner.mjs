@@ -18,6 +18,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { readKey } from './key-file.mjs';
+import { ETSY_TOOLS, authUrl, etsyPublic, finishAuth, runEtsyTool } from './etsy.mjs';
 
 const PORT = Number(process.env.ORIGIN_PORT || 8788);
 const MODEL = process.env.ORIGIN_MODEL || 'claude-haiku-5-5';
@@ -211,7 +212,7 @@ function skillFileBrief(s, task) {
   return `Write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId})${task.sharedWith?.length ? `. ${task.sharedWith.length} other agents do exactly the same job (${task.sharedWith.join(', ')}) and will share this file, so write it for the role, not the one name` : ''}. What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}`;
 }
 
-function briefFor(s, task, deadline) {
+function briefFor(s, task, deadline, etsy = null) {
   return [
     `Current time: ${new Date().toISOString()}. This work window ends at ${deadline.toISOString()} (${MAX_MIN} minutes). Model: ${MODEL}.`,
     `Budget: $${s.ledger.spentUsd.toFixed(2)} of the owner's $${CAP} monthly cap spent this month; this run may spend at most $${Math.min(RUN_LIMIT_USD, remaining(s)).toFixed(2)}. Approved spending covers only these runs on the tasks below. Ask before anything else that costs money.`,
@@ -222,7 +223,7 @@ function briefFor(s, task, deadline) {
     task?.kind === 'skill-file'
       ? `Your one task this run (the owner approved it): [${task.id}] write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId})${task.sharedWith?.length ? `. ${task.sharedWith.length} other agents do exactly the same job (${task.sharedWith.join(', ')}) and will share this file, so write it for the role, not the one name` : ''}. What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions${task.version > 1 ? ' and its earlier, thinner SKILL.md (replace it with a much more detailed one)' : ''}:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}\nResearch only if it makes the playbook more specific (for example current platform rules or prices). Return it as "skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"} and list the task id in completedTaskIds.`
       : task
-      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}\nIf you finish it, list its id in completedTaskIds. If not, record in your notes exactly where you stopped; the next run continues it.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. You cannot log in to any site, post, buy or contact anyone; for that, say what you need in notifyOwner.\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
+      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}\nIf you finish it, list its id in completedTaskIds. If not, record in your notes exactly where you stopped; the next run continues it.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. ${etsy ? `ETSY (read-only, free): etsy_search shows real active listings with prices, favorites, views and tags; use it to measure demand, competition and price ranges. ${etsyPublic().connected ? "etsy_my_shop shows the owner's own shop and its numbers." : "The owner's own shop is not connected yet."} ` : ''}You cannot post, list, buy or contact anyone; for that, say what you need in notifyOwner.\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
       : canSelfApprove(s)
       ? 'No task is ready. Do not research this run. Review your notes, make sure each venture has the skill agents it needs (below), and set the single most valuable next task in proposedTasks; in empire mode it is approved at once and worked next run.'
       : 'No approved task is ready. Do not research. Review your notes, make sure each venture has the skill agents it needs (below), and propose the single most valuable, cheap task for the owner to approve.',
@@ -262,9 +263,10 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   const runLimit = Math.min(RUN_LIMIT_USD, remaining(s));
   const record = { id: `run_${start.getTime().toString(36)}`, trigger, model: MODEL, startedAt: start.toISOString(), endedAt: null, costUsd: 0, costKnown: true, calls: 0, searches: 0, status: 'running', summary: '' };
   running = record;
-  const messages = [{ role: 'user', content: briefFor(s, task, deadline) }];
+  const etsy = 'etsy' in deps ? deps.etsy : (etsyPublic().configured ? { tools: ETSY_TOOLS, run: runEtsyTool } : null);
+  const messages = [{ role: 'user', content: briefFor(s, task, deadline, etsy) }];
   // research tools: search to find sources, fetch to read a page in full
-  const tools = task ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: MAX_SEARCHES }, { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: MAX_FETCHES, max_content_tokens: FETCH_TOKENS }] : [];
+  const tools = task ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: MAX_SEARCHES }, { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: MAX_FETCHES, max_content_tokens: FETCH_TOKENS }, ...(etsy && task.kind !== 'skill-file' ? etsy.tools : [])] : [];
   let text = '', stopReason = null;
   try {
     while (record.calls < MAX_CALLS) {
@@ -285,6 +287,19 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
       record.fetches = (record.fetches || 0) + (data.usage?.server_tool_use?.web_fetch_requests || 0);
       text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
       if (data.stop_reason === 'pause_turn') { messages.push({ role: 'assistant', content: data.content }); continue; }
+      // the agents' own tools (Etsy): run each call here and hand back the results
+      const calls = (data.content || []).filter((b) => b.type === 'tool_use');
+      if (data.stop_reason === 'tool_use' && calls.length && etsy) {
+        messages.push({ role: 'assistant', content: data.content });
+        const results = [];
+        for (const c of calls) {
+          const out = await etsy.run(c.name, c.input);
+          record.etsyCalls = (record.etsyCalls || 0) + 1;
+          results.push({ type: 'tool_result', tool_use_id: c.id, content: out.content, ...(out.isError ? { is_error: true } : {}) });
+        }
+        messages.push({ role: 'user', content: results });
+        continue;
+      }
       record.status = data.stop_reason === 'refusal' ? 'refused' : 'done';
       stopReason = data.stop_reason;
       break;
@@ -536,10 +551,16 @@ function publicState() {
   return {
     configured: Boolean(KEY), model: MODEL, capUsd: CAP, everyMinutes: EVERY_MIN, maxMinutes: MAX_MIN, schedule: SCHEDULE,
     spentUsd: s.ledger.spentUsd, spentByAgent: s.ledger.byAgent, taskBudgetUsd: TASK_BUDGET_USD, unknownCostRuns: s.ledger.unknownCostRuns, month: s.ledger.month, running: running ? running.startedAt : null,
-    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
+    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, etsy: etsyPublic(), skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
     // with no scheduled run yet, the next one starts within a minute
     nextScheduledAt: SCHEDULE ? new Date(s.lastScheduledAt ? Math.max(Date.now(), Date.parse(s.lastScheduledAt) + EVERY_MIN * 60_000) : Date.now() + 60_000).toISOString() : null,
   };
+}
+
+const ETSY_REDIRECT = `http://localhost:${PORT}/api/origin/etsy/callback`;
+function page(res, status, text) {
+  res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(`<!doctype html><meta charset="utf-8"><title>The Brain · Etsy</title><body style="font:16px system-ui;padding:40px;background:#0b1220;color:#e9f1fc"><p>${text.replace(/[<>&]/g, '')}</p>`);
 }
 
 function send(req, res, status, body) {
@@ -561,6 +582,18 @@ async function handle(req, res) {
   if (req.method === 'OPTIONS') return send(req, res, 204, {});
   const url = req.url.split('?')[0];
   if (req.method === 'GET' && url === '/api/origin/status') return send(req, res, 200, publicState());
+  // the owner connects their Etsy shop in their browser; the tokens stay in the runner
+  if (req.method === 'GET' && url === '/api/origin/etsy/connect') {
+    const to = authUrl(ETSY_REDIRECT);
+    if (!to) return page(res, 400, 'Etsy is not set up yet. In the app folder run npm.cmd run set-etsy first.');
+    res.writeHead(302, { location: to, 'cache-control': 'no-store' }); return res.end();
+  }
+  if (req.method === 'GET' && url === '/api/origin/etsy/callback') {
+    const q = new URL(req.url, 'http://127.0.0.1').searchParams;
+    if (q.get('error')) return page(res, 400, 'Etsy sign-in was cancelled. Nothing changed.');
+    try { const name = await finishAuth(String(q.get('code') || ''), String(q.get('state') || '')); return page(res, 200, `Connected${name ? ` to ${name}` : ''}. ORIGIN's agents can now read your shop (read-only). You can close this tab.`); }
+    catch (e) { return page(res, 400, e.message); }
+  }
   if (req.method !== 'POST') return send(req, res, 404, { error: 'not found' });
   let body;
   try { body = await readBody(req); } catch { return send(req, res, 400, { error: 'invalid request body' }); }
