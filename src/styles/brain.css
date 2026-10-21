@@ -138,7 +138,6 @@
   .creator-actions { left: 9px; right: 9px; top: 9px; justify-content: flex-start; overflow-x: auto; max-width: none; border-radius: 11px; }
   .creator-live { padding: 0 4px; font-size: 8px; }
   .creator-action, .creator-voice { min-height: 31px; padding: 0 8px; font-size: 10px; }
-  .creator-tutorial { display: none; }
   .creator-overlay { padding: 10px; align-items: start; }
   .creator-dialog { max-height: calc(100dvh - 20px); border-radius: 14px; }
   .creator-dialog-head { padding: 17px 17px 13px; }
@@ -336,7 +335,6 @@
 @media (max-width: 1050px) {
   .brain-toolbar { grid-template-columns: minmax(220px, 250px) minmax(150px, 1fr) auto; gap: 11px; padding: 10px 12px; }
   .brain-title > span:last-child { display: none; }
-  .creator-tutorial { display: none; }
   .brain-main { grid-template-columns: 256px minmax(0, 1fr); }
   .creator-action, .creator-voice { gap: 5px; padding: 0 9px; font-size: 10px; }
 }

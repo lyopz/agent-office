@@ -7,7 +7,7 @@ import { defaultControl } from './control';
 export const uid = (prefix: string) => `${prefix}_${nanoid(8)}`;
 export const now = () => new Date().toISOString();
 
-/** Starter templates for new agents. Only a blank agent is offered; ORIGIN and its ventures fill it in. */
+/** Starter templates for new agents. Only a blank agent is offered; JARVIS and its ventures fill it in. */
 export const ARCHETYPE: Record<string, { id: string; label: string }> = {
   custom: { id: 'custom', label: 'Blank (custom)' },
 };

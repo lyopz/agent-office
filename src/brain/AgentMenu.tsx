@@ -39,7 +39,7 @@ export function AgentMenu() {
   const [task, setTask] = useState('');
   const [target, setTarget] = useState('');
   const match = (id: string) => { const a = agents[id]; return !q.trim() || `${a.identity.name} ${a.identity.title} ${a.identity.department}`.toLowerCase().includes(q.trim().toLowerCase()); };
-  // Branches shows ORIGIN and the branches it grew; Teams still lists every agent
+  // Branches shows JARVIS and the branches it grew; Teams still lists every agent
   const inBrain = useMemo(() => new Set(brainAgents(agents).map((a) => a.id)), [agents]);
   const sorted = Object.values(agents).filter((a) => view === 'teams' || inBrain.has(a.id)).sort((a, b) => a.identity.name.localeCompare(b.identity.name));
   const busy = sorted.filter((a) => BUSY.includes((live[a.id] ?? '').split('|')[0] as AgentStatus)).length;
@@ -50,7 +50,7 @@ export function AgentMenu() {
   const selectTeam = (teamId: string | null) => useBrainFocus.setState({ teamId, agentId: null, selectedTeamId: teamId, brainAgentId: null });
 
   const [given, setGiven] = useState('');
-  // a task goes to ORIGIN's runner, the only thing that does real work
+  // a task goes to JARVIS's runner, the only thing that does real work
   const give = async () => {
     if (!agents[to] || !task.trim()) return;
     const r = await giveTask(useStore.getState().doc, to, task);

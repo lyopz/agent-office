@@ -1,5 +1,5 @@
 // Structured operations: the only way the brain's document changes. Manual
-// UI edits, ORIGIN's branches and approvals all produce `DocOp[]`, which are
+// UI edits, JARVIS's branches and approvals all produce `DocOp[]`, which are
 // applied atomically: one error and nothing changes.
 import { produce, type Draft } from 'immer';
 import type { Agent, AlertSettings, AppearanceSettings, BankSkill, ControlSettings, KnowledgeEntry, OfficeDoc, Project, SkillRequest, ThemeDef } from '../model/types';

@@ -42,10 +42,10 @@ export default function BrainSwitcher({ teams, agents, totalAgents }: { teams: T
       {open && <section className="brain-switch-popover" id="brain-switch-popover" role="dialog" aria-label="Choose an agent brain" onWheel={(event) => event.stopPropagation()}>
         <header className="brain-switch-head"><span><Command size={13} /> WORKSPACE BRAINS</span><button aria-label="Close brain menu" onClick={() => setOpen(false)}><X size={14} /></button></header>
         <button className={`brain-choice main-choice${!active && !activeAgent ? ' is-selected' : ''}`} onClick={() => select(null)}>
-          <span className="brain-choice-mark root-mark"><Brain size={16} /></span><span className="brain-choice-copy"><b>Main Brain</b><small>ORIGIN and every branch it grew</small></span><span className="brain-choice-count">{totalAgents}</span>
+          <span className="brain-choice-mark root-mark"><Brain size={16} /></span><span className="brain-choice-copy"><b>Main Brain</b><small>JARVIS and every branch it grew</small></span><span className="brain-choice-count">{totalAgents}</span>
         </button>
         <div className="brain-switch-label">SPECIALIST BRAINS <span>{teams.length}</span></div>
-        {!teams.length && <p className="brain-switch-empty">Nothing here yet. A specialist brain, such as Engineering, appears once ORIGIN creates that skill.</p>}
+        {!teams.length && <p className="brain-switch-empty">Nothing here yet. A specialist brain, such as Engineering, appears once JARVIS creates that skill.</p>}
         <div className="brain-choice-list">{teams.map((team) => <button key={team.id} className={`brain-choice${active?.id === team.id && !activeAgent ? ' is-selected' : ''}`} onClick={() => select(team.id)}>
           <span className="brain-choice-mark" style={{ '--brain-color': team.color } as CSSProperties & { '--brain-color': string }}><i /></span><span className="brain-choice-copy"><b>{team.name} Brain</b><small>{team.agentIds.length === 1 ? '1 skill agent' : `${team.agentIds.length} skill agents`}</small></span><span className="brain-choice-count">{team.agentIds.length}</span>
         </button>)}</div>

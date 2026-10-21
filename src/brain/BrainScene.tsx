@@ -35,9 +35,9 @@ function treeKey(agents: Record<string, Agent>, teams: Team[]) {
   return JSON.stringify([Object.values(agents).map((a) => [a.id, a.identity.name, a.skills.supervisorId, a.identity.department, a.branch?.kind ?? '']).sort(), teams.map((t) => [t.id, t.color])]);
 }
 /**
- * The agents the brain shows: ORIGIN and the branches it grew (its ventures
+ * The agents the brain shows: JARVIS and the branches it grew (its ventures
  * and their skill agents). The other agents still exist and work; they just
- * aren't nerves. With no ORIGIN, every agent is shown.
+ * aren't nerves. With no JARVIS, every agent is shown.
  */
 export function brainAgents(agents: Record<string, Agent>): Agent[] {
   const all = Object.values(agents);
@@ -390,7 +390,7 @@ export default function BrainScene() {
         const busy = Object.keys(t.nodes).filter((id) => BUSY.has(st.runtime.agents[id]?.status ?? '') && t.nodes[id].depth > 0);
         const id = busy.length ? busy[Math.floor(Math.random() * busy.length)] : null;
         if (id) outTo(id, t.nodes[id].color);
-        // ORIGIN's live run: its core fires while the runner works
+        // JARVIS's live run: its core fires while the runner works
         if (useOrigin.getState().status?.running && t.rootId) { const rn = nodes.find((q) => q.id === t.rootId); if (rn) { rn.flash = 1; ring(rn.pos, t.nodes[t.rootId].color, rn.base); } }
         if (buds.length && Math.random() < 0.35) { const b = buds[Math.floor(Math.random() * buds.length)]; if (b.grow >= 1) { b.sprite.scale.multiplyScalar(1.8); ring(b.pos, b.owner ? '#ffd27a' : '#9ff4ff', 0.06); } }
         nextAmbient = now + (busy.length ? 650 : 1800) + Math.random() * 600;

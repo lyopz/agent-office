@@ -53,7 +53,7 @@ function Projects() {
         })}
         {!projects.length && <tr><td colSpan={6} className="muted">No projects yet.</td></tr>}
       </tbody></table>
-      <p className="note">ORIGIN's real spend is under ORIGIN runs on the brain page.</p>
+      <p className="note">JARVIS's real spend is under JARVIS runs on the brain page.</p>
     </div>
   );
 }

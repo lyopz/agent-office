@@ -67,7 +67,7 @@ describe('each agent gets its own SKILL.md', () => {
     let doc = creatorBrain();
     doc = applyOps(doc, branchAgentOps(doc, ORIGIN_ID, { id: 'agent_etsy', name: 'ETSY', specialty: 'Etsy store', purpose: 'Sell prints', skill: 'Ventures', window: window_ }).ops).doc;
     expect(agentsNeedingSkillFile(doc, { tasks: [] })).toEqual(['agent_etsy']); // every agent but ORIGIN
-    expect(skillFileBrief(doc, 'agent_etsy')).toMatch(/Venture: ETSY, Etsy store, created by ORIGIN/);
+    expect(skillFileBrief(doc, 'agent_etsy')).toMatch(/Venture: ETSY, Etsy store, created by JARVIS/);
     const req = { id: 't', title: '', detail: '', status: 'stopped' as const, by: 'owner' as const, createdAt: '', kind: 'skill-file' as const, agentId: 'agent_etsy' };
     expect(agentsNeedingSkillFile(doc, { tasks: [{ ...req, version: SKILL_FILE_VERSION }] })).toEqual([]);
     expect(agentsNeedingSkillFile(doc, { tasks: [{ ...req, version: 1 }] })).toEqual(['agent_etsy']); // an old-format request doesn't count

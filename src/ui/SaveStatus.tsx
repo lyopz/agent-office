@@ -1,6 +1,6 @@
 // Save status in the top bar (last save time, unsaved-changes indicator, Save now) and the
 // autosave loop. Saving is always on and always local (this browser, or files in the desktop
-// app): shortly after every change, whenever one of ORIGIN's tasks finishes, every 60 s, and
+// app): shortly after every change, whenever one of JARVIS's tasks finishes, every 60 s, and
 // once more when the page is hidden or closed. The repository skips the write when the content
 // hash matches the last successful save, so an idle brain never rewrites storage.
 import { useEffect, useState } from 'react';
@@ -25,7 +25,7 @@ export function useAutosave(intervalMs = AUTOSAVE_INTERVAL_MS) {
       if (pending) clearTimeout(pending);
       pending = setTimeout(() => { pending = null; auto(); }, AFTER_CHANGE_MS);
     });
-    // a task ORIGIN finishes is a save
+    // a task JARVIS finishes is a save
     const offTasks = useOrigin.subscribe((s, prev) => {
       const was = new Set((prev.status?.tasks ?? []).filter((x) => x.status === 'done').map((x) => x.id));
       if ((s.status?.tasks ?? []).some((x) => x.status === 'done' && !was.has(x.id)) && prev.status) auto();

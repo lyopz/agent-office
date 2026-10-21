@@ -35,7 +35,7 @@ export function RecoveryDialog() {
           {downloaded && <p className="muted" role="status">{downloaded}</p>}
           {confirmFresh && (
             <div className="recovery-confirm" role="group" aria-label="Confirm start fresh">
-              <p>Start a fresh brain with only ORIGIN? It will be saved as your current brain{rec.backup ? ', and the backup is kept' : ''}.{rec.raw ? (rec.damagedName ? ' The copy of the damaged data stays.' : ' The damaged data could not be kept, so download it first if you want it.') : ''}</p>
+              <p>Start a fresh brain with only JARVIS? It will be saved as your current brain{rec.backup ? ', and the backup is kept' : ''}.{rec.raw ? (rec.damagedName ? ' The copy of the damaged data stays.' : ' The damaged data could not be kept, so download it first if you want it.') : ''}</p>
               <div className="row" style={{ gap: 6 }}>
                 <button className="btn" onClick={() => setConfirmFresh(false)} autoFocus>Go back</button>
                 <button className="btn danger" onClick={() => resolveRecovery('fresh')}>Yes, start fresh</button>

@@ -19,9 +19,9 @@ export function TopBar() {
   useOriginPoll();
   const origin = useOrigin((o) => o.status);
   const prov = origin?.configured
-    ? { kind: 'live', label: origin.running ? 'ORIGIN: working' : 'ORIGIN: live', detail: `${origin.model} · $${origin.spentUsd.toFixed(2)} of $${origin.capUsd} this month${origin.nextScheduledAt ? ` · next run ${new Date(origin.nextScheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}` }
-    : origin ? { kind: 'off', label: 'ORIGIN: no key', detail: 'The runner is up but has no API key. In the app folder run npm.cmd run set-key once, then restart the runner.' }
-    : { kind: 'off', label: 'ORIGIN: offline', detail: 'The live runner is not running. On your PC run: npm.cmd run origin' };
+    ? { kind: 'live', label: origin.running ? 'JARVIS: working' : 'JARVIS: live', detail: `${origin.model} · $${origin.spentUsd.toFixed(2)} of $${origin.capUsd} this month${origin.nextScheduledAt ? ` · next run ${new Date(origin.nextScheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}` }
+    : origin ? { kind: 'off', label: 'JARVIS: no key', detail: 'The runner is up but has no API key. In the app folder run npm.cmd run set-key once, then restart the runner.' }
+    : { kind: 'off', label: 'JARVIS: offline', detail: 'The live runner is not running. On your PC run: npm.cmd run origin' };
 
   const exportFile = async () => {
     const r = await saveFile(`${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.brain.json`, s.exportText());
@@ -72,7 +72,7 @@ function VersionsMenu({ onClose }: { onClose: () => void }) {
         <button className="btn sm" onClick={() => { s.resetToSaved(); onClose(); }}>Reset to last save</button>
         <button className="btn sm" title="Store a copy of this brain as a version you can restore later" onClick={() => { s.saveVersion(`${doc.name} (duplicate)`); force((x) => x + 1); }}>Duplicate brain</button>
       </div>
-      <button className="btn sm primary" style={{ marginTop: 6, width: '100%', justifyContent: 'center' }} onClick={() => confirmAction({ title: 'Start a fresh brain?', confirmLabel: 'Start fresh', body: 'Replaces the current brain with a new one where only ORIGIN is shown. Undo brings your current brain back, and saved versions are kept.', onConfirm: () => { s.newBrain(); onClose(); } })}>Start a fresh brain</button>
+      <button className="btn sm primary" style={{ marginTop: 6, width: '100%', justifyContent: 'center' }} onClick={() => confirmAction({ title: 'Start a fresh brain?', confirmLabel: 'Start fresh', body: 'Replaces the current brain with a new one where only JARVIS is shown. Undo brings your current brain back, and saved versions are kept.', onConfirm: () => { s.newBrain(); onClose(); } })}>Start a fresh brain</button>
       <div className="label" style={{ margin: '10px 0 4px' }}>Saved versions ({versions.length})</div>
       {versions.length === 0 && <div className="muted small">None yet.</div>}
       <div style={{ maxHeight: 220, overflow: 'auto' }}>

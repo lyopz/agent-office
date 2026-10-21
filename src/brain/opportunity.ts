@@ -1,16 +1,16 @@
-// ORIGIN as the owner's Opportunity Research and Builder Agent, and the rules
-// for growing branches off it. ORIGIN finds and tests ways to earn money; the
+// JARVIS as the owner's Opportunity Research and Builder Agent, and the rules
+// for growing branches off it. JARVIS finds and tests ways to earn money; the
 // specialists it needs grow out of it as nerve branches, and those can grow
 // their own skill agents. Agents that create agents equip them with skills from
 // the owner's skill bank. Nothing here runs a model; server/origin-runner.mjs
-// runs ORIGIN live within the owner's cap.
+// runs JARVIS live within the owner's cap.
 import type { DocOp } from '../engine/ops';
 import type { Agent, BankSkill, KnowledgeEntry, OfficeDoc, RunWindow } from '../model/types';
 
 export const ORIGIN_ID = 'agent_origin';
 export const OPPORTUNITY_TAG = 'opportunity-agent';
 
-/** The owner's operating prompt for ORIGIN, word for word apart from spelling. */
+/** The owner's operating prompt for JARVIS, word for word apart from spelling. */
 export const OPPORTUNITY_PROMPT = `You are my Opportunity Research and Builder Agent. Your job is to discover, validate, and build realistic ways to earn money, including useful tools based on my interests, skills, workflows, and recurring problems.
 
 OPERATING SCHEDULE
@@ -140,8 +140,8 @@ FIRST RUN
 Check whether an operating allowance, authorized information sources, and scheduling support exist. If no allowance exists, request a capped budget before any chargeable execution or delegation. Never claim that a schedule, agent, product, or revenue exists unless you have verified it.`;
 
 /**
- * The owner's branching rules. Only ORIGIN starts branches, and each one is a
- * venture: a business or project ORIGIN took on (say, Roblox development). A
+ * The owner's branching rules. Only JARVIS starts branches, and each one is a
+ * venture: a business or project JARVIS took on (say, Roblox development). A
  * venture may only add the skill agents it needs to succeed (research, 3D
  * modelling, design, ads…); it can't start a different business, and skill
  * agents can't add anyone. Running any of them inside a work window is a child
@@ -156,11 +156,11 @@ The owner changed your operating schedule: wake once every 2 hours and work at m
 WORK WINDOWS PER BRANCH
 Each venture and skill agent gets its own work window sized to its task, not your hourly window. For example, research may need 10 minutes every 5 hours while design needs 5 minutes every hour. Set each window from your own research on what the task needs, record the reason, and change it when the evidence changes. The owner can override any window. A window is a plan until the owner approves the scheduler and the spend it implies; never start one without that approval.`;
 
-/** ORIGIN's own window from the owner's prompt: once an hour, at most 10 minutes. */
-export const ORIGIN_WINDOW: RunWindow = { everyMinutes: 120, maxMinutes: 10, setBy: 'owner', reason: 'Owner\'s decision (2026-10-21): 10 minutes every 2 hours, plus a manual 10-minute run from ORIGIN\'s node. Spending is limited by the tasks the owner approves.' };
+/** JARVIS's own window from the owner's prompt: once an hour, at most 10 minutes. */
+export const ORIGIN_WINDOW: RunWindow = { everyMinutes: 120, maxMinutes: 10, setBy: 'owner', reason: 'Owner\'s decision (2026-10-21): 10 minutes every 2 hours, plus a manual 10-minute run from JARVIS\'s node. Spending is limited by the tasks the owner approves.' };
 export const MANUAL_RUN_MINUTES = 10;
 
-/** Starting windows ORIGIN suggests for a new specialist, by team, until its own research says otherwise. */
+/** Starting windows JARVIS suggests for a new specialist, by team, until its own research says otherwise. */
 export const SUGGESTED_WINDOWS: Record<string, Omit<RunWindow, 'setBy'>> = {
   Research: { everyMinutes: 300, maxMinutes: 10, reason: 'Market evidence changes slowly; a check every 5 hours avoids repeating research.' },
   Creative: { everyMinutes: 60, maxMinutes: 5, reason: 'Design iterates in short passes against feedback.' },
@@ -174,7 +174,7 @@ export const SUGGESTED_WINDOWS: Record<string, Omit<RunWindow, 'setBy'>> = {
   Advertising: { everyMinutes: 360, maxMinutes: 5, reason: 'Ad results need hours of data between checks.' },
   Ventures: { everyMinutes: 60, maxMinutes: 5, reason: 'A venture checks its skill agents\' progress and plans the next step.' },
 };
-export const suggestedWindow = (team: string): RunWindow => ({ ...(SUGGESTED_WINDOWS[team] ?? { everyMinutes: 240, maxMinutes: 5, reason: 'Default until ORIGIN researches this task.' }), setBy: 'origin' });
+export const suggestedWindow = (team: string): RunWindow => ({ ...(SUGGESTED_WINDOWS[team] ?? { everyMinutes: 240, maxMinutes: 5, reason: 'Default until JARVIS researches this task.' }), setBy: 'origin' });
 
 /** "10 min every 5 h" */
 export function describeWindow(w: RunWindow | undefined): string {
@@ -184,17 +184,17 @@ export function describeWindow(w: RunWindow | undefined): string {
   return `${w.maxMinutes} min every ${every}`;
 }
 
-/** The record ORIGIN keeps between runs. Starts honest: nothing is approved or connected yet. */
+/** The record JARVIS keeps between runs. Starts honest: nothing is approved or connected yet. */
 const MEMORY: { id: string; title: string; summary: string }[] = [
-  { id: 'kb_opp_status', title: 'Opportunity agent: first-run status', summary: 'Operating allowance: none approved. Authorized information sources: none yet. Scheduling: not set up; the app cannot wake ORIGIN on its own, so the hourly 10-minute window, and each specialist’s own window, need an external scheduler the owner approves. Model provider: simulated. Actual costs: unknown. Actual revenue: none recorded.' },
+  { id: 'kb_opp_status', title: 'Opportunity agent: first-run status', summary: 'Operating allowance: none approved. Authorized information sources: none yet. Scheduling: not set up; the app cannot wake JARVIS on its own, so the hourly 10-minute window, and each specialist’s own window, need an external scheduler the owner approves. Model provider: simulated. Actual costs: unknown. Actual revenue: none recorded.' },
   { id: 'kb_opp_backlog', title: 'Opportunity backlog', summary: 'Empty. Each idea needs: customer, problem worth paying for, offer, way to reach customers, pricing hypothesis, cheap disproving test, and dated sources. Keep at most one active build.' },
   { id: 'kb_opp_approvals', title: 'Spending approvals and limits', summary: 'None. Each approval records purpose, maximum total, recurring charges, stop condition and expiry date. Silence is never approval.' },
   { id: 'kb_opp_ledger', title: 'Actual costs and revenue', summary: 'No entries. Unknown costs are recorded as unknown, never zero. Projections, interest and page views are not revenue.' },
   { id: 'kb_opp_rejected', title: 'Rejected ideas', summary: 'None yet. Record each rejected idea with the reason and the evidence that disproved it.' },
 ];
 
-/** ORIGIN's role, instructions and starting memory, applied to an office that has an ORIGIN agent. */
-/** ORIGIN's built-in bank skill: stop a task on its own when its spend pattern says it will cost too much. */
+/** JARVIS's role, instructions and starting memory, applied to an office that has an JARVIS agent. */
+/** JARVIS's built-in bank skill: stop a task on its own when its spend pattern says it will cost too much. */
 export const BUDGET_WATCH_ID = 'skill_budget_watch';
 export const BUDGET_WATCH: Omit<BankSkill, 'createdAt'> = {
   id: BUDGET_WATCH_ID, name: 'Budget watch', tags: ['budget', 'origin'],
@@ -215,7 +215,7 @@ export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
       identity: { title: 'Opportunity Research & Builder Agent', bio, roleDescription: bio },
       skills: { primaryRole: 'Opportunity Research & Builder Agent', skills: ['opportunity research', 'demand validation', 'experiment design', 'agent architecture', 'unit economics'], expertise: ['opportunity research', 'validation', 'agent creation'] },
       permissions: { requireApprovalFor: ['spend', 'publish', 'external-message', 'create-account', 'delete'] },
-      ai: { executionMode: 'manual-approval', agentInstructions: `${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}`, systemInstructions: `You are ORIGIN, the owner's Opportunity Research and Builder Agent and the root of this brain.\n\n${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}\n\nBe accurate about what is simulated and what has actually run.` },
+      ai: { executionMode: 'manual-approval', agentInstructions: `${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}`, systemInstructions: `You are JARVIS, the owner's Opportunity Research and Builder Agent and the root of this brain.\n\n${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}\n\nBe accurate about what is simulated and what has actually run.` },
       // credits are this app's illustrative budget, not money; real spend needs the owner's approval
       budget: { monthlyCredits: 0, approvalAbove: 0 },
       schedule: { runWindow: ORIGIN_WINDOW },
@@ -225,7 +225,7 @@ export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
   if (!origin.bankSkills?.includes(BUDGET_WATCH_ID)) ops.push({ op: 'agent.setBankSkills', id: ORIGIN_ID, skillIds: [...(origin.bankSkills ?? []), BUDGET_WATCH_ID] });
   const now = new Date().toISOString();
   for (const m of MEMORY) {
-    if (doc.library[m.id]) continue; // keep what ORIGIN has already recorded
+    if (doc.library[m.id]) continue; // keep what JARVIS has already recorded
     const entry: KnowledgeEntry = { ...m, topic: 'opportunity research', tags: [OPPORTUNITY_TAG, 'memory'], sources: [], createdAt: now, authorAgentId: ORIGIN_ID, projectId: null, confidence: 1, verification: 'verified', sensitive: false, allowedAgentIds: [] };
     ops.push({ op: 'library.upsert', entry });
   }
@@ -233,10 +233,10 @@ export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
 }
 
 export const isOpportunityOrigin = (doc: OfficeDoc) => !!doc.agents[ORIGIN_ID]?.ai.agentInstructions.startsWith(OPPORTUNITY_PROMPT.slice(0, 60));
-/** ORIGIN has the prompt but older rules (an earlier version of the branch notes or schedule). */
+/** JARVIS has the prompt but older rules (an earlier version of the branch notes or schedule). */
 export const originOutdated = (doc: OfficeDoc) => isOpportunityOrigin(doc) && (doc.agents[ORIGIN_ID].ai.agentInstructions !== `${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}` || !doc.agents[ORIGIN_ID].bankSkills?.includes(BUDGET_WATCH_ID));
 
-/** How to design an agent; ORIGIN uses it for ventures, ventures for their skill agents. */
+/** How to design an agent; JARVIS uses it for ventures, ventures for their skill agents. */
 export const AGENT_BLUEPRINT = `HOW TO CREATE AN AGENT
 Propose a new agent only for a specific, lasting need. Give it: a short name; one specialty; the exact outcome it owns and the deliverable it hands back; the evidence and context it starts with; its permitted tools; a work window sized to the task, with the reason; a spending limit (zero until the owner approves one); the skills it uses from the owner's skill bank; and what it must escalate. Pick bank skills by their description and give an agent only the ones its work needs. If the bank has no skill for the work, say which skill is missing so the owner can add it; never invent one. Write each new agent its own SKILL.md: a detailed, specific playbook for its job (outcome, steps, sources, deliverable, quality checks, limits, approvals, escalation). Check that no existing agent already owns the work. The owner approves every new agent before it exists. A venture you create must know this same blueprint so it can design its own skill agents.`;
 
@@ -250,14 +250,14 @@ When one of your skill agents files a skill request, judge only whether it helps
 
 export type BranchKind = 'root' | 'core' | 'venture' | 'skill';
 
-/** ORIGIN is the root; agents with no branch record are ORIGIN's core staff, who don't grow branches. */
+/** JARVIS is the root; agents with no branch record are JARVIS's core staff, who don't grow branches. */
 export function branchKind(doc: Pick<OfficeDoc, 'agents'>, id: string): BranchKind | null {
   const a = doc.agents[id];
   if (!a) return null;
   return id === ORIGIN_ID ? 'root' : a.branch?.kind ?? 'core';
 }
 
-/** What may grow off `parentId`: ORIGIN starts ventures, a venture adds skills, nobody else adds anything. */
+/** What may grow off `parentId`: JARVIS starts ventures, a venture adds skills, nobody else adds anything. */
 export function growKind(doc: Pick<OfficeDoc, 'agents'>, parentId: string): 'venture' | 'skill' | null {
   const k = branchKind(doc, parentId);
   return k === 'root' ? 'venture' : k === 'venture' ? 'skill' : null;
@@ -276,7 +276,7 @@ export const SKILL_LABELS: Record<string, string> = { '3D Design': '3D modelling
 export const VENTURE_TEAM = 'Ventures';
 
 export function ventureInstructions(name: string, focus: string) {
-  return `You are ${name}, the venture branch for: ${focus}. ORIGIN started you. Work only on this venture. You may propose skill agents only for skills this venture needs to succeed, such as research, 3D modelling, design or ads; each works for this venture alone. You may not start or pursue a different business; send any new business idea to ORIGIN's backlog. The owner approves every new skill agent.\n\n${VENTURE_REVIEW}`;
+  return `You are ${name}, the venture branch for: ${focus}. JARVIS started you. Work only on this venture. You may propose skill agents only for skills this venture needs to succeed, such as research, 3D modelling, design or ads; each works for this venture alone. You may not start or pursue a different business; send any new business idea to JARVIS's backlog. The owner approves every new skill agent.\n\n${VENTURE_REVIEW}`;
 }
 export function skillInstructions(name: string, skill: string, venture: string, purpose: string) {
   return `You are ${name}, the ${skill} skill for the ${venture} venture. ${purpose}\n\nWork only on ${skill} for ${venture}. You cannot create agents or start other ventures; raise anything outside your skill with ${venture}.`;
@@ -306,10 +306,10 @@ export function agentPrompt(doc: OfficeDoc, id: string): string {
 
 export interface BranchSpec { id: string; name: string; specialty: string; purpose: string; skill: string; window: RunWindow; bankSkillIds?: string[] }
 
-/** The ops that add a venture under ORIGIN or a skill agent under a venture, following the branch rules. */
+/** The ops that add a venture under JARVIS or a skill agent under a venture, following the branch rules. */
 export function branchAgentOps(doc: OfficeDoc, parentId: string, spec: BranchSpec): { ops: DocOp[]; error: string | null } {
   const kind = growKind(doc, parentId);
-  if (!kind) return { ops: [], error: 'Only ORIGIN can start a venture, and only a venture can add skill agents.' };
+  if (!kind) return { ops: [], error: 'Only JARVIS can start a venture, and only a venture can add skill agents.' };
   const parentName = doc.agents[parentId].identity.name;
   const team = kind === 'venture' ? VENTURE_TEAM : spec.skill;
   const scope = kind === 'venture' ? ventureInstructions(spec.name, spec.specialty) : skillInstructions(spec.name, SKILL_LABELS[spec.skill] ?? spec.skill, parentName, spec.purpose);

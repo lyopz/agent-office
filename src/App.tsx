@@ -12,7 +12,7 @@ import { useApplyTheme } from './ui/ThemeEditor';
 import { useAutosave } from './ui/SaveStatus';
 import { RecoveryDialog } from './ui/RecoveryDialog';
 
-/** One line at a time. Only real events reach it: what you just did, and ORIGIN's runner (see useOrigin). */
+/** One line at a time. Only real events reach it: what you just did, and JARVIS's runner (see useOrigin). */
 function Toast() {
   const toast = useStore((s) => s.toast);
   const [shown, setShown] = useState<typeof toast>(null);

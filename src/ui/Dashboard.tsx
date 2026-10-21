@@ -28,7 +28,7 @@ export function Dashboard() {
 
   return (
     <div className="dash" aria-label="System dashboard">
-      <div className="span-12 note">Nothing here is simulated. ORIGIN's work, tasks and spend are under ORIGIN runs on the brain page; tasks you give an agent go to ORIGIN there.</div>
+      <div className="span-12 note">Nothing here is simulated. JARVIS's work, tasks and spend are under JARVIS runs on the brain page; tasks you give an agent go to JARVIS there.</div>
       {[
         ['Active agents', `${active}/${agents.length}`], ['Tasks completed', done.length], ['In progress', inProgress.length],
         ['Queued', queued.length], ['Agents in error', errorsAgents.length]

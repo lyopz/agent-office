@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, CornerDownLeft, Maximize2, Minimize2, TerminalSquare } from 'lucide-react';
+import { ChevronDown, ChevronUp, CornerDownLeft, Maximize2, Mic, MicOff, Minimize2, TerminalSquare } from 'lucide-react';
 import { useOrigin } from '../brain/useOrigin';
 import { askOrigin, giveTask } from '../brain/originLink';
+import { canListen, listen, say, stopListening } from './voice';
+
+/** The main agent's own name; older runners still answer as ORIGIN. */
+const isLeader = (by?: string | null) => !by || by === 'JARVIS' || by === 'ORIGIN';
 
 type Entry = { id: number; type: 'user' | 'answer' | 'error'; text: string; meta?: string };
 
 let nextId = 1;
 
 /**
- * The console is a direct line to ORIGIN. Ask: a question answered right away by
+ * The console is a direct line to JARVIS. Ask: a question answered right away by
  * the best-suited agent (one short model call on the same key and cap). Task: work
- * for ORIGIN, approved by your words; it becomes ORIGIN's focus, ahead of creating
+ * for JARVIS, approved by your words; it becomes JARVIS's focus, ahead of creating
  * agents or its own tasks, and starts right away.
  */
 export function Console() {
@@ -41,10 +45,22 @@ export function Console() {
   useEffect(() => {
     if (loaded.current || !status?.asks?.length) return;
     loaded.current = true;
-    setEntries(status.asks.slice(0, 10).reverse().flatMap((a) => [{ id: nextId++, type: 'user' as const, text: a.q }, { id: nextId++, type: 'answer' as const, text: a.a, meta: a.by && a.by !== 'ORIGIN' ? `answered by ${a.by}` : undefined }]));
+    setEntries(status.asks.slice(0, 10).reverse().flatMap((a) => [{ id: nextId++, type: 'user' as const, text: a.q }, { id: nextId++, type: 'answer' as const, text: a.a, meta: isLeader(a.by) ? undefined : `answered by ${a.by}` }]));
   }, [status]);
 
-  const run = async (q: string) => {
+  // the mic: speak, and it is sent at once in the current mode; spoken questions get their answer read aloud
+  const [listening, setListening] = useState(false);
+  const mic = async () => {
+    if (listening) { stopListening(); return; }
+    setListening(true);
+    try {
+      const heard = await listen();
+      if (heard.ok) await run(heard.text, true);
+      else add({ type: 'error', text: heard.error });
+    } finally { setListening(false); }
+  };
+
+  const run = async (q: string, spoken = false) => {
     const question = q.trim();
     if (!question || busy) return;
     setHistory((h) => [question, ...h].slice(0, 50)); setHIdx(-1); setText('');
@@ -53,15 +69,15 @@ export function Console() {
     try {
       if (mode === 'task') {
         const t = await giveTask(question);
-        if (!t) add({ type: 'error', text: "ORIGIN's runner isn't running. Open the desktop app (or npm.cmd run origin)." });
+        if (!t) add({ type: 'error', text: "JARVIS's runner isn't running. Open the desktop app (or npm.cmd run origin)." });
         else if (!t.ok) add({ type: 'error', text: t.reason });
-        else add({ type: 'answer', text: `Got it. This is ORIGIN's focus now, ahead of everything else${t.task.count ? `: ${t.task.count} items, each sent to you to approve or reject one by one under Focus in ORIGIN runs` : ''}. ${t.started ? 'Working on it now.' : 'It starts as soon as the current run ends.'}`, meta: 'task approved' });
+        else add({ type: 'answer', text: `Got it. This is JARVIS's focus now, ahead of everything else${t.task.count ? `: ${t.task.count} items, each sent to you to approve or reject one by one under Focus in JARVIS runs` : ''}. ${t.started ? 'Working on it now.' : 'It starts as soon as the current run ends.'}`, meta: 'task approved' });
         return;
       }
       const r = await askOrigin(question);
-      if (!r) add({ type: 'error', text: "ORIGIN's runner isn't running. Start it on your PC with npm.cmd run origin." });
+      if (!r) add({ type: 'error', text: "JARVIS's runner isn't running. Start it on your PC with npm.cmd run origin." });
       else if (!r.ok) add({ type: 'error', text: r.reason });
-      else add({ type: 'answer', text: r.answer, meta: [r.by && r.by !== 'ORIGIN' ? `answered by ${r.by}` : '', r.costUsd == null ? 'cost unknown' : `$${r.costUsd.toFixed(4)}`, r.approved?.length ? `approved: ${r.approved.join('; ')}${r.started ? ' · started' : ''}` : ''].filter(Boolean).join(' · ') });
+      else { if (spoken) say(r.answer); add({ type: 'answer', text: r.answer, meta: [isLeader(r.by) ? '' : `answered by ${r.by}`, r.costUsd == null ? 'cost unknown' : `$${r.costUsd.toFixed(4)}`, r.approved?.length ? `approved: ${r.approved.join('; ')}${r.started ? ' · started' : ''}` : ''].filter(Boolean).join(' · ') }); }
     } finally { setBusy(false); }
   };
 
@@ -71,7 +87,7 @@ export function Console() {
     if (e.key === 'ArrowDown') { const i = hIdx - 1; setHIdx(i); setText(i >= 0 ? history[i] : ''); e.preventDefault(); }
   };
 
-  const badge = !checked ? { kind: 'sim', label: 'checking' } : !status ? { kind: 'off', label: 'runner off' } : !status.configured ? { kind: 'off', label: 'no API key' } : { kind: 'live', label: status.running ? 'ORIGIN working' : 'ORIGIN live' };
+  const badge = !checked ? { kind: 'sim', label: 'checking' } : !status ? { kind: 'off', label: 'runner off' } : !status.configured ? { kind: 'off', label: 'no API key' } : { kind: 'live', label: status.running ? 'JARVIS working' : 'JARVIS live' };
 
   return (
     <section className={`console${open ? (big ? ' big' : '') : ' collapsed'}`} aria-label="Command center">
@@ -90,15 +106,16 @@ export function Console() {
                 {e.text}{e.meta && <span className="small muted"> · {e.meta}</span>}
               </div>
             ))}
-            {busy && <div className="muted">{mode === 'task' ? 'Giving ORIGIN the task…' : 'ORIGIN is answering…'}</div>}
+            {busy && <div className="muted">{mode === 'task' ? 'Giving JARVIS the task…' : 'JARVIS is answering…'}</div>}
           </div>
           <div className="console-input">
             <div className="seg" role="group" aria-label="Ask a question or give a task">
               <button className="btn sm" aria-pressed={mode === 'ask'} onClick={() => setMode('ask')} title="A question: answered right away by the best-suited agent">Ask</button>
-              <button className="btn sm" aria-pressed={mode === 'task'} onClick={() => setMode('task')} title="Work: ORIGIN's focus until done, starting now">Task</button>
+              <button className="btn sm" aria-pressed={mode === 'task'} onClick={() => setMode('task')} title="Work: JARVIS's focus until done, starting now">Task</button>
             </div>
             <span className="prompt">&gt;</span>
-            <input id="console-input" type="text" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} aria-label={mode === 'task' ? 'Task for ORIGIN' : 'Question for your agents'} placeholder={mode === 'task' ? 'A task for ORIGIN, e.g. make 5 items for my Etsy store' : 'Ask anything. It goes to the best-suited agent, or name one.'} disabled={busy} />
+            <input id="console-input" type="text" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} aria-label={mode === 'task' ? 'Task for JARVIS' : 'Question for your agents'} placeholder={mode === 'task' ? 'A task for JARVIS, e.g. make 5 items for my Etsy store' : 'Ask anything. It goes to the best-suited agent, or name one.'} disabled={busy} />
+            {canListen() && <button className={`btn sm${listening ? ' danger' : ''}`} disabled={busy && !listening} onClick={() => void mic()} aria-label={listening ? 'Stop listening' : 'Speak to JARVIS'} title={listening ? 'Listening… press to stop' : 'Speak to JARVIS. It is sent when you stop talking, and an answer is read aloud.'}>{listening ? <MicOff size={13} /> : <Mic size={13} />}{listening ? 'Listening…' : 'Speak'}</button>}
             <button className="btn sm primary" disabled={busy || !text.trim()} onClick={() => void run(text)}><CornerDownLeft size={13} />{mode === 'task' ? 'Do it' : 'Ask'}</button>
           </div>
         </>

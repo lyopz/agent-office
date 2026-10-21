@@ -23,13 +23,13 @@ function General() {
     <div className="dash">
       <div className="card span-6">
         <h4>Persistence</h4>
-        <p className="note">Everything saves on this computer, always: shortly after every change and whenever one of ORIGIN's tasks finishes. In the desktop app saves are files in its data folder; in a browser they stay in that browser. ORIGIN's own runs, tasks and spend are saved by its runner in origin-data.</p>
+        <p className="note">Everything saves on this computer, always: shortly after every change and whenever one of JARVIS's tasks finishes. In the desktop app saves are files in its data folder; in a browser they stay in that browser. JARVIS's own runs, tasks and spend are saved by its runner in origin-data.</p>
       </div>
       <div className="card span-6">
         <h4>Keyboard shortcuts</h4>
         <Section title="">
           <table className="data"><tbody>
-            {[['Ctrl+Z / Ctrl+Shift+Z', 'Undo / redo'], ['Ctrl+S', 'Save'], ['Del', 'Delete the selected agent'], ['/', 'Ask ORIGIN in the console'], ['Esc', 'Clear selection']].map(([k, v]) => <tr key={k}><td><span className="kbd">{k}</span></td><td>{v}</td></tr>)}
+            {[['Ctrl+Z / Ctrl+Shift+Z', 'Undo / redo'], ['Ctrl+S', 'Save'], ['Del', 'Delete the selected agent'], ['/', 'Ask JARVIS in the console'], ['Esc', 'Clear selection']].map(([k, v]) => <tr key={k}><td><span className="kbd">{k}</span></td><td>{v}</td></tr>)}
           </tbody></table>
         </Section>
       </div>

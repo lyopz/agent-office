@@ -65,7 +65,7 @@ export interface Schedule {
 export interface RunWindow {
   everyMinutes: number;       // wake once per this many minutes
   maxMinutes: number;         // and work for at most this long
-  setBy: 'origin' | 'owner';  // ORIGIN proposes from its productivity research; the owner can override
+  setBy: 'origin' | 'owner';  // JARVIS proposes from its productivity research; the owner can override
   reason: string;
 }
 
@@ -93,7 +93,7 @@ export interface Agent {
   permissions: Permissions;
   archetype?: string;
   budget: AgentBudget;
-  /** Where the agent sits in the brain's branches (see brain/opportunity.ts); missing = not one of ORIGIN's branches. */
+  /** Where the agent sits in the brain's branches (see brain/opportunity.ts); missing = not one of JARVIS's branches. */
   branch?: AgentBranch;
   /** Skills from the owner's skill bank this agent uses (ids into doc.skillBank). */
   bankSkills?: ID[];
@@ -108,7 +108,7 @@ export interface BankSkill {
   createdAt: string;
 }
 
-/** A venture is a business ORIGIN started; a skill agent works for exactly one venture. */
+/** A venture is a business JARVIS started; a skill agent works for exactly one venture. */
 export interface SkillRequest {
   id: ID;
   fromAgentId: ID;            // the skill agent asking

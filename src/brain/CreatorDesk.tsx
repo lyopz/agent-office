@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, Check, FileText, GitBranch, Library, Mic2, Plus, ShieldCheck, Sparkles, Upload, X } from 'lucide-react';
+import { Check, FileText, GitBranch, Library, Mic2, Plus, ShieldCheck, Sparkles, Upload, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { RunWindow } from '../model/types';
 import { ORIGIN_ID, SKILL_LABELS, SKILL_TEAMS, VENTURE_TEAM, agentPrompt, branchAgentOps, describeWindow, growKind, isOpportunityOrigin, opportunityOriginOps, originOutdated, suggestedWindow } from './opportunity';
@@ -10,9 +10,10 @@ import { brainMap, syncOrigin, taskAction } from './originLink';
 import { growIdeaOps, ownerIdeaOps } from './ideas';
 import { useSkillFiles } from './skillFiles';
 import { useOrigin } from './useOrigin';
+import { say } from '../ui/voice';
 
-type DeskTab = 'ideas' | 'agent' | 'requests' | 'runs' | 'bank' | 'tutorial';
-const TABS: DeskTab[] = ['ideas', 'agent', 'requests', 'runs', 'bank', 'tutorial'];
+type DeskTab = 'ideas' | 'agent' | 'requests' | 'runs' | 'bank';
+const TABS: DeskTab[] = ['ideas', 'agent', 'requests', 'runs', 'bank'];
 const EVERY = [[15, 'every 15 min'], [30, 'every 30 min'], [60, 'every hour'], [120, 'every 2 hours'], [180, 'every 3 hours'], [300, 'every 5 hours'], [480, 'every 8 hours'], [720, 'every 12 hours'], [1440, 'once a day']] as const;
 
 export default function CreatorDesk() {
@@ -20,7 +21,7 @@ export default function CreatorDesk() {
   const library = doc.library;
   const leader = doc.agents.agent_origin ?? Object.values(doc.agents).find((a) => !a.skills.supervisorId) ?? null;
   const leaderId = leader?.id ?? null;
-  const leaderName = leader?.identity.name ?? 'ORIGIN';
+  const leaderName = leader?.identity.name ?? 'JARVIS';
   const [tab, setTab] = useState<DeskTab | null>(null);
   const [idea, setIdea] = useState('');
   const [fileName, setFileName] = useState('');
@@ -36,15 +37,15 @@ export default function CreatorDesk() {
   const [window_, setWindow] = useState<RunWindow>(suggestedWindow('Research'));
   const [agentSkills, setAgentSkills] = useState<string[]>([]);
   useSkillFiles();
-  // what waits for the owner in ORIGIN runs, shown on its button since notifications are off
+  // what waits for the owner in JARVIS runs, shown on its button since notifications are off
   const runner = useOrigin((st) => st.status);
   const waiting = (runner?.tasks.filter((t) => t.status === 'proposed').length ?? 0) + (runner?.agentProposals?.filter((p) => p.status === 'proposed' && !runner.autoAgents).length ?? 0);
-  // ORIGIN's rules come from the app: bring an older save up to date (new rules, the budget watch skill) once
+  // JARVIS's rules come from the app: bring an older save up to date (new rules, the budget watch skill) once
   useEffect(() => {
     const d = useStore.getState().doc;
-    if (isOpportunityOrigin(d) && originOutdated(d)) useStore.getState().commit(opportunityOriginOps(d), "Update ORIGIN's rules", { silent: true });
+    if (isOpportunityOrigin(d) && originOutdated(d)) useStore.getState().commit(opportunityOriginOps(d), "Update JARVIS's rules", { silent: true });
   }, []);
-  // keep the live runner on ORIGIN's current rules, bank skills and branches
+  // keep the live runner on JARVIS's current rules, bank skills and branches
   const originPrompt = useMemo(() => (doc.agents[ORIGIN_ID] ? [agentPrompt(doc, ORIGIN_ID), brainMap(doc), ...Object.keys(doc.agents).map((id) => agentPrompt(doc, id))].join('\n') : ''), [doc]);
   useEffect(() => {
     if (!originPrompt) return;
@@ -52,7 +53,7 @@ export default function CreatorDesk() {
     return () => clearTimeout(t);
   }, [originPrompt]);
   const growFrom = parentId && doc.agents[parentId] ? parentId : leaderId;
-  // only ORIGIN (starts ventures) and ventures (add skills) can grow branches
+  // only JARVIS (starts ventures) and ventures (add skills) can grow branches
   const parents = useMemo(() => Object.values(doc.agents).filter((a) => growKind(doc, a.id)).sort((a, b) => (a.id === leaderId ? -1 : b.id === leaderId ? 1 : a.identity.name.localeCompare(b.identity.name))), [doc, leaderId]);
   const kind = growFrom ? growKind(doc, growFrom) : null;
   const team = kind === 'venture' ? VENTURE_TEAM : agentDept;
@@ -89,7 +90,7 @@ export default function CreatorDesk() {
     } catch { setNotice('I could not read that file. Try a plain text, Markdown, JSON or CSV file.'); }
   };
 
-  // One idea in, one venture out: ORIGIN grows it into a venture at once, then picks the agents it needs; every one of them gets its own SKILL.md
+  // One idea in, one venture out: JARVIS grows it into a venture at once, then picks the agents it needs; every one of them gets its own SKILL.md
   const submitIdea = async () => {
     const text = `${idea.trim()}${fileText ? `\n\nAttached file: ${fileName}\n${fileText}` : ''}`.trim();
     if (!text) { setNotice('Type your idea first.'); return; }
@@ -119,8 +120,8 @@ export default function CreatorDesk() {
   };
 
   const setupOrigin = () => {
-    const r = useStore.getState().commit(opportunityOriginOps(doc), 'Make ORIGIN the Opportunity Research & Builder Agent');
-    setNotice(r.ok ? 'ORIGIN is now your Opportunity Research & Builder Agent. Its memory starts empty: no allowance, sources or schedule are approved yet.' : r.errors.join(' · '));
+    const r = useStore.getState().commit(opportunityOriginOps(doc), 'Make JARVIS the Opportunity Research & Builder Agent');
+    setNotice(r.ok ? 'JARVIS is now your Opportunity Research & Builder Agent. Its memory starts empty: no allowance, sources or schedule are approved yet.' : r.errors.join(' · '));
   };
   const pickTeam = (t: string) => { setAgentDept(t); if (window_.setBy === 'origin') setWindow(suggestedWindow(t)); };
   function pickParent(id: string | null) {
@@ -130,11 +131,8 @@ export default function CreatorDesk() {
   }
 
   const speak = () => {
-    if (!('speechSynthesis' in window)) { setNotice('Voice output is not available in this browser.'); return; }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(`I am ${leaderName}. I research the request, show evidence and costs, and prepare specialist agents for your approval. I will not claim a result until the work has actually run.`);
-    utterance.pitch = 0.72; utterance.rate = 0.91; utterance.volume = 0.9;
-    window.speechSynthesis.speak(utterance);
+    if (!('speechSynthesis' in window)) { setNotice('Voice output is not available here.'); return; }
+    say(`I am ${leaderName}. Speak to me with the mic in the command center, or type there. I research, grow your ventures and their agents, and ask you before using your accounts or spending.`);
   };
 
   return (
@@ -146,15 +144,14 @@ export default function CreatorDesk() {
         <button className="creator-action" onClick={() => { setTab('runs'); setNotice(''); }}><Sparkles size={14} /> {leaderName} runs {waiting > 0 && <span className="creator-count" title="Waiting for your approval">{waiting}</span>}</button>
         <button className="creator-action" onClick={() => { setTab('bank'); setNotice(''); }}><Library size={14} /> Skill bank <span className="creator-count">{doc.skillBank.length}</span></button>
         <button className="creator-action" onClick={() => { setTab('requests'); setRequestFrom(null); setNotice(''); }}><Plus size={14} /> Skill requests <span className="creator-count">{openRequests}</span></button>
-        {needsSetup && <button className="creator-action" onClick={setupOrigin} title="Give ORIGIN your Opportunity Research & Builder prompt and starting memory"><Sparkles size={14} /> {isOpportunityOrigin(doc) ? 'Update Opportunity agent rules' : 'Set up Opportunity agent'}</button>}
-        <button className="creator-action creator-tutorial" onClick={() => { setTab('tutorial'); setNotice(''); }}><BookOpen size={14} /> Tutorial</button>
+        {needsSetup && <button className="creator-action" onClick={setupOrigin} title="Give JARVIS your Opportunity Research & Builder prompt and starting memory"><Sparkles size={14} /> {isOpportunityOrigin(doc) ? 'Update Opportunity agent rules' : 'Set up Opportunity agent'}</button>}
         <button className="creator-voice" onClick={speak} title={`Hear ${leaderName}'s low-pitched voice`}><Mic2 size={14} /> Hear {leaderName}</button>
       </div>
 
       {tab && <div className="creator-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setTab(null); }}>
         <section className="creator-dialog" role="dialog" aria-modal="true" aria-labelledby="creator-title">
           <header className="creator-dialog-head">
-            <div><span className="creator-kicker"><Sparkles size={13} /> AGENT CREATOR / {leaderName}</span><h2 id="creator-title">{tab === 'ideas' ? 'Add an idea' : tab === 'agent' ? (kind === 'skill' ? 'Add a skill to a venture' : 'Start a venture branch') : tab === 'requests' ? 'Skill requests' : tab === 'runs' ? `${leaderName}'s runs and budget` : tab === 'bank' ? 'Skill bank' : 'A quick tour'}</h2></div>
+            <div><span className="creator-kicker"><Sparkles size={13} /> AGENT CREATOR / {leaderName}</span><h2 id="creator-title">{tab === 'ideas' ? 'Add an idea' : tab === 'agent' ? (kind === 'skill' ? 'Add a skill to a venture' : 'Start a venture branch') : tab === 'requests' ? 'Skill requests' : tab === 'runs' ? `${leaderName}'s runs and budget` : 'Skill bank'}</h2></div>
             <button className="creator-close" aria-label="Close dialog" onClick={() => setTab(null)}><X size={17} /></button>
           </header>
 
@@ -191,16 +188,6 @@ export default function CreatorDesk() {
           {tab === 'bank' && <SkillBank onNotice={setNotice} />}
           {tab === 'requests' && <SkillRequests fromId={requestFrom} onNotice={setNotice} />}
 
-          {tab === 'tutorial' && <div className="creator-body">
-            <ol className="creator-steps">
-              <li><b>Start with {leaderName}.</b><span>Type an idea under Add idea. {leaderName} makes it a venture, picks the agents it needs and writes each one its SKILL.md.</span></li>
-              <li><b>Attach context.</b><span>Upload a plain text, Markdown, JSON or CSV idea file. The app keeps its contents in the local office save.</span></li>
-              <li><b>Review evidence before money decisions.</b><span>Download the research packet and connect a live research provider to gather current sources. The current prototype does not look up the market yet.</span></li>
-              <li><b>Approve specialists deliberately.</b><span>{leaderName} starts each venture as a branch; a venture adds only the skill agents it needs, inspect its purpose and approval boundaries, then approve adding its local blueprint to the brain.</span></li>
-              <li><b>Share actual work safely.</b><span>Voice playback is generated by your browser. Workspaces and agents are local here; team access, live model research and shared mobile task intake need backend integrations.</span></li>
-            </ol>
-            <div className="creator-dialog-foot"><button className="creator-primary" onClick={() => setTab(null)}>Got it</button></div>
-          </div>}
           {notice && <div className="creator-notice" role="status">{notice}</div>}
         </section>
       </div>}

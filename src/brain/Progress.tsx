@@ -1,6 +1,6 @@
 import type { ProgressEntry } from './originLink';
 
-/** How far along a task is, as ORIGIN last reported it after a run. */
+/** How far along a task is, as JARVIS last reported it after a run. */
 export function ProgressBar({ pct, label }: { pct?: number | null; label?: string }) {
   const known = pct != null;
   return (

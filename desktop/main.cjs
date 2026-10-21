@@ -277,6 +277,32 @@ function registerSaveIpc() {
   handle('saves:info', () => saves.info(), { dir: '', current: '', backup: '', hasCurrent: false, hasBackup: false, damaged: [] });
 }
 
+// Voice input: the mic button asks for one spoken phrase. Windows' built-in offline speech
+// recognition (desktop/listen.ps1) hears it and returns the text; one listen at a time.
+let listener = null;
+function registerVoiceIpc() {
+  const trusted = (event) => isAppUrl(event.senderFrame?.url ?? '');
+  ipcMain.handle('voice:listen', (event) => new Promise((resolve) => {
+    if (!trusted(event)) return resolve({ ok: false, error: 'Not allowed.' });
+    if (process.platform !== 'win32') return resolve({ ok: false, error: 'Voice input in the desktop app needs Windows.' });
+    if (listener) { try { listener.kill(); } catch { /* already gone */ } }
+    let out = '';
+    const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'listen.ps1')], { windowsHide: true });
+    listener = ps;
+    const timer = setTimeout(() => { try { ps.kill(); } catch { /* gone */ } }, 40000);
+    ps.stdout.on('data', (d) => { out += d.toString('utf8'); });
+    ps.on('error', (e) => { clearTimeout(timer); if (listener === ps) listener = null; resolve({ ok: false, error: `Couldn't start speech recognition: ${e.message}` }); });
+    ps.on('close', () => {
+      clearTimeout(timer); if (listener === ps) listener = null;
+      const line = out.trim().split(/\r?\n/).pop() || '';
+      if (line.startsWith('OK ')) resolve({ ok: true, text: line.slice(3).trim() });
+      else if (line === 'NONE' || !line) resolve({ ok: false, error: "Didn't catch that. Press the mic and speak again." });
+      else resolve({ ok: false, error: `Speech recognition failed: ${line.replace(/^ERR /, '')}. Check that a microphone is plugged in and that Windows lets desktop apps use it (Settings > Privacy > Microphone).` });
+    });
+  }));
+  ipcMain.handle('voice:stop', (event) => { if (trusted(event) && listener) { try { listener.kill(); } catch { /* gone */ } listener = null; } return true; });
+}
+
 function createWindow() {
   const icon = path.join(ROOT, 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
   const win = new BrowserWindow({
@@ -335,6 +361,7 @@ if (!app.requestSingleInstanceLock()) {
     serveApp();
     hardenSession();
     registerSaveIpc();
+    registerVoiceIpc();
     createWindow();
     watchForUpdates();
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

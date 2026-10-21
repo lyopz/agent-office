@@ -1,5 +1,5 @@
 // The API the desktop app's preload script (desktop/preload.cjs) exposes as `window.officeDesktop`.
-// Every call is synchronous IPC to the main process, which owns the files under
+// Every save call is synchronous IPC to the main process, which owns the files under
 // <userData>/saves with fixed names. The renderer can never name a path.
 
 export type DesktopWriteResult = { ok: true; savedAt?: string } | { ok: false; error: string };
@@ -15,6 +15,11 @@ export interface OfficeDesktopBridge {
     write(text: string, opts?: { rotateBackup?: boolean }): DesktopWriteResult;
     keepDamaged(text: string): { ok: boolean; name?: string; error?: string };
     info(): DesktopSaveInfo;
+  };
+  /** Voice input (asynchronous). Missing in desktop builds from before it was added. */
+  readonly voice?: {
+    listen(): Promise<{ ok: true; text: string } | { ok: false; error: string }>;
+    stop(): Promise<boolean>;
   };
 }
 

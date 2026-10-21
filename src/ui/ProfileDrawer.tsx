@@ -121,7 +121,7 @@ function AIModel({ a, up }: { a: Agent; up: Up }) {
         <NumberField label="Max retries" value={c.maxRetries} min={0} max={10} onCommit={(maxRetries) => up({ ai: { maxRetries } })} />
         <div className="card">
           <h4>Credentials</h4>
-          <p className="note">API keys are never stored in a profile, the browser, logs or saved/exported files. ORIGIN's live runs go through <code>server/origin-runner.mjs</code> on your PC, which reads the key you saved once with <code>npm.cmd run set-key</code> (kept on your PC, outside the app).</p>
+          <p className="note">API keys are never stored in a profile, the browser, logs or saved/exported files. JARVIS's live runs go through <code>server/origin-runner.mjs</code> on your PC, which reads the key you saved once with <code>npm.cmd run set-key</code> (kept on your PC, outside the app).</p>
         </div>
       </div>
     </div>
@@ -180,7 +180,7 @@ function Schedule({ a, up }: { a: Agent; up: Up }) {
         <NumberField label="Break length (min)" value={a.schedule.breakLengthMin} min={5} max={120} onCommit={(breakLengthMin) => up({ schedule: { breakLengthMin } })} />
         <NumberField label="Work window: minutes per run" value={a.schedule.runWindow?.maxMinutes ?? 0} min={1} max={60} onCommit={(maxMinutes) => up({ schedule: { runWindow: maxMinutes ? { everyMinutes: a.schedule.runWindow?.everyMinutes ?? 60, maxMinutes, setBy: 'owner', reason: 'Set by the owner.' } : undefined } })} />
         <NumberField label="Work window: every (min)" value={a.schedule.runWindow?.everyMinutes ?? 0} min={15} max={10080} onCommit={(everyMinutes) => up({ schedule: { runWindow: everyMinutes ? { maxMinutes: a.schedule.runWindow?.maxMinutes ?? 5, everyMinutes, setBy: 'owner', reason: 'Set by the owner.' } : undefined } })} />
-        <div className="field"><span>Work window</span><input type="text" readOnly value={`${describeWindow(a.schedule.runWindow)}${a.schedule.runWindow ? ` · ${a.schedule.runWindow.setBy === 'origin' ? 'suggested by ORIGIN' : 'set by you'} · planned, not scheduled` : ''}`} title={a.schedule.runWindow?.reason} /></div>
+        <div className="field"><span>Work window</span><input type="text" readOnly value={`${describeWindow(a.schedule.runWindow)}${a.schedule.runWindow ? ` · ${a.schedule.runWindow.setBy === 'origin' ? 'suggested by JARVIS' : 'set by you'} · planned, not scheduled` : ''}`} title={a.schedule.runWindow?.reason} /></div>
       </div>
       <AgentTasks a={a} />
     </div>

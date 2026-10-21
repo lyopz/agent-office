@@ -67,7 +67,7 @@ interface State {
   loadDoc(doc: OfficeDoc, label: string, runtime?: Partial<RuntimeState> | null): void;
   importText(text: string): { ok: boolean; errors: string[]; warnings: string[] };
   exportText(): string;
-  /** Start a fresh brain with only ORIGIN. */
+  /** Start a fresh brain with only JARVIS. */
   newBrain(): void;
 }
 
@@ -85,16 +85,31 @@ function initial() {
   runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {}; runtime.usage ??= []; runtime.approvals ??= {}; runtime.alerts ??= {};
   cleanRuntime(runtime, doc);
   syncRuntime(doc, runtime);
-  if (!saved) log(runtime, { kind: 'system', agentId: null, simulated: false, message: 'Started a new brain with ORIGIN.' });
+  if (!saved) log(runtime, { kind: 'system', agentId: null, simulated: false, message: 'Started a new brain with JARVIS.' });
   let lastSaved = saved ? { doc, at: saved.savedAt } : null;
   if (loaded.status === 'empty') { try { lastSaved = { doc, at: repo.saveCurrent(doc, runtime).savedAt }; } catch { /* storage unavailable: stay unsaved */ } }
   return { doc, runtime, lastSaved, recovery };
 }
 
-/** The brain always has ORIGIN at its core; a save without it gets a fresh ORIGIN. */
+/** The brain always has JARVIS at its core; a save without it gets a fresh JARVIS. */
 function withOrigin(doc: OfficeDoc): OfficeDoc {
-  if (doc.agents[ORIGIN_ID]) return doc;
-  return { ...doc, agents: { ...doc.agents, [ORIGIN_ID]: creatorBrain().agents[ORIGIN_ID] } };
+  if (!doc.agents[ORIGIN_ID]) return { ...doc, agents: { ...doc.agents, [ORIGIN_ID]: creatorBrain().agents[ORIGIN_ID] } };
+  return renamedLeader(doc);
+}
+
+/** The owner renamed ORIGIN to JARVIS (2026-10-21); older saves get the new name in its profile, every agent's instructions and the skill bank. */
+export function renamedLeader(doc: OfficeDoc): OfficeDoc {
+  const has = /\bORIGIN\b/;
+  const lead = doc.agents[ORIGIN_ID];
+  const stale = (lead && lead.identity.name === 'ORIGIN') || Object.values(doc.agents).some((a) => has.test(a.ai.systemInstructions) || has.test(a.ai.agentInstructions)) || doc.skillBank.some((k) => has.test(k.description) || has.test(k.instructions));
+  if (!stale) return doc;
+  const agents = Object.fromEntries(Object.entries(doc.agents).map(([id, a]) => [id, {
+    ...a,
+    identity: id === ORIGIN_ID && a.identity.name === 'ORIGIN' ? { ...a.identity, name: 'JARVIS' } : a.identity,
+    ai: { ...a.ai, systemInstructions: a.ai.systemInstructions.replace(/\bORIGIN\b/g, 'JARVIS'), agentInstructions: a.ai.agentInstructions.replace(/\bORIGIN\b/g, 'JARVIS') },
+  }]));
+  const skillBank = doc.skillBank.map((k) => ({ ...k, description: k.description.replace(/\bORIGIN\b/g, 'JARVIS'), instructions: k.instructions.replace(/\bORIGIN\b/g, 'JARVIS') }));
+  return { ...doc, agents, skillBank };
 }
 
 /** Older saves carried office state (positions, tubes, the arcade, production) and simulated work; drop both. */
@@ -108,7 +123,7 @@ function cleanRuntime(rt: RuntimeState, doc: OfficeDoc) {
     if (t.status === ('in-transit' as string)) t.status = 'queued';
     if (t.heldBy && t.heldBy !== 'emergency') t.heldBy = null;
   }
-  // nothing is simulated: real work is ORIGIN's, kept by its runner. Tasks made up in the browser,
+  // nothing is simulated: real work is JARVIS's, kept by its runner. Tasks made up in the browser,
   // and the usage, approvals and log lines they produced, are cleared.
   rt.tasks = {};
   rt.approvals = {};

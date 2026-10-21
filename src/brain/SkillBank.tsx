@@ -43,7 +43,7 @@ export function BankSkillPicker({ value, onChange }: { value: string[]; onChange
 }
 
 /**
- * The owner's skill bank. Skills added here are what ORIGIN and ventures pick
+ * The owner's skill bank. Skills added here are what JARVIS and ventures pick
  * from when they create agents, and what any agent can be equipped with.
  */
 export default function SkillBank({ onNotice }: { onNotice: (text: string) => void }) {
@@ -84,7 +84,7 @@ export default function SkillBank({ onNotice }: { onNotice: (text: string) => vo
 
   return (
     <div className="creator-body">
-      <p className="creator-privacy">Every agent ORIGIN or your ideas create also gets its own SKILL.md: ORIGIN writes a detailed playbook for that agent's job in its next runs (one at a time), and it lands here, given to that agent. Add the skills your agents can use. When {doc.agents[ORIGIN_ID]?.identity.name ?? 'ORIGIN'} or a venture creates an agent, it picks the skills that agent needs from this bank, so a research agent gets research skills and an Etsy store venture can build its own helpers. Only ORIGIN runs live for now; every skill it has goes into its next run.</p>
+      <p className="creator-privacy">Every agent JARVIS or your ideas create also gets its own SKILL.md: JARVIS writes a detailed playbook for that agent's job in its next runs (one at a time), and it lands here, given to that agent. Add the skills your agents can use. When {doc.agents[ORIGIN_ID]?.identity.name ?? 'JARVIS'} or a venture creates an agent, it picks the skills that agent needs from this bank, so a research agent gets research skills and an Etsy store venture can build its own helpers. Only JARVIS runs live for now; every skill it has goes into its next run.</p>
 
       <span className="creator-kicker">IN THE BANK ({doc.skillBank.length})</span>
       {doc.skillBank.length === 0 && <p className="creator-privacy">Nothing yet.</p>}
