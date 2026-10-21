@@ -1,12 +1,11 @@
 import { saveFile } from '../persistence/saveFile';
-import { useEffect, useRef, useState } from 'react';
-import { Download, FolderOpen, History, Network, OctagonX, Pause, Play, Redo2, Undo2, Upload } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Download, FolderOpen, History, OctagonX, Pause, Play, Redo2, Undo2, Upload } from 'lucide-react';
 import { useStore } from '../store/store';
 import { repo } from '../store/store';
 import { confirmAction } from './primitives';
 import { providerStatus } from '../ai/providers';
 import { AlertBell } from './AlertCenter';
-import { HqSwitch } from './HqSwitch';
 import { SaveStatus } from './SaveStatus';
 import { LogoLockup } from '../brand/Logo';
 
@@ -36,11 +35,9 @@ export function TopBar() {
     <header className="topbar">
       <span className="brand"><LogoLockup /><small className="hide-sm">sim v0.2</small></span>
       <input className="office-name" aria-label="Office name" defaultValue={name} key={name} onBlur={(e) => e.target.value.trim() && e.target.value !== name && s.commit([{ op: 'office.rename', name: e.target.value.trim() }], 'Rename office')} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
-      <HqSwitch />
       <nav className="seg" aria-label="Pages">
         {(['dashboard', 'control', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'control' ? 'Control' : p[0].toUpperCase() + p.slice(1)}</button>)}
       </nav>
-      <GraphPowButton />
       <span className="spacer" />
       <AlertBell />
       <button className="btn icon sm" aria-label={prefs.simRunning ? 'Pause simulation' : 'Run simulation'} title={prefs.simRunning ? 'Pause simulation' : 'Run simulation'} onClick={() => s.setPrefs({ simRunning: !prefs.simRunning })}>{prefs.simRunning ? <Pause size={14} /> : <Play size={14} />}</button>
@@ -82,6 +79,7 @@ function VersionsMenu({ onClose }: { onClose: () => void }) {
         <button className="btn sm" title="Load the classic NEXUS-7 sample office" onClick={() => confirmAction({ title: 'Load the NEXUS-7 sample?', confirmLabel: 'Load NEXUS-7', body: 'Replaces the current layout with the classic NEXUS-7 sample office. Undo brings your layout back, and saved versions are kept.', onConfirm: () => { s.newOffice(true); onClose(); } })}>NEXUS-7</button>
         <button className="btn sm" onClick={() => confirmAction({ title: 'Start a blank office?', confirmLabel: 'New blank office', body: 'Replaces the current layout with an empty one. Undo brings your layout back, and saved versions are kept.', onConfirm: () => { s.newOffice(false); onClose(); } })}>Blank</button>
       </div>
+      <button className="btn sm primary" style={{ marginTop: 6, width: '100%', justifyContent: 'center' }} onClick={() => confirmAction({ title: 'Load your Creator Brain?', confirmLabel: 'Load Creator Brain', body: 'Loads a general-purpose collective agent firm with an Agent Creator, an operations lead and specialist teams for research, product, creative, engineering, quality, finance and community. This is a local starter configuration; agents remain simulated unless a live provider is connected. Your current layout remains undoable and saved versions are kept.', onConfirm: () => { s.newOffice('creator'); onClose(); } })}>Creator Brain · Agent Firm</button>
       <div className="label" style={{ margin: '10px 0 4px' }}>Saved versions ({versions.length})</div>
       {versions.length === 0 && <div className="muted small">None yet.</div>}
       <div style={{ maxHeight: 220, overflow: 'auto' }}>
@@ -97,17 +95,6 @@ function VersionsMenu({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Opens Graph POW, the file map of this codebase, when the local app serves one (npm run graph:pow). */
-function GraphPowButton() {
-  const [ok, setOk] = useState(false);
-  useEffect(() => {
-    if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
-    // a dev server answers unknown paths with the app itself, so check it's really the graph page
-    fetch('graph-pow.html').then((r) => (r.ok ? r.text() : '')).then((t) => setOk(/<title>[^<]*Graph POW/i.test(t))).catch(() => setOk(false));
-  }, []);
-  if (!ok) return null;
-  return <button className="btn sm" title="Open Graph POW, the map of how this app's files connect" onClick={() => window.open('graph-pow.html', '_blank', 'noopener')}><Network size={14} /><span className="hide-sm">Graph POW</span></button>;
-}
 
 function EmergencyButton() {
   const on = useStore((st) => st.doc.control.emergencyStop);

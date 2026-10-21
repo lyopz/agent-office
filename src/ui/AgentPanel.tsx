@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Copy, Plus, Power, Search, Trash2, UserRound } from 'lucide-react';
 import { ARCHETYPE, ARCHETYPES } from '../model/cosmetics';
 import { useStore } from '../store/store';
-import { Character } from '../characters/Character';
+import { BallIcon, moodFor } from '../brain/Ball';
 import { STATUS_COLOR } from '../viewport/AgentsLayer';
 import { G } from '../viewport/OfficeLayers';
 import type { AgentStatus } from '../model/types';
@@ -86,7 +86,7 @@ export function AgentPanel() {
               onClick={() => { setUi({ selection: { kind: 'agent', id: a.id } }); if (r) centerOn(r.pos.x, r.pos.y); }}
               onKeyDown={(e) => { if (e.key === 'Enter') setUi({ selection: { kind: 'agent', id: a.id }, profileAgentId: a.id }); }}
               onDoubleClick={() => setUi({ profileAgentId: a.id, profileTab: 'identity' })}>
-              <div className="portrait" style={{ borderColor: a.appearance.accent }}><Character a={a.appearance} view="portrait" size={40} title={`${a.identity.name} portrait`} /></div>
+              <BallIcon a={a.appearance} size={40} mood={moodFor(st, a.appearance.expression ?? 'smile')} title={a.identity.name} />
               <div style={{ minWidth: 0 }}>
                 <div className="row" style={{ gap: 6 }}><span className="agent-name">{a.identity.name}</span><span className="status" style={{ color: STATUS_COLOR[st] }}><i className="dot" />{st}</span></div>
                 <div className="agent-meta">{a.identity.title} · {r?.roomId ? rooms[r.roomId]?.name : 'In hallway'}</div>

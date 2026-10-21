@@ -1,6 +1,6 @@
-# Agent Office
+# The Brain
 
-An interactive, AI-assisted office simulator. You design a floor plan of rooms, hallways, workstations, and furniture, then populate it with configurable AI agent characters who walk the halls and work through tasks. You can do every edit by hand, or describe it in plain English in the command console.
+The Brain (formerly Agent Office) is an interactive, AI-assisted agent workspace. Its main screen is a 3D brain whose nerves are your agents: the main agent sits at the core and every agent it creates grows a new nerve bundle off it. Behind the brain is the original office simulator. You design a floor plan of rooms, hallways, workstations, and furniture, then populate it with configurable AI agent characters who walk the halls and work through tasks. You can do every edit by hand, or describe it in plain English in the command console.
 
 Everything on screen is data. The room layout, hallway routes, character looks, personalities and tasks all live in one schema-validated document, and every change, whether it comes from the mouse, a form, or the AI console, goes through the same structured operations.
 
@@ -52,8 +52,8 @@ The app needs no account, backend, or API key. It opens with a sample office, "N
   - Autosave writes to this browser every minute, but only when something has changed. In the desktop app it writes to files on disk. See [Saving](#saving).
   - The **Versions** menu saves named versions and can restore one, reset to the last save, duplicate the layout, start a blank office, or reload the sample.
   - Export and import use validated `.json` files.
-- **Characters.** Each agent has one appearance profile. The top-down, front, side, three-quarter and portrait views are all drawn from it.
-  - Open an agent's **Profile**, then the **Appearance** tab, to edit body, hair, clothing, gear, pose, art style and shading. That tab also has presets, saved outfit templates, and uploads for custom artwork for each view.
+- **The brain.** The main screen is a nerve network of the teams, with the agents in a menu beside it. See [The agent brain](#the-agent-brain).
+  - On the floor plan and in the profile, agents are glossy balls with a face that follows their status. Open an agent's **Profile**, then the **Ball** tab, to choose the colour, glow, eyes, resting face, mouth, cheeks, tuft and glasses.
   - The other profile tabs are Identity, Personality, Skills, AI model, Memory, Schedule and tasks, Activity, and Permissions.
 - **AI console.** Press **/** to focus it. Here are some commands it understands:
   - "Move the server room beside the research laboratory, extend the hallway between them, and move the research agent to the new workstation"
@@ -163,7 +163,7 @@ The sample office now includes the NEXUS-7 Headquarters wing: an executive suite
 
 - **Object library and placement.** Open the object library from the toolbar to browse holo-desks, archive terminals, tube stations, vaults and more. The placement ghost turns red when an object would overlap another, sit outside the room or block a door. Shift-click or shift-drag selects several objects. Dragging a group moves it as one with its spacing kept. Ctrl+D duplicates, E rotates and the arrow keys nudge. The toolbar can arrange objects in rows, align them, group them and copy a style.
 - **Remodelling commands.** The console understands commands such as "Add a librarian archive terminal against the back wall", "Add a tube station beside every research desk", "Replace the executive desk with a wider black titanium desk", "Make the lighting warmer and the floor dark graphite", "Arrange the desks in two aligned rows" and "Add plants without blocking doors".
-- **Characters and wardrobe.** "New agent → From role…" creates an agent from an archetype. The Wardrobe tab in a profile saves outfits, applies them to other agents, issues approved uniforms to a department and restores the default look. Changing clothes never touches identity, permissions or memory. Functional equipment, such as a ledger slate, can only be worn by an agent that has the matching tool.
+- **Agents and uniforms.** "New agent → From role…" creates an agent from an archetype, wearing its role uniform. A locked uniform sets the ball's colour and glow until it is taken off. Changing the look never touches identity, permissions or memory.
 - **Themes.** Settings → Theme switches between dark, light and system modes, edits colour tokens with a contrast check, and saves, exports and imports themes. Room palettes, such as the library's, are stored on the room and don't change with the global theme. Characters look the same in every theme.
 - **Alerts and sounds.** The bell in the top bar opens the alert centre. Identical alerts are grouped. Repeated failures are escalated, and unacknowledged alerts climb a level over time. Settings → Alerts picks a sound per severity, previews it and fires a test alert. It also sets quiet hours, mutes categories and sets thresholds. Critical alerts always sound. Routine information never makes noise.
 - **Business.** The dashboard shows projects with budgets and usage records, approvals, tube handoffs and the knowledge library. A spend above an agent's limit, an action on the owner's approval list, or a tool the agent hasn't been granted pauses the task until you approve it. Priority tasks travel between rooms in pneumatic-tube capsules, and the recipient acknowledges them on arrival.
@@ -229,32 +229,29 @@ The arcade policy is **Human only** by default and is enforced in the engine, no
 
 The per-game caps (Flappy 100 points or 3 minutes, Pac-Man 10,000 points or 5 minutes, Pong 11 points or 5 minutes) and the matches-per-day limit are editable on the Arcade tab. They are kept in the saved session history, so a reload doesn't reset the daily count.
 
-### Characters and wardrobe
+### Uniforms
 
-Characters are still drawn as SVG at the same size. They now sit at a desk (with a chair) while working, gesture while talking, turn briefly to face front when changing direction, and glide smoothly between cells. Cosmetics stay attached in every pose.
-
-**Wardrobe.** The built-in wardrobe is sci-fi only, with four items in each slot: headwear, eyewear, tops, bottoms, gloves, belts, footwear, accessories, hand-held equipment, cybernetics and effects. Functional equipment (diagnostic visor, ledger slate and so on) is listed separately because it mirrors a tool permission.
-
-**Locked role uniforms.** Every role has a fixed uniform, and agents created from a role start in it. While it is on, cosmetics can't be added to it or removed from it, and its clothing can't be edited piece by piece, in the app, through the AI console or by import. Face, hair and body stay editable. "Take off uniform" unlocks the agent without changing the look; wearing a different outfit also takes it off. The uniforms themselves can't be edited or deleted, but "Duplicate" makes an editable copy.
-
-**Rendered characters in the office.** The office draws each agent from a Blender-rendered sprite sheet (idle, a four-frame walk, sitting at a desk, talking and working) whenever one matches the agent's exact look. The sample cast's sheets ship with the app in `src/characters/renders/`, named by a hash of the look. Change an agent's look and it goes back to the drawn character until it is rendered again, so the office never shows an out-of-date picture. **Characters** in the office toolbar switches between *Rendered (Blender)* and *Drawn*; the explicit *Top-down* view always uses the drawn characters.
-
-**Blender renders.** With the bridge running, Control → Production → *Character renders* sends the characters' appearance (nothing else) to Blender, which builds each one in 3D from `tools/blender/build_characters.py`. You get a 3/4 portrait PNG, a GLB and an office sprite sheet per character, a labelled lineup and `characters.blend` with the whole cast. The new sprite sheets are brought into the office automatically when the job finishes. "Open in Blender" opens that scene on your computer. Files land in `exports/characters/<job>/` in your Blender projects folder. The script also runs on its own:
-
-```bash
-blender --background --factory-startup --python tools/blender/build_characters.py -- roster.json out/            # add --sprites or --sprites-only for office sprite sheets
-```
+**Locked role uniforms.** Every role has a fixed uniform, and agents created from a role start in it. While it is on, the ball's colour, glow and glasses come from the uniform and can't be changed piece by piece, in the app, through the AI console or by import. The face stays editable. "Take it off" in the profile Ball tab unlocks the agent without changing the look. The uniforms themselves can't be edited or deleted. Functional equipment, such as a ledger slate, still mirrors a tool permission and can only be worn by an agent that has the matching tool.
 
 ### Graph POW
 
-The **Graph POW** button in the top bar opens Graph POW, the glowing map of how this app's files connect, in a new tab. It appears only when the local app serves `public/graph-pow.html`; the published single-file build doesn't include it. To refresh the map after code changes, run graphify on this folder (it writes `graphify-out/graph.json`), then:
+**Graph POW** is the glowing knowledge map of the agents. Open it from the top bar or from an information node on the brain. It shows every agent, the work they finished (the latest 160 tasks) and the knowledge entries they wrote, grouped into a lobe per team:
+
+| Link | Meaning |
+|---|---|
+| Handoffs | One agent handed a task to another. |
+| Reports to | The agent's supervisor. |
+| Produced | The agent finished that task or wrote that entry. |
+| Cites | A finished task used that knowledge entry. |
+
+Click a node to see its links and why each one exists; search, filter by link type or team, and zoom or pan. When an agent finishes something, its node flashes and signals fire along its links. The map runs inside the app (no internet, no extra window), so it works in the desktop app too. **Save page** downloads the same graph as a standalone Graph POW page, built from `tools/graph-pow/template.html`; that page loads d3 from cdnjs, so it needs an internet connection.
+
+The codebase file map is still available as a separate page for developers:
 
 ```bash
-npm run graph:pow                                  # rebuild from graphify-out/graph.json
+npm run graph:pow                                  # rebuild public/graph-pow.html from graphify-out/graph.json
 npm run graph:pow -- --from path/to/graph-pow.html # or install a Graph POW page you already have
 ```
-
-The page loads d3 from cdnjs, so it needs an internet connection.
 
 ### Royal Lounge and the hourly briefing
 
@@ -311,7 +308,7 @@ The sort moves rooms, re-aims single-hallway doors at their new neighbours and r
 
 ### Roblox development headquarters
 
-On first run the app opens the **Roblox Development HQ** (`robloxHQ()` in `src/model/sample.ts`). It uses the bubble preset. The **Throne Room** sits at the centre and is the command centre. Seven team rooms surround it. Each room has a sign naming the team and its work, its own accent colour, floor tint and lighting, and furniture and wall displays that show what the team does:
+The optional **Roblox Development HQ** sample is available in **Versions**. It uses the bubble preset. The **Throne Room** sits at the centre and is the command centre. Seven team rooms surround it. Each room has a sign naming the team and its work, its own accent colour, floor tint and lighting, and furniture and wall displays that show what the team does:
 
 | Room (id) | Type | What you see |
 |---|---|---|
@@ -326,92 +323,28 @@ On first run the app opens the **Roblox Development HQ** (`robloxHQ()` in `src/m
 
 Wide tubes run straight from the throne room's sides to the rooms beside it. An outer ring joins neighbouring rooms, so every room has two ways in, and closing any one tube never cuts a room off. Each team has agents built from role archetypes. The new archetypes are `game-designer`, `type-designer`, `roblox-builder` and `ad-creative`; the others reuse `roblox-dev`, `qa-integrator`, `librarian`, `market-analyst`, `blender-artist` and `coo`. Every agent sits at a workstation in its own room, and every room has a capsule station. Two projects are included: *Sky Islands Obby* and *Launch Campaign*.
 
-To switch between samples, open **Versions** and choose **Roblox HQ** or **NEXUS-7** (the classic sample). The new room types are also built-in room templates, and the AI console understands their names, for example "throne room", "type studio" or "campaign studio".
+To switch between samples, open **Versions** and choose **Creator Brain · Agent Firm**, **Roblox HQ** or **NEXUS-7** (the classic sample). Creator Brain is a general-purpose, local starter with an Agent Creator, an operations lead and research, product, creative, engineering, quality, finance and community specialists. Click a brain sector to filter the roster to that team; choose **All sectors** to return to the full roster. Floor-plan navigation is hidden so the brain remains the main workspace. Its team regions and reporting nerves are generated by the same connectome as the other offices. The app does not connect teammates across devices; agent activity is simulated unless a live provider is connected.
 
-**Avatar Studio** (`src/ui/AvatarStudio.tsx`) is where you customise your own character (`doc.player`):
-- **Style**: body proportions (blocky, heroic, chibi, sleek), height, build, skin tone and glow accent.
-- **Face**: expression (neutral, smile, grin, focused, surprised, smirk, determined), face shape, eyes, eye colour, brows, nose, mouth, cheeks, facial hair and markings.
-- **Hair**: every style. Swept, spiky, undercut, afro, braids and twin buns are sculpted in 3D and tagged "3D".
-- **Outfit**: tops, bottoms, shoes, headwear, glasses, gloves and belt, with their colours.
+### The agent brain
 
-Six original one-click looks are included: Neon Runner, Pixel Knight, Star Courier, Cozy Builder, Arcane Scholar and Circuit Ace. You can also **Randomize** or **Reset** the look. Each change is one `player.update` operation, so Undo steps back through them, and an empty name is refused. The studio shows a large 3D preview and the 2D views used on the floor plan. Every control is a labelled radio group, slider or swatch you can operate from the keyboard. The turntable and animations stop when the system asks for reduced motion.
+The main screen is a 3D brain built in three.js (`src/brain/BrainScene.tsx`). The brain itself is generated in code (`src/brain/brainMesh.ts`): two folded hemispheres with a central and Sylvian sulcus, a cerebellum with folia and a brainstem. No model file is needed. Use **Glass** for a see-through brain that shows the nerves inside, or **Tissue** for a solid, realistic surface. Drag to turn it and scroll to zoom; it slowly turns on its own after 9 seconds of no input.
 
-In 2D, the new hair styles and expressions are drawn in every view. A look without the new optional fields (`expression`, `mouth`, `nose`, `cheeks`, `bodyStyle`) draws exactly as before, so existing characters and their sprite keys don't change.
-### 3D headquarters
+- **Nerves are agents.** The main agent (ORIGIN) sits at the core, fed by a trunk that rises from the brainstem. Every agent is a bundle of nerve fibres that branches off the agent that made it (its supervisor), so when an agent creates another agent, a new bundle grows out of the creator's branch towards the cortex. Bundles are thicker the more agents they carry, and end in a tuft of fine dendrites. The tree is built in `src/brain/nerveTree.ts` from a fixed seed, so the same agents always give the same brain.
+- **Growth.** On load the nerves grow outward from the core, one level at a time. A newly created agent grows its own branch while the rest stays in place.
+- **Ideas grow the brain.** Every open idea is a glowing bud on a short nerve off the main agent: gold for your ideas, cyan for ones the main agent suggests. Add one under **Ideas** in the **Branches** menu, or press **Ask** for a suggestion (simulated from starter patterns until a live model is connected, and labelled that way). Click a bud, or **Grow** in the menu, and after you confirm, the main agent creates an idea lead for it and the bud becomes a full branch (`src/brain/ideas.ts`).
+- **Look.** Bloom glow, drifting neural dust, signal heads with trails, and synapse flashes and rings when a signal reaches an agent.
+- **Branches menu.** On the left, the agent tree as a menu: the main agent at the top, each agent it made underneath, nested by who made whom, with team counts, work in progress and the ideas list. **Teams** switches back to the team grouping.
+- **Signals.** Pulses run from the core out to agents that are working, along the shortest path between two agents when one hands work to another, and back to the core when a task finishes.
+- **Focus.** Hover a node for its name, team and status; click it to open the agent profile. Hovering or choosing an agent in the menu lights its path back to the main agent and every agent below it, and dims the rest. Choosing a sector lights that team.
+- Motion stops when the system asks for reduced motion.
 
-The 3D headquarters (`src/hq3d/`) is built live from the same office the floor plan shows: one grid cell is one world unit, and every edit, theme change or agent move appears in 3D without a reload. It loads on demand (`React.lazy(() => import('./hq3d/HQ3DView'))`), so three.js isn't downloaded for the 2D views.
+**Teams tab.** Every agent is listed by team with its reporting line, status, current task, a progress bar and how many tasks are queued. Hovering a team or an agent lights up its part of the brain and its information nodes and dims the rest. Click an agent to open the profile, use its button to pause or resume it, search by name, title or team, and use **Give a task** at the bottom (pick an agent, type the task, press Enter).
 
-**Rooms.** Each room gets a floor in its own colour and pattern, a hovering sign with its name and team, and lighting tinted by its accent. In the bubble office a room is a floating platform under an iridescent glass dome; in the grid preset it has low walls with lit doorways. Every room also gets wall displays that show what its team does, picked from the room's type, name and purpose:
-- Roblox development: a script editor and a live build preview.
-- Research: a findings board with connected notes and a reference search.
-- Game design: a level layout and the gameplay loop.
-- 3D design: blueprints and material samples.
-- Typography: font comparisons and an in-game UI preview.
-- Building: the build plan, modular parts and a scale figure.
-- Advertising: the campaign board and image drafts through to final assets.
-- Throne room: the command overview and team status.
+**Agent Creator Desk.** In the brain workspace, **Compare ideas** saves both submitted concepts and supported text files into the local library, then downloads a dated research request packet. The packet asks for demand evidence, competitors, revenue assumptions, unit economics, build costs, quality retention and a low-cost test. It is a request template, not live market research. **Build an agent** shows its starter blueprint and adds the specialist only when the owner approves it. **Tutorial** explains the workflow, and the lead agent's **Hear** button uses browser speech with a lowered pitch.
 
-Furniture is modelled from the object catalogue. Desks carry live screens, server racks blink, tube stations send capsules, holo tables project models, and arcade cabinets show their game. The throne sits inside a pulsing crimson-and-violet force-field bubble with horn spires and rising embers (or inside the room's `devil-bubble`, when it has one). You can walk into the bubble.
+Uploaded idea notes are saved locally in the office file. A live research provider, shared mobile/computer intake and real multi-user task handoff still need backend integrations. Custom specialists are added with a simulated provider and manual approval until those integrations are configured.
 
-**Bubble tubes.** Hallways are walkable glass tubes, wider than the corridor so avatars and agents fit with headroom. Each has a lit deck, light pulses running along it and a glowing ring at each doorway. Every tube mouth has two signs: one names the room you're entering, and the other, seen from the room, names where the tube leads. Agents ride the tubes on hover discs.
-
-**Exploring.**
-
-| Control | Action |
-|---|---|
-| W A S D / arrow keys | move (Left and Right arrows turn) |
-| Shift | run (tubes add a speed boost) |
-| Space | jump |
-| Drag | look; in first person, click to lock the mouse and Esc to release it |
-| Mouse wheel | zoom the third-person camera |
-| V, or the view button | switch between first and third person |
-| E, or click | interact with what you face |
-| T, or *Tube map* | fast travel |
-| M | minimap |
-| H | show or hide the controls |
-
-Collision uses the agents' navigation grid, so you can never pass through a wall. You can only cross between a room and a tube through a doorway, and you slide along walls rather than sticking.
-
-What E or a click does depends on what you face:
-- the briefing board opens the hourly briefing;
-- an arcade cabinet starts its game;
-- an agent opens their profile;
-- any other working object shows its details.
-
-The tube map shows every room and tube. Pick a room and the avatar glides there through the tubes; with reduced motion, or *Animation* set to off, it cuts straight there.
-
-The camera mode is saved with the office (`player.camera`), and so is the last room visited (`player.lastRoomId`, saved after you've been in the room for 2.5 seconds). You start in that last room, otherwise in front of the throne.
-
-**Accessibility and performance.**
-- The canvas is focusable, with instructions for screen readers and announcements when you enter a room.
-- Reduced motion turns off camera bob, idle animation, light pulses and LED blinking.
-- Rendering pauses when the tab is hidden.
-- Without WebGL the view shows "3D needs WebGL; use the 2D overview" instead of failing.
-- Glow (bloom) can be turned off from the toolbar.
-- Static furniture is merged per room and material, and materials and unit geometries are shared and released when the view closes.
-
-**Characters.** `buildCharacter(appearance)` in `src/hq3d/character3d.ts` makes original, game-inspired characters in four body styles: `blocky`, `heroic` (the default), `chibi` and `sleek`.
-- Faces are modelled: eyes with irises and highlights, brows, nose, mouth and cheeks follow `expression`, `mouth`, `nose` and `cheeks`. Faces also blink.
-- Hair is 3D, including spiky, afro, braids, undercut, swept and twin buns.
-- Outfits, headwear, glasses, gloves, belts, shoulder pieces, jewellery and hand-held equipment all use their own colours.
-
-`animateCharacter(group, pose, t)` poses a character as idle, walking, running, working, thinking, talking, riding, waving, alerted or paused. `AvatarPreview3D` shows one appearance on a turntable that you can drag or rotate with the arrow keys; it doesn't auto-rotate under reduced motion. It loads three.js on demand too.
-
-**Code map.**
-
-| File | What it holds |
-|---|---|
-| `layout.ts` | pure scene description: room themes, walls with door gaps, domes, display slots, tube paths, spawn |
-| `collision.ts` | `moveWithCollision` |
-| `travel.ts` | fast-travel routes |
-| `proportions.ts` | body-style tables |
-| `controls.ts` | movement and camera |
-| `scene.ts` | three.js scene, rebuilt per room, tube and agent by object identity |
-| `furniture3d.ts` | furniture models |
-| `textures.ts` | screen and sign content |
-| `materials.ts` | shared materials |
-
-`tests/hq3d.test.ts` covers the pure parts without WebGL.
+What was removed: the explorable 3D headquarters, the avatar studio, the Blender character renders and sprite sheets, and the drawn figures. three.js is used again, for the 3D brain only. Saved offices still load; the owner profile (`player`) stays in the file but is no longer shown.
 
 ### Schema version 6
 
@@ -509,7 +442,7 @@ All 15 required tests live in `tests/acceptance.test.ts` and run against the rea
 | 2 | Move the middle room | Both hallways reroute and stay attached to their doors. |
 | 3 | Resize a room | Doors and furniture are clamped inside the new size, and the hallways stay valid. |
 | 4 | Manual hallway, then auto | A custom detour is kept and stays pinned when a room moves. Switching back to auto reroutes it. |
-| 5 | Switch character views | The store's view changes, and the five views render five different drawings from one profile. |
+| 5 | Switch views | The store's view changes, and the agent's ball is drawn from its one appearance profile. |
 | 6 | Change outfit only | Identity, personality and memory are unchanged. |
 | 7 | Save a profile | The profile is written to storage, read back, and validated. |
 | 8 | AI moves a room | The geometry changes, the room ends up left of Main Operations, and there are 0 errors. |
@@ -529,12 +462,12 @@ The 15 tests from the headquarters specification live in `tests/hq.acceptance.te
 
 | # | Requirement | Test |
 |---|---|---|
-| 1 | Librarian and president differ | Archetype, title, role, outfit, tools, workstation type, room type and rendered drawing all differ. |
+| 1 | Librarian and president differ | Archetype, title, role, outfit, tools, workstation type, room type and the drawn ball all differ. |
 | 2 | Outfit change keeps identity | Identity, permissions, memory, skills, AI settings and budget are unchanged, and the default look can be restored. |
 | 3 | Reuse an outfit | An outfit saved from ORION applied to SCOUT copies the look and leaves SCOUT's identity alone. |
 | 4 | Add HQ objects | A holo-desk, an archive terminal and a tube station are placed with no errors or overlaps. |
 | 5 | Move a group | Relative spacing and the group are kept. |
-| 6 | Dark to light | Theme variables change; agents and their rendered drawings are identical. |
+| 6 | Dark to light | Theme variables change; agents and their balls are identical. |
 | 7 | Library palette | The room's colours survive mode and theme changes, and other rooms are untouched. |
 | 8 | Sound and test alert | The chosen sound is delivered. Before audio is allowed it reports "permission needed", and email, messaging and push report "not connected". |
 | 9 | Budget warning | The alert carries the project id and links to that project's usage records. |
@@ -549,7 +482,9 @@ A performance test builds an office of 48 rooms, more than 570 objects and 60 ag
 
 ### Executive control tests
 
-`tests/departments.test.ts` covers safe pause and resume with progress kept, the three render policies and saves, exclusions and the emergency pause, pause all and resume selected, enabling agents and batch assignment, task limits and resource policies, save and migration, 40 agents on the operations floor (under 15 ms per tick, no errors, no two agents on one cell), the production pipeline and its simulated labels, the human-only arcade lock and logging, and the character poses. `tests/arcade.test.ts` covers the three games, their caps and the daily limits. `tests/wardrobe.test.ts` covers the four-per-slot wardrobe, the uniform lock in every path that could change it, and the v4 → v5 migration.
+`tests/departments.test.ts` covers safe pause and resume with progress kept, the three render policies and saves, exclusions and the emergency pause, pause all and resume selected, enabling agents and batch assignment, task limits and resource policies, save and migration, 40 agents on the operations floor (under 15 ms per tick, no errors, no two agents on one cell), the production pipeline and its simulated labels, and the human-only arcade lock and logging. `tests/arcade.test.ts` covers the three games, their caps and the daily limits. `tests/wardrobe.test.ts` covers the four-per-slot wardrobe, the uniform lock in every path that could change it, and the v4 → v5 migration.
+
+`tests/brain.test.ts` covers the agent brain: a region per team in its colour, fibres that stay inside their region, nerve bundles that thicken with handoffs and join every region, a deterministic brain, no agent looks in the brain data, information nodes in the right team at stable spots with the cap on finished work, faces that follow status, bright ball colours, the agents' Graph POW (nodes, links, degrees, the cap on finished work) and the standalone page (agent wording, and agent text can't break out of the data block).
 
 `tests/briefing.test.ts` covers the briefing: bucket assignment for every task status, the one-hour window, grouping and filters, blockers, attention and idle agents, ETAs, task history, the lounge in the sample (reachable on foot), the lounge template, save and reload, the furniture drawings, and rendering the board.
 ### Save tests

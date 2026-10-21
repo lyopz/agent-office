@@ -1,5 +1,5 @@
 {
-  "name": "agent-office",
+  "name": "the-brain",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -20,13 +20,12 @@
     "desktop:dist": "npm run build && electron-builder"
   },
   "dependencies": {
-    "@types/three": "^0.169.0",
     "immer": "^10.1.1",
     "lucide-react": "^0.453.0",
     "nanoid": "^5.0.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "three": "^0.169.0",
+    "three": "^0.186.1",
     "zod": "^3.23.8",
     "zustand": "^4.5.5"
   },
@@ -34,6 +33,7 @@
     "@playwright/test": "^1.64.1",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^4.3.3",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
@@ -45,7 +45,7 @@
   },
   "build": {
     "appId": "app.neuralcommandcampus.desktop",
-    "productName": "Neural Command Campus",
+    "productName": "The Brain",
     "directories": {
       "output": "release",
       "buildResources": "build"

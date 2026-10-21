@@ -1,6 +1,5 @@
 // Roblox development headquarters: the team rooms, the throne room at the
-// centre, the owner's avatar, and the 2D drawings of the new hair styles and
-// expressions (older looks must draw exactly as before).
+// centre and the owner's profile.
 import { describe, expect, test } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -9,11 +8,10 @@ import { validate } from '../src/engine/validate';
 import { buildNav, reachableRooms, roomSpot } from '../src/engine/navigation';
 import { applyOps } from '../src/engine/ops';
 import { parseOffice, exportOffice } from '../src/model/schema';
-import { DEFAULT_APPEARANCE, builtinRoomTemplates, withAppearance } from '../src/model/defaults';
+import { builtinRoomTemplates } from '../src/model/defaults';
 import { FURNITURE_META, ROOM_META } from '../src/model/catalog';
 import { ARCHETYPE } from '../src/model/cosmetics';
-import { EXPRESSIONS, HAIR_STYLES_3D, type Appearance, type FurnitureType, type RoomType } from '../src/model/types';
-import { Character } from '../src/characters/Character';
+import type { FurnitureType, RoomType } from '../src/model/types';
 import { FurnitureShape } from '../src/viewport/OfficeLayers';
 import { interpret } from '../src/ai/parser';
 
@@ -172,66 +170,3 @@ describe('owner avatar', () => {
   });
 });
 
-describe('2D drawings of the new hair styles and expressions', () => {
-  const render = (a: Appearance, view: 'front' | 'side' | 'top' | 'three-quarter' | 'portrait') => renderToStaticMarkup(createElement(Character, { a, view, size: 64 }));
-  const VIEWS = ['front', 'side', 'top', 'three-quarter', 'portrait'] as const;
-
-  test('every 3D hair style draws its own shape in every view', () => {
-    const base = withAppearance(DEFAULT_APPEARANCE, { hairColor: '#123456', headwear: 'none' });
-    for (const view of VIEWS) {
-      const bald = render({ ...base, hairStyle: 'bald' }, view);
-      const seen = new Set<string>();
-      for (const h of HAIR_STYLES_3D) {
-        const out = render({ ...base, hairStyle: h }, view);
-        expect(out, `${h} ${view}`).toContain('#123456');
-        expect(out).not.toBe(bald);
-        seen.add(out);
-      }
-      expect(seen.size, view).toBe(HAIR_STYLES_3D.length);
-    }
-  });
-
-  test('every expression changes the face, and so do nose, mouth and cheeks', () => {
-    const base = withAppearance(DEFAULT_APPEARANCE);
-    for (const view of ['front', 'side', 'portrait'] as const) {
-      const outs = new Set(EXPRESSIONS.map((expression) => render({ ...base, expression }, view)));
-      expect(outs.size, view).toBe(EXPRESSIONS.length);
-    }
-    const plain = render(base, 'front');
-    for (const patch of [{ nose: 'broad' }, { nose: 'none' }, { mouth: 'full' }, { cheeks: 'blush' }, { cheeks: 'dimples' }] as Partial<Appearance>[]) {
-      expect(render({ ...base, ...patch }, 'front'), JSON.stringify(patch)).not.toBe(plain);
-    }
-  });
-
-  test('looks without the new fields draw exactly as before', () => {
-    const plain = withAppearance(DEFAULT_APPEARANCE);
-    const explicit = { ...plain, expression: undefined, mouth: undefined, nose: undefined, cheeks: undefined, bodyStyle: undefined };
-    for (const view of VIEWS) expect(render(explicit, view)).toBe(render(plain, view));
-    // the original mouth and nose shapes are still the ones drawn
-    expect(render(plain, 'front')).toContain('M46.5,48 Q50,50 53.5,48');
-    expect(render(plain, 'side')).toContain('M62,48 L66,47.5');
-    // an agent from the classic sample is unchanged too
-    const rusty = sampleOffice().agents.agent_rusty.appearance;
-    expect(rusty.expression).toBeUndefined();
-    for (const view of VIEWS) expect(render({ ...rusty, expression: undefined, cheeks: undefined }, view)).toBe(render(rusty, view));
-  });
-});
-
-describe('Avatar Studio', () => {
-  test('renders labelled groups, presets and actions', async () => {
-    const mem = new Map<string, string>();
-    (globalThis as unknown as { localStorage: Storage }).localStorage = {
-      getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, String(v)), removeItem: (k: string) => void mem.delete(k),
-      clear: () => mem.clear(), key: (i: number) => [...mem.keys()][i] ?? null, get length() { return mem.size; },
-    } as Storage;
-    const { AvatarStudio, AVATAR_PRESETS, randomLook } = await import('../src/ui/AvatarStudio');
-    const html = renderToStaticMarkup(createElement(AvatarStudio));
-    for (const label of ['Avatar Studio', 'Avatar name', 'Randomize', 'Reset', 'Style', 'Face', 'Hair', 'Outfit', 'One-click looks', 'Proportions']) expect(html, label).toContain(label);
-    expect(html).toContain('role="tablist"');
-    expect(html).toContain('role="radiogroup"');
-    for (const p of AVATAR_PRESETS) expect(html).toContain(p.name);
-    // a random look is always a valid appearance patch
-    const { useStore } = await import('../src/store/store');
-    for (let i = 0; i < 20; i++) expect(useStore.getState().dryRun([{ op: 'player.update', patch: { appearance: randomLook() } }]).ok).toBe(true);
-  });
-});

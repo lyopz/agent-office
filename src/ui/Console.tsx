@@ -15,7 +15,9 @@ let nextId = 1;
 type NewEntry = Entry extends infer E ? (E extends Entry ? Omit<E, 'id'> : never) : never;
 
 export function Console() {
-  const [open, setOpen] = useState(true);
+  // starts folded so the brain and taskbar get the room; the choice is remembered on this device
+  const [open, setOpenState] = useState(() => { try { return localStorage.getItem('agent-office:console-open') === '1'; } catch { return false; } });
+  const setOpen = (v: boolean) => { setOpenState(v); try { localStorage.setItem('agent-office:console-open', v ? '1' : '0'); } catch { /* storage unavailable */ } };
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [entries, setEntries] = useState<Entry[]>([{ id: 0, type: 'info', text: 'AI command console. Describe a change in plain English; I build a structured plan, validate it, and preview geometry changes before applying. Type “help” for examples.' }]);

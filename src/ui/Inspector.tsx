@@ -8,7 +8,7 @@ import { FURNITURE_TYPES, ROOM_TYPES, type Corridor, type CorridorEndpoint, type
 import { FURNITURE_META, ROOM_META, furniturePreset, uid } from '../model/defaults';
 import type { DocOp } from '../engine/ops';
 import { findFreeSpot } from '../engine/ops';
-import { Character } from '../characters/Character';
+import { BallIcon } from '../brain/Ball';
 import { STATUS_COLOR } from '../viewport/AgentsLayer';
 import { ChipsInput, ColorField, NumberField, Section, SelectField, TextField, Toggle } from './primitives';
 import { deleteSelection } from './actions';
@@ -192,7 +192,7 @@ function AgentInspector({ id }: { id: string }) {
     <>
       <Section title="Agent">
         <div className="row" style={{ alignItems: 'flex-start' }}>
-          <div className="portrait" style={{ width: 72, height: 72, borderColor: a.appearance.accent }}><Character a={a.appearance} view="portrait" size={72} /></div>
+          <BallIcon a={a.appearance} size={72} mood={a.appearance.expression ?? 'smile'} />
           <div className="grow">
             <div className="agent-name" style={{ fontSize: 16 }}>{a.identity.name}</div>
             <div className="muted small">{a.identity.title} · {a.identity.department}</div>

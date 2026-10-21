@@ -1,10 +1,10 @@
 // 2D operations overview: every room grouped by team with who works there and
-// what it connects to. Pick a room to inspect it on the plan or enter it in 3D.
+// what it connects to. Pick a room to inspect it on the plan.
 import { useMemo, useState } from 'react';
-import { Box, ChevronDown, ChevronUp, Crosshair } from 'lucide-react';
+import { ChevronDown, ChevronUp, Crosshair } from 'lucide-react';
 import { useStore } from '../store/store';
 import { roomTeam } from '../engine/autosort';
-import { setHqView } from './HqSwitch';
+import { ClassicToggle } from './HqSwitch';
 import { G } from '../viewport/OfficeLayers';
 
 const KEY = 'agent-office:overview-open';
@@ -47,7 +47,7 @@ export function OverviewPanel() {
         <strong>Operations</strong>
         <span className="small muted">{Object.keys(doc.rooms).length} rooms · {teams.length} teams</span>
         <span className="spacer" />
-        {selected && doc.rooms[selected] && <button className="btn sm primary" onClick={() => setHqView('3d', selected)} title="Walk into this room in the 3D headquarters"><Box size={13} />Enter {doc.rooms[selected].name}</button>}
+        <ClassicToggle />
         <button className="btn icon sm" aria-expanded={open} aria-label={open ? 'Collapse overview' : 'Expand overview'} onClick={toggle}>{open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}</button>
       </header>
       {open && (
@@ -61,7 +61,6 @@ export function OverviewPanel() {
                     <i style={{ background: r.accent }} aria-hidden />
                     <span className="ov-name">{r.name}<small className="muted"> · {r.agents} agent{r.agents === 1 ? '' : 's'}{r.links.length ? ` · links ${r.links.slice(0, 3).join(', ')}${r.links.length > 3 ? '…' : ''}` : ''}</small></span>
                     <button className="btn icon sm" aria-label={`Inspect ${r.name}`} title="Inspect on the plan" onClick={() => inspect(r.id)}><Crosshair size={13} /></button>
-                    <button className="btn icon sm" aria-label={`Enter ${r.name} in 3D`} title="Enter in 3D" onClick={() => setHqView('3d', r.id)}><Box size={13} /></button>
                   </li>
                 ))}
               </ul>
