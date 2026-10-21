@@ -13,6 +13,8 @@ export interface RunnerTask {
 }
 /** A product an agent made in Printify and asked the owner to publish. */
 export interface PublishRequest { id: string; productId: string; title: string; why: string; agentName: string; taskId?: string | null; taskTitle?: string | null; image?: string; priceUsd?: number; status: 'waiting' | 'published' | 'rejected'; at: string }
+/** One design image an agent made with the owner's OpenAI key, and what it cost. */
+export interface ImageEntry { id: string; at: string; model: string; quality: string; size: string; usd: number; estimated?: boolean; prompt: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string }
 /** One line of progress, filed under the agent the work was for. */
 export interface ProgressEntry { id: string; at: string; runId?: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; pct: number | null; note: string }
 /** A SKILL.md JARVIS wrote for one agent, waiting for the app to save it to the bank. */
@@ -22,11 +24,11 @@ export interface AgentProposal {
   everyMinutes: number; maxMinutes: number; reason: string; skillFile?: { name: string; description: string; body: string } | null; auto?: boolean; status: 'proposed' | 'approved' | 'rejected'; createdAt: string; agentId?: string | null;
 }
 export interface RunnerWorker { taskId: string | null; agentId: string; agentName: string; title: string | null; costUsd: number; status: string; rounds: number; summary?: string }
-export interface RunnerRun { workers?: RunnerWorker[]; id: string; agentId?: string; taskId?: string | null; skillFileFor?: string; trigger: 'manual' | 'schedule' | 'focus'; startedAt: string; endedAt: string | null; costUsd: number; costKnown: boolean; searches: number; fetches?: number; etsyCalls?: number; printifyCalls?: number; status: string; summary: string; notify?: string | null }
+export interface RunnerRun { workers?: RunnerWorker[]; id: string; agentId?: string; taskId?: string | null; skillFileFor?: string; trigger: 'manual' | 'schedule' | 'focus'; startedAt: string; endedAt: string | null; costUsd: number; costKnown: boolean; searches: number; fetches?: number; etsyCalls?: number; printifyCalls?: number; images?: number; imageUsd?: number; status: string; summary: string; notify?: string | null }
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
   spentUsd: number; spentByAgent?: Record<string, number>; allowanceUsd?: number; spentTodayUsd?: number; parallel?: number; rounds?: number; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
-  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
+  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
 }
 
 // in the browser the dev server forwards /api/origin; the desktop app talks to the runner directly
@@ -64,9 +66,9 @@ export async function syncOrigin(doc: OfficeDoc) {
 }
 
 /** Start a manual work window; resolves when it ends (up to the window length). */
-export async function runOrigin(doc: OfficeDoc, maxMinutes: number) {
+export async function runOrigin(doc: OfficeDoc, maxMinutes: number, branch?: { agentId: string; agentIds: string[] }) {
   await syncOrigin(doc);
-  return call<{ ok: boolean; reason?: string; run?: RunnerRun }>('/run', {}, (maxMinutes + 1) * 60_000);
+  return call<{ ok: boolean; reason?: string; run?: RunnerRun }>('/run', branch ?? {}, (maxMinutes + 1) * 60_000);
 }
 
 export interface OriginAsk { at: string; q: string; a: string; costUsd: number | null; agentId?: string | null; by?: string }
@@ -108,6 +110,11 @@ export async function setAutoAgents(autoAgents: boolean) {
 /** Empire mode: JARVIS approves its own research tasks (a few at a time, each within its budget and the cap). */
 export async function setAutoTasks(autoTasks: boolean) {
   return !!(await call('/settings', { autoTasks }));
+}
+
+/** The owner's monthly limit on design images, billed to their OpenAI account. */
+export async function setImageCap(imageCapUsd: number) {
+  return !!(await call('/settings', { imageCapUsd }));
 }
 
 export async function skillFileImported(id: string) {

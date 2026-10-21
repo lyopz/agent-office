@@ -127,3 +127,10 @@ export async function productPreview(productId, deps) {
   const cents = (p.variants || []).filter((v) => v.is_enabled !== false).map((v) => v.price).filter((n) => n > 0);
   return { image: img?.src ? String(img.src) : null, priceUsd: cents.length ? Math.min(...cents) / 100 : null };
 }
+
+/** Upload a finished image (base64 PNG) as a design; returns its Printify image id and preview. */
+export async function uploadImage(fileName, b64, deps) {
+  const name = String(fileName || 'design.png').replace(/[^\w.-]/g, '_').slice(0, 80);
+  const img = await pf('/uploads/images.json', { deps, method: 'POST', body: { file_name: name.endsWith('.png') ? name : `${name}.png`, contents: b64 } });
+  return { image_id: img.id, width: img.width, height: img.height, preview: img.preview_url };
+}

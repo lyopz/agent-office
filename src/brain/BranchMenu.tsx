@@ -49,12 +49,14 @@ export function BranchMenu({ agents, teams, live, match, selected }: Props) {
   // a live run when server/origin-runner.mjs is running (within the owner's cap), otherwise a simulated one
   const runNow = async (id: string) => {
     const { notify, runRuntimeOps, doc } = useStore.getState();
+    // the main agent's button runs everyone; a branch's button runs only the agents in that branch
+    const branch = id === tree.rootId ? undefined : { agentId: id, agentIds: [...subtree(tree, id)] };
     const name = agents[id]?.identity.name ?? 'The main agent';
     const status = await runnerStatus();
     if (!status?.configured) { notify(status ? `${name}'s runner has no API key, so nothing ran.` : `${name}'s runner isn't running, so nothing ran. Start it on your PC with npm.cmd run origin.`, 'warn'); return; }
     void runRuntimeOps;
     useOrigin.setState({ status: { ...status, running: 'manual' } });
-    const r = await runOrigin(doc, MANUAL_RUN_MINUTES);
+    const r = await runOrigin(doc, MANUAL_RUN_MINUTES, branch);
     useOrigin.setState({ status: await runnerStatus() });
     const run = r?.data.run;
     useStore.getState().notify(run ? `${name}'s run ended (${run.status}, ${run.costKnown ? `$${run.costUsd.toFixed(3)}` : 'cost unknown'})${run.summary ? `: ${run.summary}` : '.'}` : r?.data.reason ?? 'The runner did not answer.');
@@ -80,7 +82,7 @@ export function BranchMenu({ agents, teams, live, match, selected }: Props) {
             </span>
           </button>
           <button className="bm-open" aria-label={`Open ${a.identity.name}'s profile`} title="Open profile" onClick={() => open(id)}><UserRound size={12} /></button>
-          {id === ORIGIN_ID && <button className="bm-run" title={`Start an extra ${MANUAL_RUN_MINUTES}-minute run now`} onClick={() => void runNow(id)}><Play size={11} /> Run {MANUAL_RUN_MINUTES} min</button>}
+          <button className="bm-run" title={id === ORIGIN_ID ? `Start an extra ${MANUAL_RUN_MINUTES}-minute run now` : `Run ${a.identity.name}'s branch for ${MANUAL_RUN_MINUTES} minutes now, within your cap`} onClick={() => void runNow(id)}><Play size={11} /> Run {MANUAL_RUN_MINUTES} min</button>
           {growKind({ agents }, id) && <button className="bm-open" aria-label={n.depth === 0 ? 'Start a venture branch' : `Add a skill to ${a.identity.name}`} title={n.depth === 0 ? 'Start a venture branch' : 'Add a skill to this venture'} onClick={() => window.dispatchEvent(new CustomEvent('agent-office:open-creator', { detail: { tab: 'agent', parentId: id } }))}><GitBranch size={12} /></button>}
           {a.branch?.kind === 'skill' && <button className="bm-open" aria-label={`Ask ${a.identity.name}'s venture for a new skill`} title="Ask this agent's venture for a new skill agent" onClick={() => window.dispatchEvent(new CustomEvent('agent-office:open-creator', { detail: { tab: 'requests', fromId: id } }))}><MessageSquarePlus size={12} /></button>}
         </div>

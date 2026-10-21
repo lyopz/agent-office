@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Play, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useStore } from '../store/store';
-import { agentProposalAction, mockupUrl, publishDecision, runnerStatus, setAutoAgents, setAutoTasks, syncOrigin, taskAction, type AgentProposal, type PublishRequest, type RunnerStatus, type RunnerTask } from './originLink';
+import { agentProposalAction, mockupUrl, publishDecision, runnerStatus, setAutoAgents, setAutoTasks, setImageCap, syncOrigin, taskAction, type AgentProposal, type PublishRequest, type RunnerStatus, type RunnerTask } from './originLink';
 import { branchKind, describeWindow } from './opportunity';
 import { createProposedAgent } from './skillFiles';
 import { ProgressBar, ProgressLog } from './Progress';
@@ -30,6 +30,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   const [title, setTitle] = useState('');
   const [detail, setDetail] = useState('');
   const [logAgent, setLogAgent] = useState('');
+  const [capDraft, setCapDraft] = useState('');
   const refresh = async () => { const s = await runnerStatus(); setSt(s); if (s && !s.synced) await syncOrigin(doc); };
   useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 15_000); return () => clearInterval(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -136,6 +137,22 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         Empire mode: JARVIS picks the ventures and sets its own research tasks (3 open at most, each within its budget and the {money(st.capUsd)} cap). It still asks before using your accounts, publishing, or spending money.
       </label>
       <p className="creator-privacy"><b>Printify:</b> {st.printify?.configured ? <>agents make products in <b>{st.printify.shopTitle ?? 'your shop'}</b>{st.printify.channel ? ` (${st.printify.channel})` : ''}. They stay unpublished until you press Publish below.</> : <>not set up. Connect your Etsy shop in Printify, then run <code>npm.cmd run set-printify</code> once with a Printify personal access token.</>}</p>
+      <p className="creator-privacy"><b>Design images (ChatGPT):</b> {st.openai?.configured
+        ? st.printify?.configured ? <>agents can make art with {st.openai.model}, billed to your OpenAI account (not the {money(st.capUsd)} cap).</> : <>your OpenAI key is saved; agents start making images once Printify is set up too.</>
+        : <>not set up. Make an API key at platform.openai.com (separate from a ChatGPT subscription, with its own billing), then run <code>npm.cmd run set-openai</code> once.</>}</p>
+      {st.images && (st.openai?.configured || st.images.log.length > 0) && <>
+        <div className="spend-grid">
+          <div><b>{money(st.images.spentUsd)}</b><span>images this month of your {money(st.images.capUsd)} image limit</span></div>
+          <div><b>{st.images.log.filter((e) => e.at.slice(0, 7) === st.images!.month).length}</b><span>images made this month</span></div>
+          <div><b>{money(Math.max(0, st.images.capUsd - st.images.spentUsd))}</b><span>image budget left</span></div>
+        </div>
+        <form className="creator-request-row" style={{ justifyContent: 'flex-start' }} onSubmit={(e) => { e.preventDefault(); const v = Number(capDraft); if (Number.isFinite(v) && v >= 0) { void act(() => setImageCap(v), `Image limit set to ${money(v)} a month.`); setCapDraft(''); } }}>
+          <label className="creator-privacy" htmlFor="image-cap">Monthly image limit ($)</label>
+          <input id="image-cap" type="number" min={0} max={100} step={1} value={capDraft} placeholder={String(st.images.capUsd)} onChange={(e) => setCapDraft(e.target.value)} style={{ flex: '0 0 90px' }} />
+          <button className="creator-secondary" disabled={capDraft === ''}>Set</button>
+        </form>
+        {st.images.log.length > 0 && <table className="spend-table"><thead><tr><th>Image</th><th>Cost</th><th>By</th></tr></thead><tbody>{st.images.log.slice(0, 12).map((e) => <tr key={e.id}><td title={e.prompt}>{new Date(e.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · {e.quality} · {e.prompt.slice(0, 70)}{e.prompt.length > 70 ? '…' : ''}</td><td>{money(e.usd)}{e.estimated ? ' (est.)' : ''}</td><td>{e.agentName}</td></tr>)}</tbody></table>}
+      </>}
       {st.etsy?.configured && <p className="creator-privacy"><b>Etsy research:</b> on (read-only).</p>}
       {created.length > 0 && <p className="creator-privacy">Recently created by JARVIS: {created.map((p) => `${p.name} (for ${doc.agents[p.parentId]?.identity.name ?? p.parentId})`).join(', ')}.</p>}
 
@@ -188,7 +205,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
       {st.nextAction && <><span className="creator-kicker">NEXT ACTION</span><p className="creator-privacy">{st.nextAction}</p></>}
       {st.memory && <><span className="creator-kicker">JARVIS'S NOTES</span><pre className="origin-notes">{st.memory}</pre></>}
       {st.runs.length > 0 && <><span className="creator-kicker">RECENT RUNS</span>
-        <ul className="creator-request-log">{st.runs.map((r) => <li key={r.id}>{new Date(r.startedAt).toLocaleString()} · {r.trigger} · {r.status} · {r.costKnown ? money(r.costUsd) : 'cost unknown'}{r.workers && r.workers.length > 1 ? ` · ${r.workers.map((w) => `${w.agentName} ${money(w.costUsd)}${w.rounds > 1 ? ` (${w.rounds} steps)` : ''}`).join(', ')}` : r.workers?.[0]?.rounds && r.workers[0].rounds > 1 ? ` · ${r.workers[0].rounds} steps` : ''}{r.searches ? ` · ${r.searches} searches` : ''}{r.fetches ? ` · ${r.fetches} pages read` : ''}{r.etsyCalls ? ` · ${r.etsyCalls} Etsy lookups` : ''}{r.printifyCalls ? ` · ${r.printifyCalls} Printify steps` : ''}{r.skillFileFor ? ` · wrote ${r.skillFileFor}'s SKILL.md` : ''}{r.summary ? `: ${r.summary}` : ''}{r.notify ? <b> · {r.notify}</b> : null}</li>)}</ul></>}
+        <ul className="creator-request-log">{st.runs.map((r) => <li key={r.id}>{new Date(r.startedAt).toLocaleString()} · {r.trigger} · {r.status} · {r.costKnown ? money(r.costUsd) : 'cost unknown'}{r.workers && r.workers.length > 1 ? ` · ${r.workers.map((w) => `${w.agentName} ${money(w.costUsd)}${w.rounds > 1 ? ` (${w.rounds} steps)` : ''}`).join(', ')}` : r.workers?.[0]?.rounds && r.workers[0].rounds > 1 ? ` · ${r.workers[0].rounds} steps` : ''}{r.searches ? ` · ${r.searches} searches` : ''}{r.fetches ? ` · ${r.fetches} pages read` : ''}{r.etsyCalls ? ` · ${r.etsyCalls} Etsy lookups` : ''}{r.printifyCalls ? ` · ${r.printifyCalls} Printify steps` : ''}{r.images ? ` · ${r.images} image${r.images === 1 ? '' : 's'} (${money(r.imageUsd ?? 0)} OpenAI)` : ''}{r.skillFileFor ? ` · wrote ${r.skillFileFor}'s SKILL.md` : ''}{r.summary ? `: ${r.summary}` : ''}{r.notify ? <b> · {r.notify}</b> : null}</li>)}</ul></>}
     </div>
   );
 }

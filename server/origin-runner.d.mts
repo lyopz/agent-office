@@ -1,7 +1,7 @@
 // Types for the parts of origin-runner.mjs the tests use.
 export function costOf(model: string, usage: Record<string, unknown>): number | null;
 export function loadState(file?: string): Record<string, unknown>;
-export function runOnce(trigger: 'manual' | 'schedule' | 'focus', deps?: { fetch: typeof fetch; file: string; key?: string }):
+export function runOnce(trigger: 'manual' | 'schedule' | 'focus', deps?: { fetch: typeof fetch; file: string; key?: string; only?: string[] }):
   Promise<{ ok: false; reason: string } | { ok: true; run: { status: string; costUsd: number; searches: number } }>;
 export function budgetWatch(task: { spentUsd?: number; runCosts?: number[]; budgetUsd?: number }, now?: Date): string | null;
 export function ask(question: string, deps?: { fetch: typeof fetch; file: string; key?: string }):
@@ -11,6 +11,6 @@ export function parseConsent(text: string): Record<string, unknown> | null;
 export function applyConsent(s: Record<string, unknown>, c: Record<string, unknown>): string[] | null;
 export function pruneGone(s: Record<string, unknown>, at: string): number;
 export function dailyAllowance(s: Record<string, unknown>, now?: Date): { allowanceUsd: number; spentTodayUsd: number };
-export function pickTasks(s: Record<string, unknown>, n?: number): Record<string, unknown>[];
+export function pickTasks(s: Record<string, unknown>, n?: number, only?: string[] | null): Record<string, unknown>[];
 export function itemCount(text: string): number | null;
 export function addFocusTask(s: Record<string, unknown>, t: { title: string; detail?: string; agentId?: string | null; budgetUsd?: number | null; count?: number | null }): Record<string, unknown> | null;

@@ -19,7 +19,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readKey } from './key-file.mjs';
 import { ETSY_TOOLS, authUrl, etsyPublic, finishAuth, runEtsyTool } from './etsy.mjs';
-import { PRINTIFY_TOOLS, printifyConfig, printifyPublic, productPreview, publishProduct, runPrintifyTool } from './printify.mjs';
+import { PRINTIFY_TOOLS, printifyConfig, printifyPublic, productPreview, publishProduct, runPrintifyTool, uploadImage } from './printify.mjs';
+import { IMAGE_TOOL, generateImage, imageWorstUsd, openaiPublic } from './openai-images.mjs';
 
 const PORT = Number(process.env.ORIGIN_PORT || 8788);
 const MODEL = process.env.ORIGIN_MODEL || 'claude-haiku-5-5';
@@ -32,6 +33,9 @@ const MAX_ROUNDS = Number(process.env.ORIGIN_ROUNDS || 3);
 /** A task the owner typed in the command center is the focus: worked first, more rounds a run, and runs every FOCUS_EVERY_MIN until it is done. */
 const FOCUS_EVERY_MIN = Number(process.env.ORIGIN_FOCUS_EVERY_MIN || 10);
 const FOCUS_MAX_ITEMS = 10;
+/** Design images are billed to the owner's OpenAI account, outside the Anthropic cap, so they get their own monthly cap (the owner sets it in the app). */
+const IMAGE_CAP_USD = Number(process.env.ORIGIN_IMAGE_CAP_USD || 5);
+const IMAGE_LOG_KEEP = 200;
 const roundsFor = (task) => (task?.focus ? MAX_ROUNDS * 2 : MAX_ROUNDS);
 const MAX_MIN = Number(process.env.ORIGIN_MAX_MIN || 10);
 const SCHEDULE = (process.env.ORIGIN_SCHEDULE || 'on') !== 'off';
@@ -240,9 +244,40 @@ export function pruneGone(s, at) {
 
 /** The tools agents get in task runs, from whatever the owner has set up. */
 function agentTools() {
-  const list = [...(etsyPublic().configured ? ETSY_TOOLS : []), ...(printifyPublic().configured ? PRINTIFY_TOOLS : [])];
+  const printify = printifyPublic().configured;
+  // images go straight into Printify as designs, so the image tool needs both
+  const images = printify && openaiPublic().configured;
+  const list = [...(etsyPublic().configured ? ETSY_TOOLS : []), ...(printify ? PRINTIFY_TOOLS : []), ...(images ? [IMAGE_TOOL] : [])];
   if (!list.length) return null;
-  return { tools: list, run: (name, input) => (name.startsWith('etsy_') ? runEtsyTool(name, input) : runPrintifyTool(name, input)), preview: (id) => productPreview(id) };
+  return {
+    tools: list,
+    run: (name, input) => (name.startsWith('etsy_') ? runEtsyTool(name, input) : runPrintifyTool(name, input)),
+    preview: (id) => productPreview(id),
+    image: async (input) => { const g = await generateImage(input); const up = await uploadImage(input.file_name || 'design.png', g.b64); return { ...up, usd: g.usd, model: g.model, quality: g.quality, size: g.size, estimated: g.estimated }; },
+  };
+}
+
+/** This month's image spend; a new month starts at zero. */
+function rollImages(s) { const m = month(); if (s.images?.month !== m) s.images = { month: m, spentUsd: 0 }; return s.images; }
+const imageCap = (s) => (Number.isFinite(s.imageCapUsd) ? s.imageCapUsd : IMAGE_CAP_USD);
+
+/** An agent makes a design image: within the owner's image cap, logged with its cost, uploaded to Printify. */
+async function makeImage(s, task, input, w, tools) {
+  const spent = rollImages(s);
+  const q = ['low', 'medium', 'high'].includes(input?.quality) ? input.quality : 'medium';
+  if (!tools?.image) return { content: 'The image generator is not set up.', isError: true };
+  if (spent.spentUsd + imageWorstUsd(q) > imageCap(s)) return { content: `The owner's image cap for this month ($${imageCap(s).toFixed(2)}) is reached. Make this design as SVG with printify_upload_design instead, and tell the owner in notifyOwner.`, isError: true };
+  try {
+    const g = await tools.image({ ...input, quality: q });
+    const agent = task ? taskAgent(s, task) : null;
+    const e = { id: newId('img'), at: new Date().toISOString(), model: g.model, quality: g.quality, size: g.size, usd: g.usd, estimated: !!g.estimated, prompt: String(input.prompt || '').slice(0, 300), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'JARVIS', taskId: task?.id ?? null, taskTitle: task?.title ?? null, imageId: g.image_id };
+    s.imageLog = [...(s.imageLog || []), e].slice(-IMAGE_LOG_KEEP);
+    spent.spentUsd = round6(spent.spentUsd + g.usd);
+    w.images = (w.images || 0) + 1; w.imageUsd = round6((w.imageUsd || 0) + g.usd);
+    return { content: JSON.stringify({ image_id: g.image_id, width: g.width, height: g.height, preview: g.preview, cost_usd: g.usd, image_budget_left_usd: round6(imageCap(s) - spent.spentUsd) }), isError: false };
+  } catch (err) {
+    return { content: String(err.message || err).slice(0, 400), isError: true };
+  }
 }
 
 /** An agent asks the owner to publish a Printify product: recorded for the owner's Publish button, never published here. */
@@ -306,7 +341,7 @@ function briefFor(s, task, deadline, etsy = null) {
     task?.kind === 'skill-file'
       ? `Your one task this run (the owner approved it): [${task.id}] write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId})${task.sharedWith?.length ? `. ${task.sharedWith.length} other agents do exactly the same job (${task.sharedWith.join(', ')}) and will share this file, so write it for the role, not the one name` : ''}. What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions${task.version > 1 ? ' and its earlier, thinner SKILL.md (replace it with a much more detailed one)' : ''}:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}\nResearch only if it makes the playbook more specific (for example current platform rules or prices). Return it as "skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"} and list the task id in completedTaskIds.`
       : task
-      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}${task.focus ? `\n${focusBrief(s, task, etsy)}` : ''}\nPLAN AND STEPS: work the task from start to finish through an ordered plan. ${task.steps?.length ? `Your plan so far:\n${task.steps.map((x, i) => `${i + 1}. [${x.done ? 'x' : ' '}] ${x.text}`).join('\n')}\nDo the first unchecked step now.` : 'This is the first run on it: write a plan of 3 to 8 concrete, ordered steps that end in a finished deliverable, then do step 1 now.'}${task.notes ? `\nWhere it stood after the last run: ${task.notes}` : ''}\nReturn the whole plan in "steps" with each finished step marked done, and in "taskNotes" exactly where the task stands (findings so far, sources, what is next). You get up to ${roundsFor(task)} rounds this run: after each reply you may be asked to continue with the next step. When every step is done, list the task id in completedTaskIds and put the deliverable in taskNotes and notifyOwner.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. ${etsy?.tools.some((t) => t.name === 'etsy_search') ? `ETSY (read-only, free): etsy_search shows real active listings with prices, favorites, views and tags; use it to measure demand, competition and price ranges. ${etsyPublic().connected ? "etsy_my_shop shows the owner's own shop and its numbers." : ''} ` : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? `PRINTIFY (the owner's shop "${printifyPublic().shopTitle || 'shop'}", ${printifyPublic().channel || 'connected store'}): you can make products to sell. Find a product type (printify_find_product_type), a provider and variants, upload a design (write it yourself as clean SVG, typography or simple vector art, sized for print), then printify_create_product with a researched price, SEO title, full description and 13 tags. Products stay unpublished in Printify (no cost). When one is finished and your research supports it, call printify_request_publish: the owner approves each one before it goes live on their store, where the store charges its listing fee. At most ${perRun} product${perRun === 1 ? '' : 's'} this run. ` : ''}You cannot publish, buy or contact anyone yourself; for that, say what you need in notifyOwner.\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
+      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}${task.focus ? `\n${focusBrief(s, task, etsy)}` : ''}\nPLAN AND STEPS: work the task from start to finish through an ordered plan. ${task.steps?.length ? `Your plan so far:\n${task.steps.map((x, i) => `${i + 1}. [${x.done ? 'x' : ' '}] ${x.text}`).join('\n')}\nDo the first unchecked step now.` : 'This is the first run on it: write a plan of 3 to 8 concrete, ordered steps that end in a finished deliverable, then do step 1 now.'}${task.notes ? `\nWhere it stood after the last run: ${task.notes}` : ''}\nReturn the whole plan in "steps" with each finished step marked done, and in "taskNotes" exactly where the task stands (findings so far, sources, what is next). You get up to ${roundsFor(task)} rounds this run: after each reply you may be asked to continue with the next step. When every step is done, list the task id in completedTaskIds and put the deliverable in taskNotes and notifyOwner.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. ${etsy?.tools.some((t) => t.name === 'etsy_search') ? `ETSY (read-only, free): etsy_search shows real active listings with prices, favorites, views and tags; use it to measure demand, competition and price ranges. ${etsyPublic().connected ? "etsy_my_shop shows the owner's own shop and its numbers." : ''} ` : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? `PRINTIFY (the owner's shop "${printifyPublic().shopTitle || 'shop'}", ${printifyPublic().channel || 'connected store'}): you can make products to sell. Find a product type (printify_find_product_type), a provider and variants, upload a design (write it yourself as clean SVG, typography or simple vector art, sized for print), then printify_create_product with a researched price, SEO title, full description and 13 tags. ${etsy?.tools.some((t) => t.name === IMAGE_TOOL.name) ? `For illustrated or photo-style art, design_generate_image makes it with the owner's ChatGPT image model and uploads it for you ($${Math.max(0, imageCap(s) - rollImages(s).spentUsd).toFixed(2)} of the $${imageCap(s).toFixed(2)} monthly image budget left); text-only designs are better as SVG. ` : ''}Products stay unpublished in Printify (no cost). When one is finished and your research supports it, call printify_request_publish: the owner approves each one before it goes live on their store, where the store charges its listing fee. At most ${perRun} product${perRun === 1 ? '' : 's'} this run. ` : ''}You cannot publish, buy or contact anyone yourself; for that, say what you need in notifyOwner.\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
       : canSelfApprove(s)
       ? 'No task is ready. Do not research this run. Review your notes, make sure each venture has the skill agents it needs (below), and set the single most valuable next task in proposedTasks; in empire mode it is approved at once and worked next run.'
       : 'No approved task is ready. Do not research. Review your notes, make sure each venture has the skill agents it needs (below), and propose the single most valuable, cheap task for the owner to approve.',
@@ -335,9 +370,11 @@ let running = null;
  * The tasks for one run: one per agent, up to PARALLEL agents working side by side.
  * A command-center task (focus) goes first and alone; otherwise the owner's tasks come first, then ones JARVIS set itself, oldest first.
  */
-export function pickTasks(s, n = PARALLEL) {
+export function pickTasks(s, n = PARALLEL, only = null) {
   const known = (t) => !(s.agents || []).length || !t.agentId || s.agents.some((a) => a.id === t.agentId);
-  const ready = (t) => t.status === 'approved' && t.kind !== 'skill-file' && !(t.waitingOnOwner && pendingCount(s)) && known(t);
+  // a branch's own run: only the tasks of the agents in that branch
+  const inBranch = (t) => !only || only.includes(t.agentId || AGENT_ID);
+  const ready = (t) => t.status === 'approved' && t.kind !== 'skill-file' && !(t.waitingOnOwner && pendingCount(s)) && known(t) && inBranch(t);
   // the owner's command-center tasks come before everything else, and while one is open nothing else runs
   const focus = s.tasks.filter((t) => ready(t) && t.focus);
   const work = (focus.length ? focus : s.tasks.filter(ready)).map((t, i) => [t, i]).sort((a, b) => (Number(a[0].by === 'origin') - Number(b[0].by === 'origin')) || a[1] - b[1]).map(([t]) => t);
@@ -393,9 +430,11 @@ async function work(s, task, ctx) {
         messages.push({ role: 'assistant', content: data.content });
         const results = [];
         for (const tc of calls) {
-          const res = tc.name === 'printify_request_publish' ? await requestPublish(s, task, tc.input, w, etsy) : await etsy.run(tc.name, tc.input);
+          const res = tc.name === 'printify_request_publish' ? await requestPublish(s, task, tc.input, w, etsy)
+            : tc.name === IMAGE_TOOL.name ? await makeImage(s, task, tc.input, w, etsy)
+            : await etsy.run(tc.name, tc.input);
           if (tc.name.startsWith('etsy_')) record.etsyCalls = (record.etsyCalls || 0) + 1;
-          else record.printifyCalls = (record.printifyCalls || 0) + 1;
+          else if (tc.name.startsWith('printify_')) record.printifyCalls = (record.printifyCalls || 0) + 1;
           results.push({ type: 'tool_result', tool_use_id: tc.id, content: res.content, ...(res.isError ? { is_error: true } : {}) });
         }
         messages.push({ role: 'user', content: results });
@@ -517,7 +556,9 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   if (remaining(s) < CALL_WORST_USD) {
     return { ok: false, reason: `The $${CAP} monthly cap is reached ($${s.ledger.spentUsd.toFixed(2)} spent). Runs stop until next month or a new approved cap.` };
   }
-  let picks = pickTasks(s, deps.parallel ?? PARALLEL);
+  const only = Array.isArray(deps.only) && deps.only.length ? deps.only : null;
+  let picks = pickTasks(s, deps.parallel ?? PARALLEL, only);
+  if (only && !picks.length) return { ok: false, reason: 'That branch has no approved work ready.' };
   // with no work of its own, a SKILL.md request is the task (as before); with none at all, JARVIS plans
   const skillTask = picks.length ? null : nextTask(s);
   if (skillTask?.kind === 'skill-file') skillTask.sharedWith = s.tasks.filter((x) => x !== skillTask && x.kind === 'skill-file' && x.status === 'approved' && roleOf(x) === roleOf(skillTask)).map((x) => x.agentName);
@@ -534,7 +575,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   try {
     results = await Promise.all(picks.map((t) => work(s, t, ctx)));
     // one SKILL.md every run, so the files get written while the agents work their tasks (not while the owner's focus task runs)
-    const extra = picks[0]?.kind === 'skill-file' || focus ? null : nextTask({ ...s, tasks: s.tasks.filter((t) => t.kind === 'skill-file') });
+    const extra = picks[0]?.kind === 'skill-file' || focus || only ? null : nextTask({ ...s, tasks: s.tasks.filter((t) => t.kind === 'skill-file') });
     const used = results.reduce((x, r) => x + r.w.costUsd, 0);
     if (extra && Date.now() < deadline.getTime() - 60_000 && used + CALL_WORST_USD <= runLimit) {
       const c = await writeSkillFile(s, extra, ctx);
@@ -566,6 +607,8 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   record.status = ws.length === 1 ? ws[0].status : ws.some((w) => w.status === 'done') ? 'done' : ws[0].status;
   record.summary = ws.length === 1 ? (ws[0].summary || '') : ws.filter((w) => w.summary).map((w) => `${w.agentName}: ${w.summary}`).join(' · ').slice(0, 600);
   const publishAsks = ws.reduce((x, w) => x + (w.publishAsks || 0), 0);
+  record.images = ws.reduce((x, w) => x + (w.images || 0), 0);
+  record.imageUsd = round6(ws.reduce((x, w) => x + (w.imageUsd || 0), 0));
   const notes = [...ws.map((w) => w.notify).filter(Boolean), ...(publishAsks ? [`${publishAsks} product${publishAsks === 1 ? '' : 's'} ready for you to publish in JARVIS runs.`] : [])];
   record.notify = notes.length ? notes.join(' ').slice(0, 800) : null;
   record.agentId = ws[0].agentId;
@@ -590,6 +633,12 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   for (const f of s.skillFiles) if (!now.skillFiles.some((x) => x.id === f.id)) now.skillFiles.push(f);
   for (const r of s.publishRequests || []) if (!(now.publishRequests || []).some((x) => x.id === r.id)) now.publishRequests = [...(now.publishRequests || []), r].slice(-100);
   for (const e of s.progressLog || []) if (!(now.progressLog || []).some((x) => x.id === e.id)) now.progressLog = [...(now.progressLog || []), e].slice(-PROGRESS_KEEP);
+  // images made this run: their log lines and their cost on the image cap (never on the Anthropic ledger)
+  for (const e of s.imageLog || []) {
+    if ((now.imageLog || []).some((x) => x.id === e.id)) continue;
+    now.imageLog = [...(now.imageLog || []), e].slice(-IMAGE_LOG_KEEP);
+    if (e.at.slice(0, 7) === month()) { const m = rollImages(now); m.spentUsd = round6(m.spentUsd + e.usd); }
+  }
   // spend goes to the agent each worker was; SKILL.md writing is JARVIS's
   for (const w of ws) charge(now.ledger, w.agentId, w.costUsd);
   if (record.skillCostUsd) charge(now.ledger, AGENT_ID, record.skillCostUsd);
@@ -717,7 +766,7 @@ function publicState() {
   return {
     configured: Boolean(KEY), model: MODEL, capUsd: CAP, everyMinutes: EVERY_MIN, maxMinutes: MAX_MIN, schedule: SCHEDULE,
     spentUsd: s.ledger.spentUsd, spentByAgent: s.ledger.byAgent, ...dailyAllowance(s), parallel: PARALLEL, rounds: MAX_ROUNDS, taskBudgetUsd: TASK_BUDGET_USD, unknownCostRuns: s.ledger.unknownCostRuns, month: s.ledger.month, running: running ? running.startedAt : null,
-    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, etsy: etsyPublic(), printify: printifyPublic(), publishRequests: (s.publishRequests || []).slice(-30), skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
+    synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, etsy: etsyPublic(), printify: printifyPublic(), openai: openaiPublic(), images: { month: rollImages(s).month, spentUsd: s.images.spentUsd, capUsd: imageCap(s), log: (s.imageLog || []).slice(-30).reverse() }, publishRequests: (s.publishRequests || []).slice(-30), skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
     // with no scheduled run yet, the next one starts within a minute
     nextScheduledAt: SCHEDULE ? new Date(s.lastScheduledAt ? Math.max(Date.now(), Date.parse(s.lastScheduledAt) + (pickTasks(s).some((t) => t.focus) ? Math.min(FOCUS_EVERY_MIN, EVERY_MIN) : EVERY_MIN) * 60_000) : Date.now() + 60_000).toISOString() : null,
     focusEveryMinutes: Math.min(FOCUS_EVERY_MIN, EVERY_MIN),
@@ -795,7 +844,19 @@ async function handle(req, res) {
     return send(req, res, 200, { ok: true });
   }
   if (url === '/api/origin/run') {
-    const r = await runOnce('manual');
+    // a branch's Run button: that branch's agents work their own tasks for one window
+    const ids = Array.isArray(body.agentIds) ? body.agentIds.filter((x) => typeof x === 'string').slice(0, 100) : null;
+    if (ids?.length) {
+      const s = loadState();
+      const lead = typeof body.agentId === 'string' ? body.agentId : ids[0];
+      const a = (s.agents || []).find((x) => x.id === lead);
+      // pressing Run approves a next step for a branch with nothing to do
+      if (a && !pickTasks(s, PARALLEL, ids).length) {
+        s.tasks.push({ id: newId('task'), title: `${a.name}: next step`, detail: `Work as ${a.name}. Take the next concrete step toward its goal (${a.title || 'its job'}): pick the most valuable piece of real work its SKILL.md calls for, do it, and report what you found or made, with sources.`, status: 'approved', by: 'owner', via: 'run-button', agentId: a.id, createdAt: new Date().toISOString() });
+        saveState(s);
+      }
+    }
+    const r = await runOnce('manual', { fetch: globalThis.fetch, file: FILE, ...(ids?.length ? { only: ids } : {}) });
     return send(req, res, r.ok ? 200 : 409, r);
   }
   if (url === '/api/origin/tasks') {
@@ -858,8 +919,10 @@ async function handle(req, res) {
     const s = loadState();
     if (typeof body.autoAgents === 'boolean') s.autoAgents = body.autoAgents;
     if (typeof body.autoTasks === 'boolean') s.autoTasks = body.autoTasks;
+    // the owner's monthly limit on design images (billed to their OpenAI account)
+    if (Number.isFinite(body.imageCapUsd) && body.imageCapUsd >= 0) s.imageCapUsd = Math.min(100, Math.round(body.imageCapUsd * 100) / 100);
     saveState(s);
-    return send(req, res, 200, { ok: true, autoAgents: s.autoAgents, autoTasks: s.autoTasks !== false });
+    return send(req, res, 200, { ok: true, autoAgents: s.autoAgents, autoTasks: s.autoTasks !== false, imageCapUsd: imageCap(s) });
   }
   if (url === '/api/origin/skillfiles') {
     // the app saved the file to the skill bank and gave it to the agent

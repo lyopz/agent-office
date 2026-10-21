@@ -64,7 +64,7 @@ JARVIS, the main agent at the core of the brain, is the owner's **Opportunity Re
 
 ## JARVIS live runs
 
-`server/origin-runner.mjs` runs JARVIS on a live model. The defaults are ed's choices: **Claude Haiku 5.5**, a **$15 monthly cap**, and **10 minutes every 2 hours**. You can also start a run with **Run 10 min** on JARVIS's row in the Branches menu.
+`server/origin-runner.mjs` runs JARVIS on a live model. The defaults are ed's choices: **Claude Haiku 5.5**, a **$15 monthly cap**, and **10 minutes every 2 hours**. You can also start a run with **Run 10 min** on JARVIS's row in the Branches menu. Every other branch has its own **Run 10 min** button, which runs only that branch's agents on their own tasks (giving the branch a next step when it has none), within the same cap.
 
 ```powershell
 # Windows PowerShell, in the app folder
@@ -90,6 +90,7 @@ npm.cmd run dev                            # in a second window; /api/origin is 
 - **Progress.** Every run reports how far along its task is. JARVIS runs shows a bar on each task and a progress log you can filter by agent; each agent's Tasks tab shows its own bar and log.
 - **Etsy (read-only).** Make a personal app at etsy.com/developers, then run `npm.cmd run set-etsy` once and paste its keystring and shared secret (the secret is hidden; both are checked, then saved in `%APPDATA%\\the-brain\\etsy.json`, outside the app). Task runs then get `etsy_search` for real listings, prices, favorites and tags. In JARVIS runs, **Connect my Etsy shop** signs you in to Etsy in your browser with read-only scopes, so agents can also read your own shop's numbers. Register `http://localhost:8788/api/origin/etsy/callback` as the app's callback URL. Agents can't list, change or buy anything.
 - **Printify (posting products).** Connect your Etsy shop in Printify (My stores), create a Printify personal access token, then run `npm.cmd run set-printify` once (hidden input; checked, then saved in `%APPDATA%\\the-brain\\printify.json`, outside the app). Task runs can then browse the catalog, upload designs (agents write typography and vector designs as SVG, or use an image link), and create products with researched prices, titles, descriptions and tags. Products stay unpublished in Printify. When an agent thinks one is ready, it appears under **Ready to publish** in JARVIS runs; only your **Publish** button sends it live to your store, which charges its listing fee.
+- **Design images (ChatGPT).** Agents can make illustrated or photo-style art with OpenAI's `gpt-image-2`, uploaded straight to Printify as a design. It needs an OpenAI **API** key from platform.openai.com with its own billing (a ChatGPT Plus subscription does not include API use). Run `npm.cmd run set-openai` once (hidden input; checked with a free call, then saved in `%APPDATA%\the-brain\openai.json`). Images are billed to your OpenAI account, outside the $15 Anthropic cap, so they have their own monthly limit ($5 by default, set it in JARVIS runs) and a per-image cost log there (about $0.006 low, $0.05 medium, $0.21 high quality at 1024x1024).
 - **Command center.** The console sends each question to the agent best suited to it (a tiny routing call, well under a tenth of a cent), or straight to an agent you name. That agent answers with its own instructions and SKILL.md.
 - Without the runner, nothing runs, and the app says so.
 

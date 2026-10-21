@@ -16,6 +16,7 @@
     "set-key": "node server/set-key.mjs",
     "set-etsy": "node server/set-etsy.mjs",
     "set-printify": "node server/set-printify.mjs",
+    "set-openai": "node server/set-openai.mjs",
     "desktop": "npm run build && electron .",
     "desktop:dev": "node desktop/dev.cjs",
     "desktop:dist": "npm run build && electron-builder",

@@ -487,3 +487,42 @@ describe('origin runner: the command center sets the focus', () => {
     expect(s.tasks[0]).toMatchObject({ focus: true, count: 5, via: 'console' });
   });
 });
+
+describe('origin runner: design images and branch runs', () => {
+  const imageTools = (made: any[]) => ({ tools: [{ name: 'design_generate_image', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }), image: async (input: any) => { made.push(input); return { image_id: `img${made.length}`, usd: 0.05, model: 'gpt-image-2', quality: input.quality, size: '1024x1024' }; } });
+  const callsTool = (inputs: object[]) => { let n = 0; return async () => { n++; return n <= inputs.length ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: `u${n}`, name: 'design_generate_image', input: inputs[n - 1] }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); }; };
+
+  test('each image is logged with its cost on the image cap, not the Anthropic cap', async () => {
+    write({ ...base, agents: [{ id: 'd1', name: 'Designer' }], tasks: [{ id: 't1', title: 'Art', detail: '', status: 'approved', by: 'owner', agentId: 'd1', createdAt: '' }] });
+    const made: any[] = [];
+    const r: any = await runner.runOnce('manual', { fetch: callsTool([{ prompt: 'cat', quality: 'medium' }, { prompt: 'dog' }]), file, key: 'test', etsy: imageTools(made) } as any);
+    const s = read();
+    expect(made.map((x) => x.quality)).toEqual(['medium', 'medium']);
+    expect(s.imageLog.map((e: any) => [e.agentName, e.usd, e.imageId, e.taskId])).toEqual([['Designer', 0.05, 'img1', 't1'], ['Designer', 0.05, 'img2', 't1']]);
+    expect(s.images.spentUsd).toBeCloseTo(0.1, 6);
+    expect(r.run).toMatchObject({ images: 2, imageUsd: 0.1 });
+    expect(s.ledger.spentUsd).toBeLessThan(0.01);
+  });
+
+  test('past the image cap the agent is told to use SVG, and nothing is made', async () => {
+    write({ ...base, imageCapUsd: 0.05, images: { month, spentUsd: 0.04 }, tasks: [{ id: 't1', title: 'Art', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
+    const made: any[] = [];
+    const bodies: any[] = [];
+    const inner = callsTool([{ prompt: 'cat' }]);
+    await runner.runOnce('manual', { fetch: async (_u: string, init: any) => { bodies.push(JSON.parse(init.body)); return inner(); }, file, key: 'test', etsy: imageTools(made) } as any);
+    expect(made).toHaveLength(0);
+    expect(bodies[1].messages.at(-1).content[0]).toMatchObject({ is_error: true });
+    expect(bodies[1].messages.at(-1).content[0].content).toMatch(/image cap/);
+  });
+
+  test("a branch's run works only that branch's tasks", async () => {
+    write({ ...base, agents: [{ id: 'v1', name: 'Store' }, { id: 's1', name: 'Seo' }, { id: 'v2', name: 'Other' }], tasks: [
+      { id: 'a', title: 'A', detail: '', status: 'approved', by: 'owner', agentId: 'v2', createdAt: '' },
+      { id: 'b', title: 'B', detail: '', status: 'approved', by: 'owner', agentId: 's1', createdAt: '' },
+    ] });
+    const r: any = await runner.runOnce('manual', { fetch: async () => reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }), file, key: 'test', etsy: null, only: ['v1', 's1'] } as any);
+    expect(r.run.workers.map((w: any) => w.taskId)).toEqual(['b']);
+    const none: any = await runner.runOnce('manual', { fetch: async () => reply('', {}), file, key: 'test', etsy: null, only: ['zzz'] } as any);
+    expect(none).toMatchObject({ ok: false });
+  });
+});
