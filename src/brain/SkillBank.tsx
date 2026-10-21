@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Check, Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import { Check, Download, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { BankSkill } from '../model/types';
 import { BUDGET_WATCH_ID, ORIGIN_ID, growKind } from './opportunity';
@@ -10,6 +10,18 @@ export function parseSkillFile(text: string, fileName = ''): Pick<BankSkill, 'na
   const field = (k: string) => m?.[1].match(new RegExp(`^${k}:\\s*(.*)$`, 'm'))?.[1].trim().replace(/^["']|["']$/g, '') ?? '';
   const fallback = fileName.replace(/\.md$/i, '').replace(/^SKILL$/i, '') || 'New skill';
   return { name: (field('name') || fallback).slice(0, 80), description: field('description').slice(0, 1000), instructions: (m ? m[2] : text).trim().slice(0, 20_000) };
+}
+
+/** A bank skill as a SKILL.md file, the same shape the import reads. */
+export function skillFileText(k: Pick<BankSkill, 'name' | 'description' | 'instructions'>): string {
+  const q = (v: string) => JSON.stringify(v.replace(/\s+/g, ' ').trim());
+  return `---\nname: ${q(k.name)}\ndescription: ${q(k.description)}\n---\n\n${k.instructions.trim()}\n`;
+}
+function download(k: BankSkill) {
+  const url = URL.createObjectURL(new Blob([skillFileText(k)], { type: 'text/markdown;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = `${k.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'skill'}.SKILL.md`; a.click();
+  URL.revokeObjectURL(url);
 }
 
 const empty = { id: '', name: '', description: '', instructions: '', tags: '' };
@@ -72,7 +84,7 @@ export default function SkillBank({ onNotice }: { onNotice: (text: string) => vo
 
   return (
     <div className="creator-body">
-      <p className="creator-privacy">Add the skills your agents can use. When {doc.agents[ORIGIN_ID]?.identity.name ?? 'ORIGIN'} or a venture creates an agent, it picks the skills that agent needs from this bank, so a research agent gets research skills and an Etsy store venture can build its own helpers. Only ORIGIN runs live for now; every skill it has goes into its next run.</p>
+      <p className="creator-privacy">Every agent ORIGIN or your ideas create also gets its own SKILL.md: ORIGIN writes a detailed playbook for that agent's job in its next runs (one at a time), and it lands here, given to that agent. Add the skills your agents can use. When {doc.agents[ORIGIN_ID]?.identity.name ?? 'ORIGIN'} or a venture creates an agent, it picks the skills that agent needs from this bank, so a research agent gets research skills and an Etsy store venture can build its own helpers. Only ORIGIN runs live for now; every skill it has goes into its next run.</p>
 
       <span className="creator-kicker">IN THE BANK ({doc.skillBank.length})</span>
       {doc.skillBank.length === 0 && <p className="creator-privacy">Nothing yet.</p>}
@@ -83,6 +95,7 @@ export default function SkillBank({ onNotice }: { onNotice: (text: string) => vo
             <li key={k.id}>
               <b>{k.name}</b>{k.description ? `: ${k.description}` : ''}
               <span className="bank-meta"> · {u.length ? `used by ${u.join(', ')}` : 'not used yet'}</span>{' '}
+              <button className="link-btn" onClick={() => download(k)}><Download size={12} /> SKILL.md</button>{' '}
               <button className="link-btn" onClick={() => setDraft({ id: k.id, name: k.name, description: k.description, instructions: k.instructions, tags: k.tags.join(', ') })}><Pencil size={12} /> edit</button>{' '}
               {k.id !== BUDGET_WATCH_ID && <button className="link-btn" onClick={() => { const r = useStore.getState().commit([{ op: 'skillBank.remove', id: k.id }], `Remove bank skill ${k.name}`); onNotice(r.ok ? `Removed ${k.name}.` : r.errors.join(' · ')); }}><Trash2 size={12} /> remove</button>}
             </li>

@@ -7,6 +7,7 @@ import SkillRequests from './SkillRequests';
 import OriginRuns from './OriginRuns';
 import SkillBank, { BankSkillPicker } from './SkillBank';
 import { brainMap, syncOrigin } from './originLink';
+import { useSkillFiles } from './skillFiles';
 
 type DeskTab = 'ideas' | 'agent' | 'requests' | 'runs' | 'bank' | 'tutorial';
 const TABS: DeskTab[] = ['ideas', 'agent', 'requests', 'runs', 'bank', 'tutorial'];
@@ -40,6 +41,7 @@ export default function CreatorDesk() {
   const openRequests = doc.skillRequests.filter((r) => r.status === 'venture-review' || r.status === 'owner-review').length;
   const [window_, setWindow] = useState<RunWindow>(suggestedWindow('Research'));
   const [agentSkills, setAgentSkills] = useState<string[]>([]);
+  useSkillFiles();
   // ORIGIN's rules come from the app: bring an older save up to date (new rules, the budget watch skill) once
   useEffect(() => {
     const d = useStore.getState().doc;

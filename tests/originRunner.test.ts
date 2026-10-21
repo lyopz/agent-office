@@ -167,3 +167,16 @@ describe('origin runner: console questions', () => {
     expect(s.tasks[0].runCosts).toHaveLength(1);
   });
 });
+
+describe('origin runner: SKILL.md tasks', () => {
+  test('a SKILL.md task gets the writing rules and its file is kept for the app', async () => {
+    write({ ...base, tasks: [{ id: 't1', title: "Write ETSY's SKILL.md", detail: 'Venture: ETSY', status: 'approved', by: 'owner', createdAt: '', kind: 'skill-file', agentId: 'agent_etsy', agentName: 'ETSY' }] });
+    let brief = '';
+    const fetch = async (_u: string, init: any) => { brief = JSON.parse(init.body).messages[0].content; return reply(result({ memory: 'm', skillFile: { name: 'Etsy playbook', description: 'store', body: '# Run the store' }, completedTaskIds: ['t1'], summary: 's' }), { input_tokens: 1000, output_tokens: 1000 }); };
+    await runner.runOnce('manual', { fetch, file, key: 'test' } as any);
+    expect(brief).toMatch(/write the SKILL\.md for the agent "ETSY"/);
+    const s = read();
+    expect(s.tasks[0].status).toBe('done');
+    expect(s.skillFiles[0]).toMatchObject({ agentId: 'agent_etsy', name: 'Etsy playbook', body: '# Run the store', status: 'new' });
+  });
+});

@@ -59,3 +59,22 @@ describe('skill bank', () => {
     expect(parseSkillFile('Just text', 'notes.md')).toMatchObject({ name: 'notes', instructions: 'Just text' });
   });
 });
+
+describe('each agent gets its own SKILL.md', () => {
+  test('ventures and skill agents without one are queued once; a finished file goes to the bank and the agent', async () => {
+    const { agentsNeedingSkillFile, skillFileBrief, skillFileOps, skillFileId } = await import('../src/brain/skillFiles');
+    const { skillFileText } = await import('../src/brain/SkillBank');
+    let doc = creatorBrain();
+    doc = applyOps(doc, branchAgentOps(doc, ORIGIN_ID, { id: 'agent_etsy', name: 'ETSY', specialty: 'Etsy store', purpose: 'Sell prints', skill: 'Ventures', window: window_ }).ops).doc;
+    expect(agentsNeedingSkillFile(doc, { tasks: [] })).toEqual(['agent_etsy']); // ORIGIN and core staff are not queued
+    expect(skillFileBrief(doc, 'agent_etsy')).toMatch(/Venture: ETSY, Etsy store, created by ORIGIN/);
+    expect(agentsNeedingSkillFile(doc, { tasks: [{ id: 't', title: '', detail: '', status: 'stopped', by: 'owner', createdAt: '', kind: 'skill-file', agentId: 'agent_etsy' }] })).toEqual([]);
+    const r = applyOps(doc, skillFileOps(doc, 'agent_etsy', { name: 'Etsy store playbook', description: 'Running the store', body: '# Steps\n1. List.' }));
+    expect(r.errors).toEqual([]);
+    expect(r.doc.agents.agent_etsy.bankSkills).toContain(skillFileId('agent_etsy'));
+    expect(agentPrompt(r.doc, 'agent_etsy')).toMatch(/## Etsy store playbook\n# Steps/);
+    expect(agentsNeedingSkillFile(r.doc, { tasks: [] })).toEqual([]);
+    const k = r.doc.skillBank.find((x) => x.id === skillFileId('agent_etsy'))!;
+    expect(parseSkillFile(skillFileText(k), 'x.md')).toEqual({ name: 'Etsy store playbook', description: 'Running the store', instructions: '# Steps\n1. List.' });
+  });
+});

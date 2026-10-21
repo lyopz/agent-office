@@ -7,16 +7,19 @@ import { ORIGIN_ID, agentPrompt, branchKind } from './opportunity';
 export interface RunnerTask {
   id: string; title: string; detail: string; status: 'proposed' | 'approved' | 'rejected' | 'done' | 'stopped'; by: 'owner' | 'origin'; createdAt: string;
   spentUsd?: number; runCosts?: number[]; budgetUsd?: number; stopReason?: string;
+  kind?: 'skill-file'; agentId?: string; agentName?: string;
 }
+/** A SKILL.md ORIGIN wrote for one agent, waiting for the app to save it to the bank. */
+export interface SkillFile { id: string; agentId: string; agentName: string; name: string; description: string; body: string; status: 'new' | 'imported'; createdAt: string }
 export interface AgentProposal {
   id: string; parentId: string; name: string; specialty: string; purpose: string; skill: string; bankSkillIds: string[];
-  everyMinutes: number; maxMinutes: number; reason: string; status: 'proposed' | 'approved' | 'rejected'; createdAt: string; agentId?: string | null;
+  everyMinutes: number; maxMinutes: number; reason: string; skillFile?: { name: string; description: string; body: string } | null; status: 'proposed' | 'approved' | 'rejected'; createdAt: string; agentId?: string | null;
 }
 export interface RunnerRun { id: string; agentId?: string; taskId?: string | null; trigger: 'manual' | 'schedule'; startedAt: string; endedAt: string | null; costUsd: number; costKnown: boolean; searches: number; status: string; summary: string; notify?: string | null }
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
   spentUsd: number; spentByAgent?: Record<string, number>; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
-  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null;
+  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null;
 }
 
 // in the browser the dev server forwards /api/origin; the desktop app talks to the runner directly
@@ -69,6 +72,10 @@ export async function agentProposalAction(body: { action: 'approve' | 'reject'; 
   return (await call<{ ok: boolean; agentProposals: AgentProposal[] }>('/agents', body))?.data ?? null;
 }
 
-export async function taskAction(body: { action: 'add'; title: string; detail?: string } | { action: 'approve' | 'reject' | 'done' | 'stop'; id: string }) {
+export async function skillFileImported(id: string) {
+  return !!(await call('/skillfiles', { action: 'imported', id }));
+}
+
+export async function taskAction(body: { action: 'add'; title: string; detail?: string; kind?: 'skill-file'; agentId?: string; agentName?: string } | { action: 'approve' | 'reject' | 'done' | 'stop'; id: string }) {
   return (await call<{ ok: boolean; tasks: RunnerTask[] }>('/tasks', body))?.data ?? null;
 }

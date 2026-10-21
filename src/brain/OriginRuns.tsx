@@ -3,6 +3,8 @@ import { Check, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import { agentProposalAction, runnerStatus, syncOrigin, taskAction, type AgentProposal, type RunnerStatus, type RunnerTask } from './originLink';
 import { branchAgentOps, describeWindow } from './opportunity';
+import { skillFileId, skillFileUpsert } from './skillFiles';
+import type { DocOp } from '../engine/ops';
 
 const money = (n: number) => `$${n.toFixed(n < 1 ? 3 : 2)}`;
 
@@ -29,7 +31,10 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
     const d = useStore.getState().doc;
     const id = `agent_${p.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'new'}_${Date.now().toString(36)}`;
     const { ops, error } = branchAgentOps(d, p.parentId, { id, name: p.name, specialty: p.specialty || p.skill, purpose: p.purpose, skill: p.skill, window: { everyMinutes: p.everyMinutes, maxMinutes: p.maxMinutes, setBy: 'origin', reason: p.reason || 'Proposed by ORIGIN.' }, bankSkillIds: p.bankSkillIds.filter((k) => d.skillBank.some((x) => x.id === k)) });
-    const r = error ? null : useStore.getState().commit(ops, `Approve agent: ${p.name}`);
+    // the agent's own SKILL.md, written by ORIGIN with the proposal, goes to the bank with it
+    const bank = p.bankSkillIds.filter((k) => d.skillBank.some((x) => x.id === k));
+    const own: DocOp[] = p.skillFile ? [skillFileUpsert(d, id, p.name, p.skillFile), { op: 'agent.setBankSkills', id, skillIds: [...bank, skillFileId(id)] }] : [];
+    const r = error ? null : useStore.getState().commit([...ops, ...own], `Approve agent: ${p.name}`);
     if (!r?.ok) { onNotice(`Couldn't add ${p.name}: ${error ?? r?.errors.join(' · ')}. Reject it, or fix the brain and try again.`); return; }
     await act(() => agentProposalAction({ action: 'approve', id: p.id, agentId: id }), `${p.name} is now a branch of ${d.agents[p.parentId]?.identity.name}.`);
   };
@@ -69,6 +74,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
         <div key={p.id} className="creator-blueprint creator-request">
           <p><b>New agent: {p.name}</b> · {p.skill} for {doc.agents[p.parentId]?.identity.name ?? p.parentId} · works {describeWindow({ everyMinutes: p.everyMinutes, maxMinutes: p.maxMinutes, setBy: 'origin', reason: p.reason })}</p>
           {p.purpose && <p>{p.purpose}</p>}
+          {p.skillFile && <details><summary className="creator-privacy">Its own SKILL.md: {p.skillFile.name}</summary><pre className="origin-notes">{p.skillFile.body}</pre></details>}
           <p>Skills: {p.bankSkillIds.length ? p.bankSkillIds.map((k) => doc.skillBank.find((x) => x.id === k)?.name ?? `${k} (not in the bank)`).join(', ') : 'none from the bank'}</p>
           <div className="creator-request-row"><button className="creator-secondary" onClick={() => void act(() => agentProposalAction({ action: 'reject', id: p.id }), 'Rejected.')}><X size={14} /> Reject</button><button className="creator-primary" onClick={() => void approveAgent(p)}><Check size={14} /> Approve & add agent</button></div>
         </div>
