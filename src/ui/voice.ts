@@ -18,6 +18,9 @@ let stopBrowser: (() => void) | null = null;
 export function listen(): Promise<Heard> {
   const desktop = getDesktopBridge();
   if (desktop?.voice) return desktop.voice.listen().catch((e: unknown) => ({ ok: false as const, error: String((e as Error)?.message ?? e) }));
+  // Electron and Brave have the Web Speech API but no speech service behind it, so it always fails there
+  if (/Electron/.test(navigator.userAgent)) return Promise.resolve({ ok: false, error: 'Voice needs the newest desktop app. Close The Brain completely and open it again from its shortcut.' });
+  if ((navigator as { brave?: unknown }).brave) return Promise.resolve({ ok: false, error: "Brave doesn't support voice typing. Use the desktop app (its shortcut), or Chrome or Edge." });
   const Rec = browserRecognition();
   if (!Rec) return Promise.resolve({ ok: false, error: 'Voice input is not available here. Use the desktop app, or Chrome or Edge.' });
   return new Promise((resolve) => {
@@ -26,7 +29,7 @@ export function listen(): Promise<Heard> {
     let done = false;
     const finish = (h: Heard) => { if (!done) { done = true; stopBrowser = null; resolve(h); } };
     r.onresult = (e) => { const text = Array.from(e.results).map((x) => x[0]?.transcript ?? '').join(' ').trim(); finish(text ? { ok: true, text } : { ok: false, error: "Didn't catch that. Press the mic and speak again." }); };
-    r.onerror = (e) => finish({ ok: false, error: e.error === 'not-allowed' ? 'The microphone is blocked for this page.' : e.error === 'no-speech' ? "Didn't hear anything. Press the mic and speak again." : `Voice input failed (${e.error}).` });
+    r.onerror = (e) => finish({ ok: false, error: e.error === 'not-allowed' ? 'The microphone is blocked for this page.' : e.error === 'no-speech' ? "Didn't hear anything. Press the mic and speak again." : e.error === 'network' ? 'Voice typing needs Chrome or Edge online, or the desktop app.' : `Voice input failed (${e.error}).` });
     r.onend = () => finish({ ok: false, error: "Didn't catch that. Press the mic and speak again." });
     stopBrowser = () => r.stop();
     r.start();

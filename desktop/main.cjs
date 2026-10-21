@@ -297,7 +297,9 @@ function registerVoiceIpc() {
       const line = out.trim().split(/\r?\n/).pop() || '';
       if (line.startsWith('OK ')) resolve({ ok: true, text: line.slice(3).trim() });
       else if (line === 'NONE' || !line) resolve({ ok: false, error: "Didn't catch that. Press the mic and speak again." });
-      else resolve({ ok: false, error: `Speech recognition failed: ${line.replace(/^ERR /, '')}. Check that a microphone is plugged in and that Windows lets desktop apps use it (Settings > Privacy > Microphone).` });
+      else if (line === 'ERR NORECOGNIZER') resolve({ ok: false, error: 'Windows has no speech recognition installed. Add it in Windows Settings > Time & language > Language & region: open English (United States) > Language options and install Speech, then try again.' });
+      else if (line === 'ERR NOMIC') resolve({ ok: false, error: "Windows can't find a microphone. Plug one in or set a default one in Windows Settings > System > Sound > Input, and turn on Settings > Privacy & security > Microphone > Let desktop apps access your microphone." });
+      else resolve({ ok: false, error: `Speech recognition failed: ${line.replace(/^ERR /, '') || 'no answer from Windows'}. Check Windows Settings > Privacy & security > Microphone > Let desktop apps access your microphone.` });
     });
   }));
   ipcMain.handle('voice:stop', (event) => { if (trusted(event) && listener) { try { listener.kill(); } catch { /* gone */ } listener = null; } return true; });
