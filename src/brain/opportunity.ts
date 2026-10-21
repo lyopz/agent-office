@@ -7,6 +7,7 @@
 import type { DocOp } from '../engine/ops';
 import type { Agent, BankSkill, KnowledgeEntry, OfficeDoc, RunWindow } from '../model/types';
 import { originSkillFileUpsert, originSkillFileOutdated, skillFileId } from './originSkillFile';
+import { builtinSkillOps, builtinSkillsForRole, builtinSkillsOutdated } from './builtinSkills';
 
 export const ORIGIN_ID = 'agent_origin';
 export const OPPORTUNITY_TAG = 'opportunity-agent';
@@ -228,6 +229,8 @@ export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
   if (file) ops.push(file);
   const want = [...new Set([...(origin.bankSkills ?? []), BUDGET_WATCH_ID, skillFileId(ORIGIN_ID)])];
   if (want.length !== (origin.bankSkills ?? []).length) ops.push({ op: 'agent.setBankSkills', id: ORIGIN_ID, skillIds: want });
+  // the owner's built-in playbooks for designing and trend scouting, on every agent whose role fits
+  ops.push(...builtinSkillOps(doc));
   const now = new Date().toISOString();
   for (const m of MEMORY) {
     if (doc.library[m.id]) continue; // keep what JARVIS has already recorded
@@ -239,7 +242,7 @@ export function opportunityOriginOps(doc: OfficeDoc): DocOp[] {
 
 export const isOpportunityOrigin = (doc: OfficeDoc) => !!doc.agents[ORIGIN_ID]?.ai.agentInstructions.startsWith(OPPORTUNITY_PROMPT.slice(0, 60));
 /** JARVIS has the prompt but older rules (an earlier version of the branch notes or schedule). */
-export const originOutdated = (doc: OfficeDoc) => isOpportunityOrigin(doc) && (doc.agents[ORIGIN_ID].ai.agentInstructions !== `${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}` || !doc.agents[ORIGIN_ID].bankSkills?.includes(BUDGET_WATCH_ID) || originSkillFileOutdated(doc, ORIGIN_ID));
+export const originOutdated = (doc: OfficeDoc) => isOpportunityOrigin(doc) && (doc.agents[ORIGIN_ID].ai.agentInstructions !== `${OPPORTUNITY_PROMPT}\n\n${BRANCH_NOTE}\n\n${AGENT_BLUEPRINT}` || !doc.agents[ORIGIN_ID].bankSkills?.includes(BUDGET_WATCH_ID) || originSkillFileOutdated(doc, ORIGIN_ID) || builtinSkillsOutdated(doc));
 
 /** How to design an agent; JARVIS uses it for ventures, ventures for their skill agents. */
 export const AGENT_BLUEPRINT = `HOW TO CREATE AN AGENT
@@ -320,8 +323,10 @@ export function branchAgentOps(doc: OfficeDoc, parentId: string, spec: BranchSpe
   const scope = kind === 'venture' ? ventureInstructions(spec.name, spec.specialty) : skillInstructions(spec.name, SKILL_LABELS[spec.skill] ?? spec.skill, parentName, spec.purpose);
   const brief = `${kind === 'venture' ? `${spec.purpose}\n\n` : ''}${scope}\n\n${kind === 'venture' ? AGENT_BLUEPRINT : SKILL_REQUESTS}\n\nRole: ${spec.specialty}. For research, cite current sources with publication dates and URLs; separate evidence, assumptions and recommendations. State uncertainty, costs and success criteria. Never claim work ran if it was only planned. Never spend, publish, contact people externally, create accounts or delete data without owner approval.`;
   const tools = ['web-research', 'library-search', 'reports'];
-  const bankSkills = (spec.bankSkillIds ?? []).filter((id) => doc.skillBank?.some((k) => k.id === id));
-  if (bankSkills.length !== (spec.bankSkillIds ?? []).length) return { ops: [], error: 'One of the chosen skills is no longer in the skill bank.' };
+  const chosen = (spec.bankSkillIds ?? []).filter((id) => doc.skillBank?.some((k) => k.id === id));
+  if (chosen.length !== (spec.bankSkillIds ?? []).length) return { ops: [], error: 'One of the chosen skills is no longer in the skill bank.' };
+  // a new designer or trend scout carries the owner's built-in playbook from its first run
+  const bankSkills = [...new Set([...chosen, ...builtinSkillsForRole(`${spec.name} ${spec.specialty}`).filter((id) => doc.skillBank?.some((k) => k.id === id))])];
   const skillNames = bankSkills.map((id) => doc.skillBank.find((k) => k.id === id)!.name);
   return {
     error: null,

@@ -409,6 +409,15 @@ describe('origin runner: trends and free-to-use images', () => {
     expect(bodies[0].messages[0].content).toMatch(/THE OWNER ADDS: navy and cream only/);
   });
 
+  test("the brief lists the designs the owner declined lately, so nobody remakes them", async () => {
+    write({ ...base, designs: [{ id: 'd1', title: 'fih: a plain fish', status: 'rejected', decidedAt: new Date().toISOString(), at: '', kind: 'svg', fileName: 'a.svg', agentId: 'x', agentName: 'X', taskId: null, taskTitle: null, imageId: null }, { id: 'd2', title: 'honk goose', status: 'waiting', at: new Date().toISOString(), kind: 'svg', fileName: 'b.svg', agentId: 'x', agentName: 'X', taskId: null, taskTitle: null, imageId: null }], tasks: [{ id: 't1', title: 'Art', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
+    const bodies: any[] = [];
+    const fetch = async (_u: string, init: any) => { bodies.push(JSON.parse(init.body)); return reply(result({ memory: 'm', summary: 's' }), { input_tokens: 100, output_tokens: 10 }); };
+    await runner.runOnce('manual', { fetch, file, key: 'test', etsy: { tools: [], run: async () => ({ content: 'x', isError: false }) } } as any);
+    expect(bodies[0].messages[0].content).toMatch(/DECLINED BY THE OWNER LATELY .*"fih: a plain fish"/);
+    expect(bodies[0].messages[0].content).not.toMatch(/"honk goose"/);
+  });
+
   test('a task that is not about trends does not carry the trend sources, but keeps the copyright rule', async () => {
     write({ ...base, tasks: [{ id: 't1', title: 'Mug demand', detail: 'prices', status: 'approved', by: 'owner', createdAt: '' }] });
     const bodies: any[] = [];
