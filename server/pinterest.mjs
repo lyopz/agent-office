@@ -21,10 +21,11 @@ export function pinterestPublic(cfg = pinterestConfig()) {
   return { configured: !!cfg?.token, username: cfg?.username ?? null };
 }
 
+// READ ONLY: every call here is a GET. Nothing in this file can pin, save, comment, follow or change the owner's account, and the scopes asked for (pins:read, boards:read, user_accounts:read) are read scopes.
 async function pinGet(p, params, cfg, f = globalThis.fetch) {
   const u = new URL(`${API}/${p}`);
   for (const [k, v] of Object.entries(params)) if (v != null && v !== '') u.searchParams.set(k, String(v));
-  const r = await f(u, { headers: { authorization: `Bearer ${cfg.token}`, accept: 'application/json' }, signal: AbortSignal.timeout(20_000) });
+  const r = await f(u, { method: 'GET', headers: { authorization: `Bearer ${cfg.token}`, accept: 'application/json' }, signal: AbortSignal.timeout(20_000) });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
     const why = r.status === 401 ? 'the token has expired or was revoked: run npm.cmd run set-pinterest again' : r.status === 403 ? `the app may not call this yet (${data.message || 'scope or access level'}); trends need an approved app with standard access` : data.message || `HTTP ${r.status}`;
@@ -40,7 +41,7 @@ export async function pingPinterest(cfg, f = globalThis.fetch) {
 
 export const PINTEREST_TOOL = {
   name: 'trends_pinterest',
-  description: "Pinterest through the owner's connected Pinterest app: trending keywords for a region (growing, monthly, yearly or seasonal) and a pin search that returns titles, descriptions and links only, for ideas. Never the pictures: a pin is someone's work and is never a free image; take the phrase and the idea, make your own.",
+  description: "Pinterest through the owner's connected Pinterest app: trending keywords for a region (growing, monthly, yearly or seasonal) and a pin search that returns titles, descriptions and links only, for ideas. Never the pictures: a pin is someone's work and is never a free image; take the phrase and the idea, make your own. Read-only: this tool cannot pin, save, comment or follow, and nothing else can either.",
   input_schema: { type: 'object', properties: { action: { type: 'string', enum: ['trends', 'search'] }, query: { type: 'string', description: 'for search: what to look for, e.g. "funny fish shirt"' }, region: { type: 'string', description: 'for trends: US (default), CA, GB, DE, FR, ...' }, trend_type: { type: 'string', enum: ['growing', 'monthly', 'yearly', 'seasonal'] }, interests: { type: 'string', description: 'for trends: comma-separated interest filter, optional' }, limit: { type: 'integer', minimum: 1, maximum: 25 } }, required: ['action'] },
 };
 

@@ -27,11 +27,12 @@ export function instagramPublic(cfg = instagramConfig()) {
   return { configured: !!(cfg?.token && cfg?.igUserId), username: cfg?.username ?? null, hashtagsLeft: cfg ? Math.max(0, HASHTAG_LIMIT - used) : null };
 }
 
+// READ ONLY: every call here is a GET. Nothing in this file can post, comment, like, follow or change the owner's account, and the scopes asked for (instagram_basic, pages_show_list, pages_read_engagement) are read scopes.
 async function graphGet(p, params, cfg, f = globalThis.fetch) {
   const u = new URL(`${GRAPH}/${p}`);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, String(v));
   u.searchParams.set('access_token', cfg.token);
-  const r = await f(u, { signal: AbortSignal.timeout(20_000) });
+  const r = await f(u, { method: 'GET', signal: AbortSignal.timeout(20_000) });
   const data = await r.json().catch(() => ({}));
   if (!r.ok || data.error) {
     const e = data.error || {};
@@ -49,7 +50,7 @@ export async function pingInstagram(cfg, f = globalThis.fetch) {
 
 export const INSTAGRAM_TOOL = {
   name: 'trends_instagram',
-  description: "Instagram hashtag search through the owner's connected Instagram account (Meta Graph API): the top posts under a hashtag with their captions, like and comment counts, dates and links. Text and numbers only, never the pictures: a post is someone's work, so you take the phrase and the joke's grammar, never the image. Meta allows 30 different hashtags per week, so look up a hashtag only when it matters.",
+  description: "Instagram hashtag search through the owner's connected Instagram account (Meta Graph API): the top posts under a hashtag with their captions, like and comment counts, dates and links. Text and numbers only, never the pictures: a post is someone's work, so you take the phrase and the joke's grammar, never the image. Meta allows 30 different hashtags per week, so look up a hashtag only when it matters. Read-only: this tool cannot post, like, comment or follow, and nothing else can either.",
   input_schema: { type: 'object', properties: { hashtag: { type: 'string', description: 'one hashtag without #, e.g. memeshirt' }, kind: { type: 'string', enum: ['top', 'recent'], description: 'top (default) or recent posts' }, limit: { type: 'integer', minimum: 1, maximum: 25 } }, required: ['hashtag'] },
 };
 

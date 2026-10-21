@@ -18,4 +18,4 @@ const cfg = { ...(instagramConfig() || {}), igUserId, token, savedAt: new Date()
 try { cfg.username = await pingInstagram(cfg); }
 catch (e) { console.log(`\n${e.message}. Nothing was saved.`); process.exit(1); }
 saveInstagram(cfg);
-console.log(`\nSaved: connected as @${cfg.username || igUserId}. The trend scouts can now search hashtags (30 a week). Stored in ${secretsDir()}, outside the app folder. Long-lived tokens last 60 days; run this again when it expires.`);
+console.log(`\nSaved: connected as @${cfg.username || igUserId}. Read-only: the agents can only search hashtags (30 a week); nothing in the app can post, like, comment or follow. Stored in ${secretsDir()}, outside the app folder. Long-lived tokens last 60 days; run this again when it expires.`);

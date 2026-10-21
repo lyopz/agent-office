@@ -17,4 +17,4 @@ const cfg = { ...(pinterestConfig() || {}), token, savedAt: new Date().toISOStri
 try { cfg.username = await pingPinterest(cfg); }
 catch (e) { console.log(`\n${e.message}. Nothing was saved.`); process.exit(1); }
 savePinterest(cfg);
-console.log(`\nSaved: connected as ${cfg.username || 'your Pinterest account'}. The trend scouts can now read Pinterest trends and search pins for ideas. Stored in ${secretsDir()}, outside the app folder.`);
+console.log(`\nSaved: connected as ${cfg.username || 'your Pinterest account'}. Read-only: the agents can only read trends and search pins; nothing in the app can pin, save, comment or follow. Stored in ${secretsDir()}, outside the app folder.`);
