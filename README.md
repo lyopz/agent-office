@@ -137,7 +137,9 @@ npm.cmd install
 npm.cmd run shortcut
 ```
 
-`npm run shortcut` puts a **The Brain** shortcut with the app's icon on the desktop and in the Start menu. It opens the app from this folder, so updates to the folder take effect the next time it opens: if the source is newer than the last build, the app rebuilds itself first ("Updating The Brain…").
+`npm run shortcut` puts a **The Brain** shortcut with the app's icon on the desktop and in the Start menu. It opens the app from this folder.
+
+**Updates ship themselves.** While the app is open it watches this folder. When new code lands in `src/`, `public/` or `index.html` it rebuilds and reloads (your work is saved first). When `server/` changes it restarts ORIGIN's runner, waiting until the runner is between runs. When `desktop/` changes it relaunches. A runner started by hand on port 8788 is stopped (between runs) so only the app's runner uses the port. If the source changed while the app was closed, it rebuilds on start ("Updating The Brain…"). A change to the dependencies in `package.json` still needs `npm.cmd install`.
 
 | Command | What it does |
 |---|---|

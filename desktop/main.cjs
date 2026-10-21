@@ -1,7 +1,9 @@
 'use strict';
 // Desktop app for The Brain. It also starts ORIGIN's runner (server/origin-runner.mjs) in the
-// background, so one double-click on the desktop shortcut is all it takes, and when run from
-// the app folder it rebuilds the app first if the source changed since the last build.
+// background, so one double-click on the desktop shortcut is all it takes. Run from the app
+// folder, it also keeps itself current: when new code lands in the folder it rebuilds and
+// reloads, restarts the runner (between runs) when the runner changed, and relaunches itself
+// when the desktop shell changed. No PowerShell needed after the first setup.
 //
 // Security posture: the window runs the built app from a private `app://campus/` scheme (or, for
 // development, the local Vite server named by OFFICE_DEV_SERVER_URL). The renderer has no Node:
@@ -11,7 +13,7 @@
 // only `window.officeDesktop.saves`, whose file IO happens here with fixed file names under
 // <userData>/saves. No environment variables or secrets are passed to the renderer.
 const { app, BrowserWindow, ipcMain, protocol, session, shell, Menu } = require('electron');
-const { spawn } = require('node:child_process');
+const { spawn, execFile } = require('node:child_process');
 const http = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -158,27 +160,101 @@ function buildIfStale() {
   });
 }
 
-/** Is a runner already answering (for example one started by hand with npm run origin)? */
-function runnerUp() {
+/** The runner's status, or null when nothing answers on its port. */
+function runnerStatus() {
   return new Promise((resolve) => {
-    const req = http.get({ host: '127.0.0.1', port: RUNNER_PORT, path: '/api/origin/status', timeout: 1500 }, (res) => { res.resume(); resolve(true); });
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-    req.on('error', () => resolve(false));
+    const req = http.get({ host: '127.0.0.1', port: RUNNER_PORT, path: '/api/origin/status', timeout: 2000 }, (res) => {
+      let body = ''; res.setEncoding('utf8');
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve({}); } });
+    });
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('error', () => resolve(null));
+  });
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Wait until the runner is between runs, so a restart never cuts a run short. */
+async function runnerIdle() {
+  for (;;) { const st = await runnerStatus(); if (!st || !st.running) return; await sleep(15_000); }
+}
+
+/** Windows: the process listening on the runner's port (a runner started by hand), if any. */
+function portOwner() {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') return resolve(null);
+    execFile('netstat', ['-ano', '-p', 'tcp'], { windowsHide: true }, (err, out) => {
+      if (err) return resolve(null);
+      const line = String(out).split(/\r?\n/).find((l) => new RegExp(`127\\.0\\.0\\.1:${RUNNER_PORT}\\s.*LISTENING`).test(l));
+      const pid = line ? Number(line.trim().split(/\s+/).pop()) : NaN;
+      resolve(Number.isInteger(pid) && pid > 0 ? pid : null);
+    });
   });
 }
 
 let runner = null;
-/** Start ORIGIN's runner in the background unless one is already running. Its output goes to origin-data/runner.log. */
+/** Start ORIGIN's runner in the background. The app owns it, so it can restart it when its code changes:
+ *  a runner already on the port (started by hand) is stopped first, between runs, to avoid two on one port. */
 async function startRunner() {
-  if (!fs.existsSync(RUNNER) || await runnerUp()) return;
+  if (!fs.existsSync(RUNNER)) return;
+  if (await runnerStatus()) {
+    await runnerIdle();
+    const pid = await portOwner();
+    if (pid && pid !== process.pid) { try { process.kill(pid); } catch { /* gone already */ } await sleep(1000); }
+    if (await runnerStatus()) return; // still answering (not Windows, or not ours to stop): use it as it is
+  }
   // from the app folder the runner keeps its state in <app folder>/origin-data, as with npm run origin
   const dataDir = app.isPackaged ? path.join(app.getPath('userData'), 'origin-data') : path.join(ROOT, 'origin-data');
   fs.mkdirSync(dataDir, { recursive: true });
   const log = fs.openSync(path.join(dataDir, 'runner.log'), 'a');
-  runner = runNode(RUNNER, [], { cwd: app.isPackaged ? dataDir : ROOT, stdio: ['ignore', log, log], env: { ORIGIN_DATA_DIR: dataDir } });
-  runner.on('exit', () => { runner = null; });
+  const child = runNode(RUNNER, [], { cwd: app.isPackaged ? dataDir : ROOT, stdio: ['ignore', log, log], env: { ORIGIN_DATA_DIR: dataDir } });
+  runner = child;
+  child.on('exit', () => { if (runner === child) runner = null; try { fs.closeSync(log); } catch { /* closed */ } });
 }
-const stopRunner = () => { if (runner) { try { runner.kill(); } catch { /* already gone */ } runner = null; } };
+function stopRunner() {
+  const child = runner; runner = null;
+  if (!child) return Promise.resolve();
+  return new Promise((resolve) => { child.once('exit', () => resolve()); try { child.kill(); } catch { resolve(); } setTimeout(resolve, 3000); });
+}
+async function restartRunner() { await runnerIdle(); await stopRunner(); await sleep(500); await startRunner(); }
+
+/** Rebuild dist/ in the background (no splash); resolves true when the build succeeded. */
+function rebuild() {
+  const vite = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
+  return new Promise((resolve) => {
+    const child = runNode(vite, ['build'], { cwd: ROOT, stdio: 'ignore' });
+    child.on('exit', (code) => resolve(code === 0));
+    child.on('error', () => resolve(false));
+  });
+}
+
+/** Watch the app folder: new code is built and shown, a changed runner restarts, a changed shell relaunches. */
+function watchForUpdates() {
+  if (app.isPackaged || DEV_ORIGIN || !fs.existsSync(path.join(ROOT, 'node_modules', 'vite'))) return;
+  const changed = new Set();
+  let timer = null; let busy = false;
+  const apply = async () => {
+    if (busy) { timer = setTimeout(apply, 3000); return; }
+    busy = true;
+    const kinds = new Set(changed); changed.clear();
+    try {
+      if (kinds.has('app') && await rebuild()) for (const w of BrowserWindow.getAllWindows()) w.webContents.reloadIgnoringCache();
+      if (kinds.has('shell')) { await stopRunner(); app.relaunch(); app.quit(); return; }
+      if (kinds.has('runner')) await restartRunner();
+    } finally { busy = false; }
+  };
+  const note = (kind) => (_event, file) => {
+    if (file && /(^|[\\/])(node_modules|dist|\.git)([\\/]|$)|\.(tmp|swp)$|~$/.test(String(file))) return;
+    changed.add(kind);
+    clearTimeout(timer); timer = setTimeout(apply, 4000); // files arrive in bursts: wait for the last one
+  };
+  const watch = (target, kind, recursive) => { try { fs.watch(target, { recursive }, note(kind)); } catch (e) { console.warn(`Not watching ${target}: ${e && e.message}`); } };
+  watch(path.join(ROOT, 'src'), 'app', true);
+  watch(path.join(ROOT, 'public'), 'app', true);
+  watch(path.join(ROOT, 'index.html'), 'app', false);
+  watch(path.join(ROOT, 'server'), 'runner', true);
+  watch(path.join(ROOT, 'desktop'), 'shell', true);
+}
 
 let saves = null;
 function registerSaveIpc() {
@@ -256,8 +332,9 @@ if (!app.requestSingleInstanceLock()) {
     hardenSession();
     registerSaveIpc();
     createWindow();
+    watchForUpdates();
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-  app.on('will-quit', stopRunner);
+  app.on('will-quit', () => { void stopRunner(); });
 }
