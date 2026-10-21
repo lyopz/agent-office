@@ -14,6 +14,7 @@
     "typecheck": "tsc -b --noEmit",
     "origin": "node server/origin-runner.mjs",
     "set-key": "node server/set-key.mjs",
+    "get-voices": "powershell -NoProfile -ExecutionPolicy Bypass -File desktop/get-voices.ps1",
     "set-etsy": "node server/set-etsy.mjs",
     "set-printify": "node server/set-printify.mjs",
     "set-openai": "node server/set-openai.mjs",

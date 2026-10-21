@@ -8,7 +8,7 @@
 // Security posture: the window runs the built app from a private `app://campus/` scheme (or, for
 // development, the local Vite server named by OFFICE_DEV_SERVER_URL). The renderer has no Node:
 // contextIsolation on, nodeIntegration off, sandbox on, a strict Content-Security-Policy, all
-// permission requests denied except notifications, navigation away from the app blocked, and
+// permission requests denied except notifications and the app's own microphone, navigation away from the app blocked, and
 // new windows refused (http/https links open in the system browser instead). The preload exposes
 // only `window.officeDesktop.saves`, whose file IO happens here with fixed file names under
 // <userData>/saves. No environment variables or secrets are passed to the renderer.
@@ -121,8 +121,10 @@ function hardenSession() {
       done({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [DEV_CSP] } });
     });
   }
-  ses.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'notifications'));
-  ses.setPermissionCheckHandler((_wc, permission) => permission === 'notifications');
+  // the microphone (audio only, never the camera) for talking to JARVIS, and only for the app itself
+  const micOnly = (details) => Array.isArray(details?.mediaTypes) && details.mediaTypes.length > 0 && details.mediaTypes.every((t) => t === 'audio');
+  ses.setPermissionRequestHandler((_wc, permission, done, details) => done(permission === 'notifications' || (permission === 'media' && micOnly(details) && isAppUrl(details?.requestingUrl ?? ''))));
+  ses.setPermissionCheckHandler((_wc, permission, origin, details) => permission === 'notifications' || (permission === 'media' && details?.mediaType === 'audio' && isAppUrl(origin || '')));
 }
 
 /** Saves made before the app was renamed: copy them into the new data folder once, never over newer ones. */
@@ -282,25 +284,79 @@ function registerSaveIpc() {
 let listener = null;
 function registerVoiceIpc() {
   const trusted = (event) => isAppUrl(event.senderFrame?.url ?? '');
+  // Hey JARVIS: a background listener for just that phrase (desktop/wake.ps1); each hit is sent to the window.
+  let waker = null;
+  const stopWake = () => { if (waker) { try { waker.kill(); } catch { /* gone */ } waker = null; } };
+  const pauseWake = () => { const was = !!waker; stopWake(); return was; };
+  const resumeWake = (sender) => { if (!waker && !sender.isDestroyed()) startWake(sender); };
+  ipcMain.handle('voice:wake', (event, on) => {
+    if (!trusted(event)) return { ok: false, error: 'Not allowed.' };
+    stopWake();
+    if (!on) return { ok: true };
+    return startWake(event.sender);
+  });
+  function startWake(sender) {
+    if (process.platform !== 'win32') return { ok: false, error: 'Hey JARVIS needs Windows.' };
+    const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'wake.ps1')], { windowsHide: true });
+    waker = ps;
+    let rest = '';
+    ps.stdout.on('data', (d) => {
+      rest += d.toString('utf8');
+      const lines = rest.split(/\r?\n/); rest = lines.pop() || '';
+      for (const line of lines.map((l) => l.trim()).filter(Boolean)) {
+        if (sender.isDestroyed()) return stopWake();
+        if (line === 'WAKE') sender.send('voice:woke');
+        else if (line.startsWith('ERR')) sender.send('voice:wake-error', line === 'ERR NOMIC' ? "Hey JARVIS can't find a microphone." : line === 'ERR NORECOGNIZER' ? 'Hey JARVIS needs Windows speech recognition (Settings > Time & language > Speech).' : `Hey JARVIS stopped: ${line.slice(4)}`);
+      }
+    });
+    ps.on('close', () => { if (waker === ps) waker = null; });
+    return { ok: true };
+  }
+  app.on('before-quit', stopWake);
   ipcMain.handle('voice:listen', (event) => new Promise((resolve) => {
     if (!trusted(event)) return resolve({ ok: false, error: 'Not allowed.' });
     if (process.platform !== 'win32') return resolve({ ok: false, error: 'Voice input in the desktop app needs Windows.' });
     if (listener) { try { listener.kill(); } catch { /* already gone */ } }
+    const wakeWas = pauseWake(); // one microphone listener at a time; Hey JARVIS resumes after
+    const done = (r) => { if (wakeWas) resumeWake(event.sender); resolve(r); };
     let out = '';
     const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'listen.ps1')], { windowsHide: true });
     listener = ps;
     const timer = setTimeout(() => { try { ps.kill(); } catch { /* gone */ } }, 40000);
     ps.stdout.on('data', (d) => { out += d.toString('utf8'); });
-    ps.on('error', (e) => { clearTimeout(timer); if (listener === ps) listener = null; resolve({ ok: false, error: `Couldn't start speech recognition: ${e.message}` }); });
+    ps.on('error', (e) => { clearTimeout(timer); if (listener === ps) listener = null; done({ ok: false, error: `Couldn't start speech recognition: ${e.message}` }); });
     ps.on('close', () => {
       clearTimeout(timer); if (listener === ps) listener = null;
       const line = out.trim().split(/\r?\n/).pop() || '';
-      if (line.startsWith('OK ')) resolve({ ok: true, text: line.slice(3).trim() });
-      else if (line === 'NONE' || !line) resolve({ ok: false, error: "Didn't catch that. Press the mic and speak again." });
-      else if (line === 'ERR NORECOGNIZER') resolve({ ok: false, error: 'Windows has no speech recognition installed. Add it in Windows Settings > Time & language > Language & region: open English (United States) > Language options and install Speech, then try again.' });
-      else if (line === 'ERR NOMIC') resolve({ ok: false, error: "Windows can't find a microphone. Plug one in or set a default one in Windows Settings > System > Sound > Input, and turn on Settings > Privacy & security > Microphone > Let desktop apps access your microphone." });
-      else resolve({ ok: false, error: `Speech recognition failed: ${line.replace(/^ERR /, '') || 'no answer from Windows'}. Check Windows Settings > Privacy & security > Microphone > Let desktop apps access your microphone.` });
+      if (line.startsWith('OK ')) done({ ok: true, text: line.slice(3).trim() });
+      else if (line === 'NONE' || !line) done({ ok: false, error: "Didn't catch that. Press the mic and speak again." });
+      else if (line === 'ERR NORECOGNIZER') done({ ok: false, error: 'Windows has no speech recognition installed. Add it in Windows Settings > Time & language > Language & region: open English (United States) > Language options and install Speech, then try again.' });
+      else if (line === 'ERR NOMIC') done({ ok: false, error: "Windows can't find a microphone. Plug one in or set a default one in Windows Settings > System > Sound > Input, and turn on Settings > Privacy & security > Microphone > Let desktop apps access your microphone." });
+      else done({ ok: false, error: `Speech recognition failed: ${line.replace(/^ERR /, '') || 'no answer from Windows'}. Check Windows Settings > Privacy & security > Microphone > Let desktop apps access your microphone.` });
     });
+  }));
+  // Piper: a free offline neural voice engine with natural voices (npm.cmd run get-voices puts it in
+  // %LOCALAPPDATA%\the-brain\piper). Text in, WAV out, nothing leaves the PC.
+  const piperDir = path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'the-brain', 'piper');
+  const piperExe = path.join(piperDir, 'piper', process.platform === 'win32' ? 'piper.exe' : 'piper');
+  const voiceDir = path.join(piperDir, 'voices');
+  const piperVoices = () => { try { return fs.existsSync(piperExe) ? fs.readdirSync(voiceDir).filter((f) => f.endsWith('.onnx') && fs.existsSync(path.join(voiceDir, `${f}.json`))).map((f) => f.slice(0, -5)).sort() : []; } catch { return []; } };
+  ipcMain.handle('voice:voices', (event) => (trusted(event) ? piperVoices() : []));
+  ipcMain.handle('voice:say', (event, text, name) => new Promise((resolve) => {
+    if (!trusted(event)) return resolve({ ok: false, error: 'Not allowed.' });
+    const voices = piperVoices();
+    const pick = voices.includes(String(name)) ? String(name) : voices[0];
+    if (!pick) return resolve({ ok: false, error: 'No Piper voices yet. Run npm.cmd run get-voices once.' });
+    const out = path.join(app.getPath('temp'), `jarvis-${process.pid}-${Date.now()}.wav`);
+    const ps = spawn(piperExe, ['--model', path.join(voiceDir, `${pick}.onnx`), '--output_file', out], { windowsHide: true, cwd: path.dirname(piperExe) });
+    const timer = setTimeout(() => { try { ps.kill(); } catch { /* gone */ } }, 60000);
+    ps.on('error', (e) => { clearTimeout(timer); resolve({ ok: false, error: `Piper didn't start: ${e.message}` }); });
+    ps.on('close', () => {
+      clearTimeout(timer);
+      try { const wav = fs.readFileSync(out); fs.rmSync(out, { force: true }); resolve({ ok: true, audio: wav.toString('base64'), mime: 'audio/wav' }); }
+      catch { resolve({ ok: false, error: 'Piper made no audio.' }); }
+    });
+    ps.stdin.end(String(text || '').replace(/\s+/g, ' ').slice(0, 3000), 'utf8');
   }));
   ipcMain.handle('voice:stop', (event) => { if (trusted(event) && listener) { try { listener.kill(); } catch { /* gone */ } listener = null; } return true; });
 }

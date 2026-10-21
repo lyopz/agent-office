@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Section } from './primitives';
 import { ThemeEditor } from './ThemeEditor';
+import { VoiceSettings } from './VoiceSettings';
 
 const TABS = [['general', 'General'], ['theme', 'Theme & colours']] as const;
 
@@ -25,6 +26,7 @@ function General() {
         <h4>Persistence</h4>
         <p className="note">Everything saves on this computer, always: shortly after every change and whenever one of JARVIS's tasks finishes. In the desktop app saves are files in its data folder; in a browser they stay in that browser. JARVIS's own runs, tasks and spend are saved by its runner in origin-data.</p>
       </div>
+      <VoiceSettings />
       <div className="card span-6">
         <h4>Keyboard shortcuts</h4>
         <Section title="">

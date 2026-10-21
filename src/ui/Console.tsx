@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, CornerDownLeft, Maximize2, Mic, MicOff, Minimize2, TerminalSquare } from 'lucide-react';
+import { ChevronDown, ChevronUp, CornerDownLeft, Ear, EarOff, Maximize2, Mic, MicOff, Minimize2, TerminalSquare } from 'lucide-react';
 import { useOrigin } from '../brain/useOrigin';
 import { askOrigin, giveTask } from '../brain/originLink';
-import { canListen, listen, say, stopListening } from './voice';
+import { canListen, listen, onWake, say, setWake, setWakePref, stopListening, wakePref, wakeSupported } from './voice';
 
 /** The main agent's own name; older runners still answer as ORIGIN. */
 const isLeader = (by?: string | null) => !by || by === 'JARVIS' || by === 'ORIGIN';
@@ -60,6 +60,19 @@ export function Console() {
     } finally { setListening(false); }
   };
 
+  // Hey JARVIS: say it and the mic opens by itself; JARVIS stops talking first. Remembered on this device.
+  const [wake, setWakeState] = useState(() => wakeSupported() && wakePref());
+  const listeningRef = useRef(false); listeningRef.current = listening;
+  const micRef = useRef(mic); micRef.current = mic;
+  useEffect(() => {
+    if (!wake) return;
+    let alive = true;
+    void setWake(true).then((err) => { if (err && alive) { add({ type: 'error', text: err }); setWakeState(false); } });
+    const off = onWake(() => { if (!listeningRef.current) void micRef.current(); }, (msg) => { if (alive) { add({ type: 'error', text: msg }); setWakeState(false); } });
+    return () => { alive = false; off(); void setWake(false); };
+  }, [wake]);
+  const toggleWake = () => { const on = !wake; setWakePref(on); setWakeState(on); };
+
   const run = async (q: string, spoken = false) => {
     const question = q.trim();
     if (!question || busy) return;
@@ -94,6 +107,7 @@ export function Console() {
       <div className="panel-h" style={{ position: 'static' }}>
         <TerminalSquare size={14} /><span className="grow" title="Your question goes to the agent best suited to it. Name an agent to ask it directly.">Command center{task ? <span className="muted"> · {focus ? 'focus' : 'working on'}: {task.title}</span> : null}</span>
         {status && <span className="small muted" title="Spent this month on the API, and today">${status.spentUsd.toFixed(2)} of ${status.capUsd} · today ${(status.spentTodayUsd ?? 0).toFixed(2)}</span>}
+        {listening && <span className="badge live" role="status" aria-live="polite"><Mic size={11} /> Listening…</span>}
         <span className={`badge ${badge.kind}`}>{badge.label}</span>
         {open && <button className="btn icon sm ghost" aria-label={big ? 'Make the chat log smaller' : 'Make the chat log bigger'} title={big ? 'Smaller' : 'Bigger'} onClick={() => setBig(!big)}>{big ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>}
         <button className="btn icon sm ghost" aria-label={open ? 'Collapse console' : 'Expand console'} onClick={() => setOpen(!open)}>{open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}</button>
@@ -115,6 +129,7 @@ export function Console() {
             </div>
             <span className="prompt">&gt;</span>
             <input id="console-input" type="text" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} aria-label={mode === 'task' ? 'Task for JARVIS' : 'Question for your agents'} placeholder={mode === 'task' ? 'A task for JARVIS, e.g. make 5 items for my Etsy store' : 'Ask anything. It goes to the best-suited agent, or name one.'} disabled={busy} />
+            {wakeSupported() && <button className={`btn sm${wake ? ' primary' : ''}`} aria-pressed={wake} onClick={toggleWake} aria-label={wake ? 'Turn Hey JARVIS off' : 'Turn Hey JARVIS on'} title={wake ? 'Hey JARVIS is on: say it and JARVIS listens. Press to turn off.' : 'Hey JARVIS: listen for that phrase so you can talk without pressing Speak.'}>{wake ? <Ear size={13} /> : <EarOff size={13} />}{wake ? 'Hey JARVIS on' : 'Hey JARVIS'}</button>}
             {canListen() && <button className={`btn sm${listening ? ' danger' : ''}`} disabled={busy && !listening} onClick={() => void mic()} aria-label={listening ? 'Stop listening' : 'Speak to JARVIS'} title={listening ? 'Listening… press to stop' : 'Speak to JARVIS. It is sent when you stop talking, and an answer is read aloud.'}>{listening ? <MicOff size={13} /> : <Mic size={13} />}{listening ? 'Listening…' : 'Speak'}</button>}
             <button className="btn sm primary" disabled={busy || !text.trim()} onClick={() => void run(text)}><CornerDownLeft size={13} />{mode === 'task' ? 'Do it' : 'Ask'}</button>
           </div>

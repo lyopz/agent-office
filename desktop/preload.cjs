@@ -20,5 +20,12 @@ contextBridge.exposeInMainWorld('officeDesktop', {
   voice: {
     listen: () => ipcRenderer.invoke('voice:listen'),
     stop: () => ipcRenderer.invoke('voice:stop'),
+    // Piper's natural offline voices, once npm.cmd run get-voices has downloaded them
+    voices: () => ipcRenderer.invoke('voice:voices'),
+    say: (text, name) => ipcRenderer.invoke('voice:say', String(text), String(name || '')),
+    // Hey JARVIS: turn the wake-phrase listener on or off, and hear when it fires
+    wake: (on) => ipcRenderer.invoke('voice:wake', !!on),
+    onWake: (fn) => { const h = () => fn(); ipcRenderer.on('voice:woke', h); return () => ipcRenderer.removeListener('voice:woke', h); },
+    onWakeError: (fn) => { const h = (_e, msg) => fn(String(msg)); ipcRenderer.on('voice:wake-error', h); return () => ipcRenderer.removeListener('voice:wake-error', h); },
   },
 });
