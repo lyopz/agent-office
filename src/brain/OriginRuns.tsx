@@ -51,8 +51,8 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   const approved = st.tasks.filter((t) => t.status === 'approved').sort((a, b) => Number(a.kind === 'skill-file') - Number(b.kind === 'skill-file'));
   const stopped = st.tasks.filter((t) => t.status === 'stopped').slice(-5);
   // with auto-create on, ORIGIN's agents are added for you; only ones made while you were asked first still wait
-  const agentAsks = (st.agentProposals ?? []).filter((p) => p.status === 'proposed' && !(p.auto && st.autoAgents));
-  const created = (st.agentProposals ?? []).filter((p) => p.status === 'approved' && p.auto).slice(-6).reverse();
+  const agentAsks = (st.agentProposals ?? []).filter((p) => p.status === 'proposed' && !st.autoAgents);
+  const created = (st.agentProposals ?? []).filter((p) => p.status === 'approved' && (p.auto || st.autoAgents)).slice(-6).reverse();
   const pct = Math.min(100, (st.spentUsd / st.capUsd) * 100);
   return (
     <div className="creator-body">

@@ -45,7 +45,7 @@ export default function CreatorDesk() {
   useSkillFiles();
   // what waits for the owner in ORIGIN runs, shown on its button since notifications are off
   const runner = useOrigin((st) => st.status);
-  const waiting = (runner?.tasks.filter((t) => t.status === 'proposed').length ?? 0) + (runner?.agentProposals?.filter((p) => p.status === 'proposed' && !(p.auto && runner.autoAgents)).length ?? 0);
+  const waiting = (runner?.tasks.filter((t) => t.status === 'proposed').length ?? 0) + (runner?.agentProposals?.filter((p) => p.status === 'proposed' && !runner.autoAgents).length ?? 0);
   // ORIGIN's rules come from the app: bring an older save up to date (new rules, the budget watch skill) once
   useEffect(() => {
     const d = useStore.getState().doc;

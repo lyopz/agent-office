@@ -86,7 +86,7 @@ export function useSkillFiles() {
     const st = useStore.getState();
     // agents ORIGIN created on its own (the owner allowed it): add them to the brain
     for (const p of status.agentProposals ?? []) {
-      if (p.status !== 'proposed' || !p.auto || !status.autoAgents || made.current.has(p.id)) continue;
+      if (p.status !== 'proposed' || !status.autoAgents || made.current.has(p.id)) continue;
       made.current.add(p.id);
       void createProposedAgent(p).then((r) => { if (!r.ok) void agentProposalAction({ action: 'reject', id: p.id }); });
     }
