@@ -10,3 +10,5 @@ export function nextTask(s: { tasks: { status: string; kind?: string; by?: strin
 export function parseConsent(text: string): Record<string, unknown> | null;
 export function applyConsent(s: Record<string, unknown>, c: Record<string, unknown>): string[] | null;
 export function pruneGone(s: Record<string, unknown>, at: string): number;
+export function dailyAllowance(s: Record<string, unknown>, now?: Date): { allowanceUsd: number; spentTodayUsd: number };
+export function pickTasks(s: Record<string, unknown>, n?: number): Record<string, unknown>[];

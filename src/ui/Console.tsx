@@ -65,6 +65,7 @@ export function Console() {
     <section className={`console${open ? (big ? ' big' : '') : ' collapsed'}`} aria-label="Command center">
       <div className="panel-h" style={{ position: 'static' }}>
         <TerminalSquare size={14} /><span className="grow" title="Your question goes to the agent best suited to it. Name an agent to ask it directly.">Command center{task ? <span className="muted"> · working on: {task.title}</span> : null}</span>
+        {status && <span className="small muted" title="Spent this month on the API, and today">${status.spentUsd.toFixed(2)} of ${status.capUsd} · today ${(status.spentTodayUsd ?? 0).toFixed(2)}</span>}
         <span className={`badge ${badge.kind}`}>{badge.label}</span>
         {open && <button className="btn icon sm ghost" aria-label={big ? 'Make the chat log smaller' : 'Make the chat log bigger'} title={big ? 'Smaller' : 'Bigger'} onClick={() => setBig(!big)}>{big ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>}
         <button className="btn icon sm ghost" aria-label={open ? 'Collapse console' : 'Expand console'} onClick={() => setOpen(!open)}>{open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}</button>

@@ -6,7 +6,7 @@ import { ORIGIN_ID, agentPrompt, branchKind } from './opportunity';
 
 export interface RunnerTask {
   id: string; title: string; detail: string; status: 'proposed' | 'approved' | 'rejected' | 'done' | 'stopped'; by: 'owner' | 'origin'; createdAt: string;
-  spentUsd?: number; runCosts?: number[]; budgetUsd?: number; stopReason?: string; progress?: number;
+  spentUsd?: number; runCosts?: number[]; budgetUsd?: number; stopReason?: string; progress?: number; steps?: { text: string; done: boolean }[]; notes?: string; waitingOnOwner?: boolean;
   kind?: 'skill-file'; agentId?: string; agentName?: string; version?: number;
 }
 /** A product an agent made in Printify and asked the owner to publish. */
@@ -19,10 +19,11 @@ export interface AgentProposal {
   id: string; parentId: string; name: string; specialty: string; purpose: string; skill: string; bankSkillIds: string[];
   everyMinutes: number; maxMinutes: number; reason: string; skillFile?: { name: string; description: string; body: string } | null; auto?: boolean; status: 'proposed' | 'approved' | 'rejected'; createdAt: string; agentId?: string | null;
 }
-export interface RunnerRun { id: string; agentId?: string; taskId?: string | null; skillFileFor?: string; trigger: 'manual' | 'schedule'; startedAt: string; endedAt: string | null; costUsd: number; costKnown: boolean; searches: number; fetches?: number; etsyCalls?: number; printifyCalls?: number; status: string; summary: string; notify?: string | null }
+export interface RunnerWorker { taskId: string | null; agentId: string; agentName: string; title: string | null; costUsd: number; status: string; rounds: number; summary?: string }
+export interface RunnerRun { workers?: RunnerWorker[]; id: string; agentId?: string; taskId?: string | null; skillFileFor?: string; trigger: 'manual' | 'schedule'; startedAt: string; endedAt: string | null; costUsd: number; costKnown: boolean; searches: number; fetches?: number; etsyCalls?: number; printifyCalls?: number; status: string; summary: string; notify?: string | null }
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
-  spentUsd: number; spentByAgent?: Record<string, number>; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
+  spentUsd: number; spentByAgent?: Record<string, number>; allowanceUsd?: number; spentTodayUsd?: number; parallel?: number; rounds?: number; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
   memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null;
 }
 

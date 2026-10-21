@@ -396,3 +396,46 @@ describe('origin runner: Printify publish requests', () => {
     expect(r.run.notify).toMatch(/1 product ready for you to publish/);
   });
 });
+
+describe('origin runner: agents work side by side, through their plans', () => {
+  test('each agent works its own task in the same run, and each is charged its own spend', async () => {
+    write({ ...base, agents: [{ id: 'a1', name: 'Research' }, { id: 'a2', name: 'Copy' }], tasks: [
+      { id: 't1', title: 'R1', detail: '', status: 'approved', by: 'owner', agentId: 'a1', createdAt: '' },
+      { id: 't2', title: 'R2', detail: '', status: 'approved', by: 'owner', agentId: 'a1', createdAt: '' },
+      { id: 't3', title: 'C1', detail: '', status: 'approved', by: 'owner', agentId: 'a2', createdAt: '' },
+    ] });
+    const seen: string[] = [];
+    const fetch = async (_u: string, init: any) => { const b = JSON.parse(init.body); const m = b.messages[0].content.match(/\[(t\d)\]/); if (m) seen.push(m[1]); return reply(result({ memory: 'm', completedTaskIds: m ? [m[1]] : [], summary: 'ok' }), { input_tokens: 1000, output_tokens: 100 }); };
+    const r: any = await runner.runOnce('manual', { fetch, file, key: 'test', etsy: null } as any);
+    expect(seen.sort()).toEqual(['t1', 't3']);
+    expect(r.run.workers.map((w: any) => w.agentName).sort()).toEqual(['Copy', 'Research']);
+    const s = read();
+    expect(s.tasks.map((t: any) => t.status)).toEqual(['done', 'approved', 'done']);
+    expect(s.ledger.byAgent.a1).toBeGreaterThan(0);
+    expect(s.ledger.byAgent.a2).toBeGreaterThan(0);
+    expect(s.ledger.byDay[new Date().toISOString().slice(0, 10)]).toBeCloseTo(s.ledger.spentUsd, 6);
+  });
+
+  test('a task keeps going through its steps in one run while it is unfinished', async () => {
+    write({ ...base, tasks: [{ id: 't1', title: 'Plan', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
+    let n = 0;
+    const fetch = async () => {
+      n++;
+      const steps = [1, 2, 3].map((i) => ({ text: `step ${i}`, done: i <= n }));
+      return reply(result({ memory: 'm', steps, taskNotes: `after ${n}`, progress: { percent: n * 33 }, completedTaskIds: n === 3 ? ['t1'] : [], summary: 's' }), { input_tokens: 100, output_tokens: 10 });
+    };
+    const r: any = await runner.runOnce('manual', { fetch, file, key: 'test', etsy: null } as any);
+    expect(n).toBe(3);
+    expect(r.run.workers[0].rounds).toBe(3);
+    const t = read().tasks[0];
+    expect(t).toMatchObject({ status: 'done', progress: 100, notes: 'after 3' });
+    expect(t.steps.every((x: any) => x.done)).toBe(true);
+  });
+
+  test("today's allowance is the day's share of what is left of the cap", () => {
+    const s: any = { ledger: { spentUsd: 5, byDay: { '2026-10-21': 0.5 } } };
+    const d = runner.dailyAllowance(s, new Date(Date.UTC(2026, 9, 21, 12)));
+    expect(d.spentTodayUsd).toBe(0.5);
+    expect(d.allowanceUsd).toBeCloseTo((10 + 0.5) / 11, 5);
+  });
+});

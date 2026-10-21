@@ -50,7 +50,12 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
 
   const proposed = st.tasks.filter((t) => t.status === 'proposed');
   // the runner's order: your tasks first, oldest first, then SKILL.md writing
-  const approved = st.tasks.filter((t) => t.status === 'approved').sort((a, b) => Number(a.kind === 'skill-file') - Number(b.kind === 'skill-file'));
+  const approved = st.tasks.filter((t) => t.status === 'approved').sort((a, b) => Number(a.kind === 'skill-file') - Number(b.kind === 'skill-file') || Number(a.by === 'origin') - Number(b.by === 'origin'));
+  // the runner works one task per agent at a time, up to `parallel` agents side by side
+  const workingIds = new Set<string>();
+  { const seen = new Set<string>(); for (const t of approved) { if (t.kind === 'skill-file' || (t.waitingOnOwner && proposed.length)) continue; const who = t.agentId ?? 'origin'; if (seen.has(who) || seen.size >= (st.parallel ?? 1)) continue; seen.add(who); workingIds.add(t.id); } }
+  const agentName = (id: string) => doc.agents[id]?.identity.name ?? (id === 'agent_origin' ? 'ORIGIN' : id);
+  const taskSpend = st.tasks.filter((t) => (t.spentUsd ?? 0) > 0 && t.kind !== 'skill-file').sort((a, b) => (b.spentUsd ?? 0) - (a.spentUsd ?? 0)).slice(0, 8);
   const stopped = st.tasks.filter((t) => t.status === 'stopped' && t.stopReason !== 'agent no longer in the brain').slice(-5);
   // with auto-create on, ORIGIN's agents are added for you; only ones made while you were asked first still wait
   const agentAsks = (st.agentProposals ?? []).filter((p) => p.status === 'proposed' && !st.autoAgents);
@@ -65,13 +70,20 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
   };
   return (
     <div className="creator-body">
-      <div className="creator-context"><ShieldCheck size={16} /><span><b>{st.configured ? `Live on ${st.model}.` : `Runner connected (${st.model}), but it has no API key.`}</b> {st.maxMinutes} min every {st.everyMinutes / 60} h{st.schedule ? '' : ' (schedule off: manual runs only)'}. {st.running ? 'A run is in progress now.' : st.nextScheduledAt ? `Next run about ${new Date(st.nextScheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : ''}{st.configured ? '' : ' Run npm.cmd run set-key once in the app folder, then restart the runner.'}</span></div>
+      <div className="creator-context"><ShieldCheck size={16} /><span><b>{st.configured ? `Live on ${st.model}.` : `Runner connected (${st.model}), but it has no API key.`}</b> {st.maxMinutes} min every {st.everyMinutes >= 60 ? `${st.everyMinutes / 60} h` : `${st.everyMinutes} min`}, up to {st.parallel ?? 1} agents at once{st.schedule ? '' : ' (schedule off: manual runs only)'}. {st.running ? 'A run is in progress now.' : st.nextScheduledAt ? `Next run about ${new Date(st.nextScheduledAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : ''}{st.configured ? '' : ' Run npm.cmd run set-key once in the app folder, then restart the runner.'}</span></div>
       <div className="origin-budget" aria-label={`Spent ${money(st.spentUsd)} of ${money(st.capUsd)} this month`}>
         <span>{money(st.spentUsd)} of {money(st.capUsd)} this month{st.unknownCostRuns ? ` · ${st.unknownCostRuns} run(s) with unknown cost` : ''}</span>
         <i style={{ width: `${pct}%` }} />
       </div>
 
-      {st.spentByAgent && Object.keys(st.spentByAgent).length > 0 && <p className="creator-privacy">This month by agent (one key, one cap): {Object.entries(st.spentByAgent).map(([id, usd]) => `${doc.agents[id]?.identity.name ?? id} ${money(usd)}`).join(' · ')}</p>}
+      <span className="creator-kicker">SPEND IN DOLLARS</span>
+      <div className="spend-grid">
+        <div><b>{money(st.spentUsd)}</b><span>this month of {money(st.capUsd)}</span></div>
+        <div><b>{money(st.spentTodayUsd ?? 0)}</b><span>today{st.allowanceUsd != null ? ` of ${money(st.allowanceUsd)} for today` : ''}</span></div>
+        <div><b>{money(Math.max(0, st.capUsd - st.spentUsd))}</b><span>left this month</span></div>
+      </div>
+      {st.spentByAgent && Object.keys(st.spentByAgent).length > 0 && <table className="spend-table"><thead><tr><th>Agent</th><th>This month</th></tr></thead><tbody>{Object.entries(st.spentByAgent).sort((x, y) => y[1] - x[1]).map(([id, usd]) => <tr key={id}><td>{agentName(id)}</td><td>{money(usd)}</td></tr>)}</tbody></table>}
+      {taskSpend.length > 0 && <table className="spend-table"><thead><tr><th>Task</th><th>Spent</th><th>Status</th></tr></thead><tbody>{taskSpend.map((t) => <tr key={t.id}><td>{t.title}</td><td>{money(t.spentUsd ?? 0)}</td><td>{t.status}{t.progress != null ? ` · ${t.progress}%` : ''}</td></tr>)}</tbody></table>}
 
       <label className="creator-privacy" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <input type="checkbox" checked={st.autoAgents !== false} onChange={(e) => void act(() => setAutoAgents(e.target.checked), e.target.checked ? 'ORIGIN and its ventures now create the agents they need, up to 3 a run, each with its SKILL.md.' : 'ORIGIN will ask you before creating agents.')} />
@@ -118,7 +130,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
 
       <span className="creator-kicker">APPROVED · ONE AT A TIME, YOUR TASKS FIRST</span>
       {approved.length === 0 ? <p className="creator-privacy">No approved tasks. ORIGIN will only propose tasks until you approve one.</p>
-        : <ul className="creator-request-log">{approved.map((t, i) => <li key={t.id}><b>{i === 0 ? 'Working on: ' : 'Queued: '}{t.title}</b>{t.agentId && doc.agents[t.agentId] ? <span className="muted"> ({doc.agents[t.agentId].identity.name}{t.by === 'origin' ? ', set by ORIGIN' : ''})</span> : t.by === 'origin' ? <span className="muted"> (set by ORIGIN)</span> : null}{t.kind !== 'skill-file' && <ProgressBar pct={t.progress} label={`${t.title} progress`} />}{t.detail && t.kind !== 'skill-file' ? `: ${t.detail.slice(0, 300)}` : ''} · {spent(t)} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button> <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></li>)}</ul>}
+        : <ul className="creator-request-log">{approved.map((t) => <li key={t.id}><b>{workingIds.has(t.id) ? 'Working on: ' : t.kind === 'skill-file' ? 'SKILL.md: ' : 'Queued: '}{t.title}</b>{t.agentId && doc.agents[t.agentId] ? <span className="muted"> ({doc.agents[t.agentId].identity.name}{t.by === 'origin' ? ', set by ORIGIN' : ''})</span> : t.by === 'origin' ? <span className="muted"> (set by ORIGIN)</span> : null}{t.kind !== 'skill-file' && <ProgressBar pct={t.progress} label={`${t.title} progress`} />}{t.detail && t.kind !== 'skill-file' ? `: ${t.detail.slice(0, 300)}` : ''} · {spent(t)}{t.steps?.length ? <ol className="task-steps">{t.steps.map((x, j) => <li key={j} className={x.done ? 'done' : ''}>{x.done ? '✓ ' : ''}{x.text}</li>)}</ol> : null} <button className="link-btn" onClick={() => void act({ action: 'done', id: t.id }, 'Marked done.')}>mark done</button> <button className="link-btn" onClick={() => void act({ action: 'stop', id: t.id }, 'Stopped.')}>stop</button></li>)}</ul>}
       {stopped.length > 0 && <><span className="creator-kicker">STOPPED BY BUDGET WATCH</span>
         <ul className="creator-request-log">{stopped.map((t) => <li key={t.id}><b>{t.title}</b> · {spent(t)}{t.stopReason ? `. ${t.stopReason}` : ''} <button className="link-btn" onClick={() => void act({ action: 'approve', id: t.id }, 'Restarted with a fresh budget.')}>restart</button></li>)}</ul></>}
       <div className="creator-agent-grid">
@@ -140,7 +152,7 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
       {st.nextAction && <><span className="creator-kicker">NEXT ACTION</span><p className="creator-privacy">{st.nextAction}</p></>}
       {st.memory && <><span className="creator-kicker">ORIGIN'S NOTES</span><pre className="origin-notes">{st.memory}</pre></>}
       {st.runs.length > 0 && <><span className="creator-kicker">RECENT RUNS</span>
-        <ul className="creator-request-log">{st.runs.map((r) => <li key={r.id}>{new Date(r.startedAt).toLocaleString()} · {r.trigger} · {r.status} · {r.costKnown ? money(r.costUsd) : 'cost unknown'}{r.searches ? ` · ${r.searches} searches` : ''}{r.fetches ? ` · ${r.fetches} pages read` : ''}{r.etsyCalls ? ` · ${r.etsyCalls} Etsy lookups` : ''}{r.printifyCalls ? ` · ${r.printifyCalls} Printify steps` : ''}{r.skillFileFor ? ` · wrote ${r.skillFileFor}'s SKILL.md` : ''}{r.summary ? `: ${r.summary}` : ''}{r.notify ? <b> · {r.notify}</b> : null}</li>)}</ul></>}
+        <ul className="creator-request-log">{st.runs.map((r) => <li key={r.id}>{new Date(r.startedAt).toLocaleString()} · {r.trigger} · {r.status} · {r.costKnown ? money(r.costUsd) : 'cost unknown'}{r.workers && r.workers.length > 1 ? ` · ${r.workers.map((w) => `${w.agentName} ${money(w.costUsd)}${w.rounds > 1 ? ` (${w.rounds} steps)` : ''}`).join(', ')}` : r.workers?.[0]?.rounds && r.workers[0].rounds > 1 ? ` · ${r.workers[0].rounds} steps` : ''}{r.searches ? ` · ${r.searches} searches` : ''}{r.fetches ? ` · ${r.fetches} pages read` : ''}{r.etsyCalls ? ` · ${r.etsyCalls} Etsy lookups` : ''}{r.printifyCalls ? ` · ${r.printifyCalls} Printify steps` : ''}{r.skillFileFor ? ` · wrote ${r.skillFileFor}'s SKILL.md` : ''}{r.summary ? `: ${r.summary}` : ''}{r.notify ? <b> · {r.notify}</b> : null}</li>)}</ul></>}
     </div>
   );
 }

@@ -9,7 +9,7 @@
 //
 //   npm run set-key   (once: saves the key on this PC, outside the app folder)
 //   npm run origin    (listens on 127.0.0.1:8788; ANTHROPIC_API_KEY in the environment wins if set)
-//   ORIGIN_MODEL=claude-haiku-5-5 ORIGIN_MONTHLY_CAP_USD=15 ORIGIN_EVERY_MIN=120 ORIGIN_MAX_MIN=10 ORIGIN_SCHEDULE=on
+//   ORIGIN_MODEL=claude-haiku-5-5 ORIGIN_MONTHLY_CAP_USD=15 ORIGIN_EVERY_MIN=30 ORIGIN_MAX_MIN=10 ORIGIN_PARALLEL=3 ORIGIN_ROUNDS=3 ORIGIN_SCHEDULE=on
 //
 // State (instructions synced from the app, tasks, ORIGIN's notes, the cost
 // ledger) is kept in origin-data/state.json next to the app. The key lives only
@@ -25,7 +25,10 @@ const PORT = Number(process.env.ORIGIN_PORT || 8788);
 const MODEL = process.env.ORIGIN_MODEL || 'claude-haiku-5-5';
 const { key: KEY, from: KEY_FROM } = readKey();
 const CAP = Number(process.env.ORIGIN_MONTHLY_CAP_USD || 15);
-const EVERY_MIN = Number(process.env.ORIGIN_EVERY_MIN || 120);
+const EVERY_MIN = Number(process.env.ORIGIN_EVERY_MIN || 30);
+/** Agents working at once in one run (each on its own task), and work rounds per task in one run. */
+const PARALLEL = Number(process.env.ORIGIN_PARALLEL || 3);
+const MAX_ROUNDS = Number(process.env.ORIGIN_ROUNDS || 3);
 const MAX_MIN = Number(process.env.ORIGIN_MAX_MIN || 10);
 const SCHEDULE = (process.env.ORIGIN_SCHEDULE || 'on') !== 'off';
 const DIR = path.resolve(process.env.ORIGIN_DATA_DIR || 'origin-data');
@@ -84,7 +87,24 @@ function saveState(s, file = FILE) {
   fs.renameSync(tmp, file);
 }
 /** A new month starts a new budget; the old month's total stays in the run history. */
-function rollMonth(s) { if (s.ledger.month !== month()) s.ledger = { month: month(), spentUsd: 0, unknownCostRuns: 0, byAgent: {} }; s.ledger.byAgent ??= {}; }
+function rollMonth(s) { if (s.ledger.month !== month()) s.ledger = { month: month(), spentUsd: 0, unknownCostRuns: 0, byAgent: {}, byDay: {} }; s.ledger.byAgent ??= {}; s.ledger.byDay ??= {}; }
+const today = () => new Date().toISOString().slice(0, 10);
+const round6 = (n) => Math.round(n * 1e6) / 1e6;
+/** Add a cost to the month, the day and the agent it was for. */
+function charge(ledger, agentId, usd) {
+  ledger.spentUsd = round6(ledger.spentUsd + usd);
+  ledger.byAgent[agentId] = round6((ledger.byAgent[agentId] || 0) + usd);
+  ledger.byDay ??= {};
+  ledger.byDay[today()] = round6((ledger.byDay[today()] || 0) + usd);
+}
+
+/** Today's share of what is left of the monthly cap, so a fast schedule never runs the month out early. */
+export function dailyAllowance(s, now = new Date()) {
+  const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+  const daysLeft = Math.max(1, Math.ceil((end - now.getTime()) / 86_400_000));
+  const spentToday = s.ledger.byDay?.[now.toISOString().slice(0, 10)] || 0;
+  return { allowanceUsd: round6((remaining(s) + spentToday) / daysLeft), spentTodayUsd: spentToday };
+}
 
 /** Runs left this month on the schedule, for projecting a task that keeps running. */
 function runsLeftThisMonth(now = new Date()) {
@@ -104,7 +124,10 @@ export function budgetWatch(task, now = new Date()) {
   if (spent >= budget) return `it used its $${budget.toFixed(2)} budget ($${spent.toFixed(2)} over ${costs.length} runs)`;
   if (costs.length < WATCH_AFTER_RUNS) return null;
   const avg = costs.reduce((x, c) => x + c, 0) / costs.length;
-  const projected = spent + avg * runsLeftThisMonth(now);
+  // a task with a plan needs about one run per few open steps; without one, judge it over its next 30 runs at most
+  const open = (task.steps || []).filter((x) => !x.done).length;
+  const runsAhead = task.steps?.length ? Math.ceil(open / MAX_ROUNDS) * 2 : Math.min(runsLeftThisMonth(now), 30);
+  const projected = spent + avg * runsAhead;
   if (projected > budget * 2) return `at $${avg.toFixed(3)} a run it would reach about $${projected.toFixed(2)} by month end, past its $${budget.toFixed(2)} budget`;
   const last3 = costs.slice(-3);
   if (last3[0] < last3[1] && last3[1] < last3[2] && last3[2] > 2 * last3[0] && spent > budget / 2) return `each run costs more than the last ($${last3.map((c) => c.toFixed(3)).join(', ')}) and it has used over half its budget`;
@@ -200,7 +223,7 @@ function requestPublish(s, task, input, record) {
   if (s.publishRequests.some((r) => r.productId === productId && r.status === 'waiting')) return { content: 'Already waiting for the owner.', isError: false };
   const agent = taskAgent(s, task || { title: '' });
   s.publishRequests.push({ id: newId('pub'), productId, shopId: printifyConfig()?.shopId ?? null, title: String(input.title || 'Product').slice(0, 140), why: String(input.why || '').slice(0, 400), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'ORIGIN', taskId: task?.id ?? null, status: 'waiting', at: new Date().toISOString() });
-  record.publishAsks = (record.publishAsks || 0) + 1;
+  record.publishAsks = (record.publishAsks || 0) + 1; // the worker that asked
   return { content: 'Sent to the owner. It goes live only when they press Publish.', isError: false };
 }
 
@@ -243,7 +266,7 @@ function briefFor(s, task, deadline, etsy = null) {
     task?.kind === 'skill-file'
       ? `Your one task this run (the owner approved it): [${task.id}] write the SKILL.md for the agent "${task.agentName}" (id ${task.agentId})${task.sharedWith?.length ? `. ${task.sharedWith.length} other agents do exactly the same job (${task.sharedWith.join(', ')}) and will share this file, so write it for the role, not the one name` : ''}. What the owner and the agent's creator said about it:\n${task.detail}${agentBrief(s, task.agentId) ? `\n\nIts current instructions${task.version > 1 ? ' and its earlier, thinner SKILL.md (replace it with a much more detailed one)' : ''}:\n${agentBrief(s, task.agentId)}` : ''}\n\n${SKILL_FILE_RULES}\nResearch only if it makes the playbook more specific (for example current platform rules or prices). Return it as "skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"} and list the task id in completedTaskIds.`
       : task
-      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}\nIf you finish it, list its id in completedTaskIds. If not, record in your notes exactly where you stopped; the next run continues it.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. ${etsy?.tools.some((t) => t.name === 'etsy_search') ? `ETSY (read-only, free): etsy_search shows real active listings with prices, favorites, views and tags; use it to measure demand, competition and price ranges. ${etsyPublic().connected ? "etsy_my_shop shows the owner's own shop and its numbers." : ''} ` : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? `PRINTIFY (the owner's shop "${printifyPublic().shopTitle || 'shop'}", ${printifyPublic().channel || 'connected store'}): you can make products to sell. Find a product type (printify_find_product_type), a provider and variants, upload a design (write it yourself as clean SVG, typography or simple vector art, sized for print), then printify_create_product with a researched price, SEO title, full description and 13 tags. Products stay unpublished in Printify (no cost). When one is finished and your research supports it, call printify_request_publish: the owner approves each one before it goes live on their store, where the store charges its listing fee. At most 3 products a run. ` : ''}You cannot publish, buy or contact anyone yourself; for that, say what you need in notifyOwner.\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
+      ? `Your one task this run (the owner approved it; work only on this): [${task.id}] ${task.title}: ${task.detail}${workAs(s, task)}\nPLAN AND STEPS: work the task from start to finish through an ordered plan. ${task.steps?.length ? `Your plan so far:\n${task.steps.map((x, i) => `${i + 1}. [${x.done ? 'x' : ' '}] ${x.text}`).join('\n')}\nDo the first unchecked step now.` : 'This is the first run on it: write a plan of 3 to 8 concrete, ordered steps that end in a finished deliverable, then do step 1 now.'}${task.notes ? `\nWhere it stood after the last run: ${task.notes}` : ''}\nReturn the whole plan in "steps" with each finished step marked done, and in "taskNotes" exactly where the task stands (findings so far, sources, what is next). You get up to ${MAX_ROUNDS} rounds this run: after each reply you may be asked to continue with the next step. When every step is done, list the task id in completedTaskIds and put the deliverable in taskNotes and notifyOwner.\nRESEARCH TOOLS: web_search finds sources ($0.01 a search, at most ${MAX_SEARCHES} a run); web_fetch reads a page from the results in full (no fee beyond tokens, at most ${MAX_FETCHES}). Use them for real evidence of what buyers want: best-seller and trending lists, reviews and the complaints in them, search suggestions, prices and sales counts, and cite each source with its date. ${etsy?.tools.some((t) => t.name === 'etsy_search') ? `ETSY (read-only, free): etsy_search shows real active listings with prices, favorites, views and tags; use it to measure demand, competition and price ranges. ${etsyPublic().connected ? "etsy_my_shop shows the owner's own shop and its numbers." : ''} ` : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? `PRINTIFY (the owner's shop "${printifyPublic().shopTitle || 'shop'}", ${printifyPublic().channel || 'connected store'}): you can make products to sell. Find a product type (printify_find_product_type), a provider and variants, upload a design (write it yourself as clean SVG, typography or simple vector art, sized for print), then printify_create_product with a researched price, SEO title, full description and 13 tags. Products stay unpublished in Printify (no cost). When one is finished and your research supports it, call printify_request_publish: the owner approves each one before it goes live on their store, where the store charges its listing fee. At most 3 products a run. ` : ''}You cannot publish, buy or contact anyone yourself; for that, say what you need in notifyOwner.\nPROGRESS: report how far along the whole task is now in "progress": {"percent": 0-100, "note": "one or two sentences on what this run got done"}. Be honest: 100 only when it is done.${task.progress != null ? ` Last run you were at ${task.progress}%.` : ''}\nBUDGET WATCH: this task has cost $${(task.spentUsd || 0).toFixed(3)} over ${(task.runCosts || []).length} earlier runs (per run: ${(task.runCosts || []).slice(-5).map((c) => `$${c.toFixed(3)}`).join(', ') || 'none yet'}); its budget is $${(task.budgetUsd ?? TASK_BUDGET_USD).toFixed(2)}. If the pattern shows it will cost far more than it is worth over time, stop it yourself without asking: put its id in stopTaskIds with the reason in stopReason, and say so in notifyOwner. The runner also stops it automatically when it passes its budget.`
       : canSelfApprove(s)
       ? 'No task is ready. Do not research this run. Review your notes, make sure each venture has the skill agents it needs (below), and set the single most valuable next task in proposedTasks; in empire mode it is approved at once and worked next run.'
       : 'No approved task is ready. Do not research. Review your notes, make sure each venture has the skill agents it needs (below), and propose the single most valuable, cheap task for the owner to approve.',
@@ -254,7 +277,7 @@ function briefFor(s, task, deadline, etsy = null) {
         ? 'Something is already waiting for the owner, so propose nothing new this run (leave proposedTasks and proposedAgents empty). If your task cannot continue until the owner decides, set "waitingOnOwner": true and the runner moves on to other work.'
         : `You may propose at most one new task, or one new agent if the work clearly needs a lasting specialist (follow HOW TO CREATE AN AGENT and the branch rules; parentId is your own id for a venture, or an existing venture's id for a skill agent working for it). Give it a clear purpose of two or three sentences; its SKILL.md is written in full in a later run.`)
       : `GROWING THE BRAIN: the owner lets you create agents without asking; they exist as soon as you list them, cost nothing until they are given work, and the owner can delete any. Each venture should have the skill agents it needs to make money (for an Etsy store, for example: product research, listing copy and SEO, design or mockups, pricing, and ads). In proposedAgents, create up to ${agentsPerRun(s)} agents this run that a venture clearly needs and does not have yet; parentId is the venture's id (from AGENTS IN THE BRAIN NOW) for its skill agents, or your own id for a new venture ${s.autoTasks !== false ? '(start a new venture when your research shows real demand)' : '(a new venture needs a business the owner already asked for or approved)'}. Never duplicate an agent that already exists. Give each a clear purpose of two or three sentences; do not write its SKILL.md here, because the runner has you write each one in full in a later run.${canSelfApprove(s) ? ' You may also set one new task in proposedTasks; it is approved at once.' : pendingCount(s) ? ' A task proposal is waiting for the owner, so propose no new task this run.' : ' You may also propose one new task for the owner to approve.'}`,
-    'Finish with exactly one JSON object in a ```json block: {"memory": "your updated notes, under 4000 characters, with sources and dates", "nextAction": "...", "proposedTasks": [{"title": "...", "detail": "...", "agentId": "the agent who should do it, or null"}], "proposedAgents": [{"parentId": "...", "name": "...", "specialty": "...", "purpose": "...", "skill": "a team such as Research", "bankSkillIds": ["..."], "everyMinutes": 120, "maxMinutes": 5, "reason": "why this window"}], "waitingOnOwner": false, "skillFile": "only for a SKILL.md task, else null", "progress": {"percent": 40, "note": "..."}, "completedTaskIds": ["..."], "stopTaskIds": [], "stopReason": "...", "notifyOwner": "only a result the owner must see, else null", "summary": "one line on what this run did"}',
+    'Finish with exactly one JSON object in a ```json block: {"memory": "your updated notes, under 4000 characters, with sources and dates", "nextAction": "...", "proposedTasks": [{"title": "...", "detail": "...", "agentId": "the agent who should do it, or null"}], "proposedAgents": [{"parentId": "...", "name": "...", "specialty": "...", "purpose": "...", "skill": "a team such as Research", "bankSkillIds": ["..."], "everyMinutes": 120, "maxMinutes": 5, "reason": "why this window"}], "waitingOnOwner": false, "skillFile": "only for a SKILL.md task, else null", "steps": [{"text": "...", "done": true}], "taskNotes": "where this task stands", "progress": {"percent": 40, "note": "..."}, "completedTaskIds": ["..."], "stopTaskIds": [], "stopReason": "...", "notifyOwner": "only a result the owner must see, else null", "summary": "one line on what this run did"}',
   ].filter(Boolean).join('\n\n');
 }
 
@@ -266,7 +289,180 @@ function parseResult(text) {
 
 let running = null;
 
-/** One work window. Resolves with the run record; the state file is saved before it returns. */
+/**
+ * The tasks for one run: one per agent, up to PARALLEL agents working side by side.
+ * The owner's tasks come first, then ones ORIGIN set itself, oldest first.
+ */
+export function pickTasks(s, n = PARALLEL) {
+  const known = (t) => !(s.agents || []).length || !t.agentId || s.agents.some((a) => a.id === t.agentId);
+  const ready = (t) => t.status === 'approved' && t.kind !== 'skill-file' && !(t.waitingOnOwner && pendingCount(s)) && known(t);
+  const work = s.tasks.filter(ready).map((t, i) => [t, i]).sort((a, b) => (Number(a[0].by === 'origin') - Number(b[0].by === 'origin')) || a[1] - b[1]).map(([t]) => t);
+  const seen = new Set(), out = [];
+  for (const t of work) {
+    const who = t.agentId || AGENT_ID;
+    if (seen.has(who)) continue;
+    seen.add(who); out.push(t);
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
+const CONTINUE = 'Good. Now do the next step of your plan right away, in this same work window, using your tools. Then reply again with the same JSON object, updated: steps (mark what is done), progress, taskNotes, and completedTaskIds if the whole task is finished.';
+
+/** Later rounds of the same task update the result; lists from every round are kept. */
+function mergeOut(a, b) {
+  if (!a) return b;
+  const list = (k) => [...(Array.isArray(a[k]) ? a[k] : []), ...(Array.isArray(b[k]) ? b[k] : [])];
+  return { ...a, ...b, proposedTasks: list('proposedTasks'), proposedAgents: list('proposedAgents'), completedTaskIds: list('completedTaskIds'), stopTaskIds: list('stopTaskIds') };
+}
+
+/** One agent working one task (or ORIGIN planning when there is none): several rounds, tools included. Changes nothing in the state. */
+async function work(s, task, ctx) {
+  const { deps, deadline, limit, etsy, record } = ctx;
+  const agent = task ? taskAgent(s, task) : null;
+  const w = { taskId: task?.id ?? null, agentId: task?.agentId || AGENT_ID, agentName: agent?.name ?? 'ORIGIN', title: task?.title ?? null, costUsd: 0, costKnown: true, calls: 0, searches: 0, fetches: 0, rounds: 0, status: 'running', publishAsks: 0 };
+  const messages = [{ role: 'user', content: briefFor(s, task, deadline, etsy) }];
+  // research tools: search to find sources, fetch to read a page in full, plus the owner's connected services
+  const tools = task ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: MAX_SEARCHES }, { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: MAX_FETCHES, max_content_tokens: FETCH_TOKENS }, ...(etsy ? etsy.tools : [])] : [];
+  let out = null, stopReason = null;
+  try {
+    while (w.calls < MAX_CALLS * MAX_ROUNDS) {
+      if (Date.now() > deadline.getTime() - 15_000) { w.status = 'window-ended'; break; }
+      if (w.costUsd + CALL_WORST_USD > limit) { w.status = w.calls ? 'run-budget-reached' : 'cap-reached'; break; }
+      const r = await deps.fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': deps.key || KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: MODEL, max_tokens: 16000, system: s.instructions, messages, ...(tools.length ? { tools } : {}) }),
+        signal: AbortSignal.timeout(Math.max(5_000, deadline.getTime() - Date.now())),
+      });
+      w.calls++;
+      if (!r.ok) { w.status = `upstream-${r.status}`; break; }
+      const data = await r.json();
+      const c = costOf(MODEL, data.usage || {});
+      if (c == null) w.costKnown = false; else w.costUsd += c;
+      w.searches += data.usage?.server_tool_use?.web_search_requests || 0;
+      w.fetches += data.usage?.server_tool_use?.web_fetch_requests || 0;
+      if (data.stop_reason === 'pause_turn') { messages.push({ role: 'assistant', content: data.content }); continue; }
+      // the agents' own tools (Etsy, Printify): run each call here and hand back the results
+      const calls = (data.content || []).filter((b) => b.type === 'tool_use');
+      if (data.stop_reason === 'tool_use' && calls.length && etsy) {
+        messages.push({ role: 'assistant', content: data.content });
+        const results = [];
+        for (const tc of calls) {
+          const res = tc.name === 'printify_request_publish' ? requestPublish(s, task, tc.input, w) : await etsy.run(tc.name, tc.input);
+          if (tc.name.startsWith('etsy_')) record.etsyCalls = (record.etsyCalls || 0) + 1;
+          else record.printifyCalls = (record.printifyCalls || 0) + 1;
+          results.push({ type: 'tool_result', tool_use_id: tc.id, content: res.content, ...(res.isError ? { is_error: true } : {}) });
+        }
+        messages.push({ role: 'user', content: results });
+        continue;
+      }
+      stopReason = data.stop_reason;
+      w.status = data.stop_reason === 'refusal' ? 'refused' : data.stop_reason === 'max_tokens' ? 'cut-off' : 'done';
+      w.rounds++;
+      const parsed = parseResult((data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join(''));
+      if (parsed) out = mergeOut(out, parsed);
+      // keep going through the plan while the task is unfinished and there is time and budget
+      const pct = Number(parsed?.progress?.percent);
+      const finished = !parsed || (parsed.completedTaskIds || []).includes(task?.id) || (parsed.stopTaskIds || []).includes(task?.id) || parsed.waitingOnOwner === true;
+      if (task && task.kind !== 'skill-file' && w.status === 'done' && !finished && Number.isFinite(pct) && pct < 100 && w.rounds < MAX_ROUNDS
+        && Date.now() < deadline.getTime() - 90_000 && w.costUsd + CALL_WORST_USD <= limit) {
+        messages.push({ role: 'assistant', content: data.content }, { role: 'user', content: CONTINUE });
+        continue;
+      }
+      break;
+    }
+  } catch (e) {
+    w.status = e.name === 'TimeoutError' ? 'window-ended' : 'error';
+    console.error(`[origin] ${w.agentName}: ${e.name}: ${e.message}`);
+  }
+  if (w.status === 'done' && !out) w.status = 'no-result';
+  return { task, w, out, stopReason };
+}
+
+/** Write one SKILL.md in its own call. */
+async function writeSkillFile(s, extra, ctx) {
+  const { deps, deadline, record } = ctx;
+  extra.sharedWith = s.tasks.filter((x) => x !== extra && x.kind === 'skill-file' && x.status === 'approved' && roleOf(x) === roleOf(extra)).map((x) => x.agentName);
+  const prompt = [roster(s), skillFileBrief(s, extra), 'Reply with only one JSON object in a ```json block: {"skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"}}'].join('\n\n');
+  try {
+    const r = await deps.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': deps.key || KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: 16000, system: s.instructions, messages: [{ role: 'user', content: prompt }] }),
+      signal: AbortSignal.timeout(Math.max(5_000, deadline.getTime() - Date.now())),
+    });
+    record.calls++;
+    if (!r.ok) { console.error(`[origin] SKILL.md call answered ${r.status}`); return 0; }
+    const data = await r.json();
+    const c = costOf(MODEL, data.usage || {});
+    if (c == null) record.costKnown = false;
+    const file = cleanSkillFile(parseResult((data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join(''))?.skillFile);
+    if (file) { saveSkillFile(s, extra, file, new Date().toISOString()); record.skillFileFor = extra.agentName; logProgress(s, extra, { at: new Date().toISOString(), runId: record.id, pct: 100, note: `ORIGIN wrote ${extra.agentName}'s SKILL.md.` }); }
+    return c ?? 0;
+  } catch (e) {
+    console.error(`[origin] SKILL.md call: ${e.name}`);
+    return 0;
+  }
+}
+
+/** Apply what one worker reported to the in-memory state. */
+function applyOut(s, { task, w, out }, at, record, lead) {
+  if (!out) return;
+  if (lead) {
+    if (typeof out.memory === 'string' && out.memory.trim()) s.memory = out.memory.slice(0, 8000);
+    if (typeof out.nextAction === 'string') s.nextAction = out.nextAction.slice(0, 1000);
+  }
+  const t = Array.isArray(out.proposedTasks) ? out.proposedTasks[0] : null;
+  const taken = new Set([...(s.agents || []).map((a) => a.name.toLowerCase()), ...s.agentProposals.filter((a) => a.status !== 'rejected').map((a) => a.name.toLowerCase())]);
+  const agents = [...(Array.isArray(out.proposedAgents) ? out.proposedAgents : []), ...(out.proposedAgent && typeof out.proposedAgent === 'object' ? [out.proposedAgent] : [])]
+    .filter((a) => a && typeof a === 'object' && a.name && a.parentId)
+    .filter((a, i, all) => all.findIndex((b) => String(b.name).toLowerCase() === String(a.name).toLowerCase()) === i)
+    .filter((a) => s.autoAgents === false || !taken.has(String(a.name).toLowerCase()))
+    .slice(0, agentsPerRun(s));
+  const wasPending = pendingCount(s);
+  const self = canSelfApprove(s);
+  if ((self || !wasPending) && t?.title && !s.tasks.some((x) => x.title.toLowerCase() === String(t.title).toLowerCase() && ['approved', 'proposed'].includes(x.status))) {
+    s.tasks.push({ id: newId('task'), title: String(t.title).slice(0, 160), detail: String(t.detail || '').slice(0, 1000), status: self ? 'approved' : 'proposed', by: 'origin', createdAt: at, ...(typeof t.agentId === 'string' && (s.agents || []).some((a) => a.id === t.agentId) ? { agentId: t.agentId } : {}) });
+    if (self) logProgress(s, null, { at, runId: record.id, note: `ORIGIN set itself a task: ${String(t.title).slice(0, 160)}.` });
+  }
+  if (s.autoAgents !== false || (!wasPending && !t?.title)) {
+    for (const a of agents) {
+      const num = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Math.round(Number(v)))) : d);
+      s.agentProposals.push({
+        id: newId('agentp'), parentId: String(a.parentId).slice(0, 80), name: String(a.name).slice(0, 60), specialty: String(a.specialty || '').slice(0, 200),
+        purpose: String(a.purpose || '').slice(0, 1000), skill: String(a.skill || 'Research').slice(0, 40),
+        bankSkillIds: (Array.isArray(a.bankSkillIds) ? a.bankSkillIds : []).map(String).slice(0, 10),
+        everyMinutes: num(a.everyMinutes, 15, 10_080, 240), maxMinutes: num(a.maxMinutes, 1, 60, 5), reason: String(a.reason || '').slice(0, 300),
+        skillFile: cleanSkillFile(a.skillFile), auto: s.autoAgents !== false, status: 'proposed', createdAt: at,
+      });
+      logProgress(s, null, { at, runId: record.id, agentId: String(a.parentId).slice(0, 80), note: `${s.autoAgents !== false ? 'Created' : 'Proposed'} a new agent: ${String(a.name).slice(0, 60)}.` });
+    }
+  }
+  // a task that can't go on until the owner decides steps aside instead of holding every run
+  if (task && task.kind !== 'skill-file' && (out.waitingOnOwner === true || (pendingCount(s) > wasPending && !(out.completedTaskIds || []).includes(task.id)))) task.waitingOnOwner = true;
+  const file = task?.kind === 'skill-file' ? cleanSkillFile(out.skillFile) : null;
+  if (file) { saveSkillFile(s, task, file, at); logProgress(s, task, { at, runId: record.id, pct: 100, note: `ORIGIN wrote ${task.agentName}'s SKILL.md.` }); }
+  // only the task this worker had can be completed or stopped by it
+  if (task && Array.isArray(out.completedTaskIds) && out.completedTaskIds.includes(task.id)) task.status = 'done';
+  if (task && task.status === 'approved' && Array.isArray(out.stopTaskIds) && out.stopTaskIds.includes(task.id)) {
+    stopTask(task, `ORIGIN stopped it: ${String(out.stopReason || 'its spend pattern was too high for its value').slice(0, 300)}`, at);
+  }
+  if (task && task.kind !== 'skill-file') {
+    // the plan: ordered steps, checked off as the task moves from start to finish
+    if (Array.isArray(out.steps) && out.steps.length) task.steps = out.steps.filter((x) => x && (x.text || typeof x === 'string')).slice(0, 12).map((x) => ({ text: String(x.text ?? x).slice(0, 160), done: x.done === true }));
+    if (typeof out.taskNotes === 'string' && out.taskNotes.trim()) task.notes = out.taskNotes.slice(0, 3000);
+    const fromSteps = task.steps?.length ? Math.round((task.steps.filter((x) => x.done).length / task.steps.length) * 100) : NaN;
+    const pct = task.status === 'done' ? 100 : Number.isFinite(fromSteps) ? fromSteps : Number(out.progress?.percent);
+    const note = String(out.progress?.note || out.summary || '').slice(0, 400);
+    if (Number.isFinite(pct)) task.progress = Math.max(0, Math.min(100, Math.round(pct)));
+    if (note || Number.isFinite(pct)) logProgress(s, task, { at, runId: record.id, pct: task.progress ?? null, note });
+  }
+  w.summary = String(out.summary || '').slice(0, 300);
+  w.notify = out.notifyOwner ? String(out.notifyOwner).slice(0, 500) : null;
+}
+
+/** One work window: up to PARALLEL agents each work their own task at the same time. The state file is saved before it returns. */
 export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: FILE }) {
   if (running) return { ok: false, reason: 'A run is already in progress.' };
   const s = loadState(deps.file);
@@ -276,159 +472,68 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   if (remaining(s) < CALL_WORST_USD) {
     return { ok: false, reason: `The $${CAP} monthly cap is reached ($${s.ledger.spentUsd.toFixed(2)} spent). Runs stop until next month or a new approved cap.` };
   }
-  const task = nextTask(s);
-  // agents with the same job as this SKILL.md request share its file
-  if (task?.kind === 'skill-file') task.sharedWith = s.tasks.filter((x) => x !== task && x.kind === 'skill-file' && x.status === 'approved' && roleOf(x) === roleOf(task)).map((x) => x.agentName);
+  let picks = pickTasks(s, deps.parallel ?? PARALLEL);
+  // with no work of its own, a SKILL.md request is the task (as before); with none at all, ORIGIN plans
+  const skillTask = picks.length ? null : nextTask(s);
+  if (skillTask?.kind === 'skill-file') skillTask.sharedWith = s.tasks.filter((x) => x !== skillTask && x.kind === 'skill-file' && x.status === 'approved' && roleOf(x) === roleOf(skillTask)).map((x) => x.agentName);
+  if (!picks.length) picks = [skillTask];
   const start = new Date(), deadline = new Date(start.getTime() + MAX_MIN * 60_000);
-  const runLimit = Math.min(RUN_LIMIT_USD, remaining(s));
-  const record = { id: `run_${start.getTime().toString(36)}`, trigger, model: MODEL, startedAt: start.toISOString(), endedAt: null, costUsd: 0, costKnown: true, calls: 0, searches: 0, status: 'running', summary: '' };
+  const runLimit = Math.min(RUN_LIMIT_USD * Math.max(1, picks.length), remaining(s));
+  const record = { id: `run_${start.getTime().toString(36)}`, trigger, model: MODEL, startedAt: start.toISOString(), endedAt: null, costUsd: 0, costKnown: true, calls: 0, searches: 0, fetches: 0, status: 'running', summary: '' };
   running = record;
-  // the agents' own tools: Etsy research (if set up) and Printify products (if set up)
   const etsy = 'etsy' in deps ? deps.etsy : agentTools();
-  const messages = [{ role: 'user', content: briefFor(s, task, deadline, etsy) }];
-  // research tools: search to find sources, fetch to read a page in full
-  const tools = task ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: MAX_SEARCHES }, { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: MAX_FETCHES, max_content_tokens: FETCH_TOKENS }, ...(etsy && task.kind !== 'skill-file' ? etsy.tools : [])] : [];
-  let text = '', stopReason = null;
+  const ctx = { deps, deadline, limit: runLimit / picks.length, etsy, record };
+  let results;
   try {
-    while (record.calls < MAX_CALLS) {
-      if (Date.now() > deadline.getTime() - 15_000) { record.status = 'window-ended'; break; }
-      if (record.costUsd + CALL_WORST_USD > runLimit) { record.status = record.calls ? 'run-budget-reached' : 'cap-reached'; break; }
-      const r = await deps.fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': deps.key || KEY, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: MODEL, max_tokens: 16000, system: s.instructions, messages, ...(tools.length ? { tools } : {}) }),
-        signal: AbortSignal.timeout(Math.max(5_000, deadline.getTime() - Date.now())),
-      });
-      record.calls++;
-      if (!r.ok) { record.status = `upstream-${r.status}`; break; }
-      const data = await r.json();
-      const c = costOf(MODEL, data.usage || {});
-      if (c == null) record.costKnown = false; else record.costUsd += c;
-      record.searches += data.usage?.server_tool_use?.web_search_requests || 0;
-      record.fetches = (record.fetches || 0) + (data.usage?.server_tool_use?.web_fetch_requests || 0);
-      text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
-      if (data.stop_reason === 'pause_turn') { messages.push({ role: 'assistant', content: data.content }); continue; }
-      // the agents' own tools (Etsy): run each call here and hand back the results
-      const calls = (data.content || []).filter((b) => b.type === 'tool_use');
-      if (data.stop_reason === 'tool_use' && calls.length && etsy) {
-        messages.push({ role: 'assistant', content: data.content });
-        const results = [];
-        for (const c of calls) {
-          const out = c.name === 'printify_request_publish' ? requestPublish(s, task, c.input, record) : await etsy.run(c.name, c.input);
-          if (c.name.startsWith('etsy_')) record.etsyCalls = (record.etsyCalls || 0) + 1;
-          else record.printifyCalls = (record.printifyCalls || 0) + 1;
-          results.push({ type: 'tool_result', tool_use_id: c.id, content: out.content, ...(out.isError ? { is_error: true } : {}) });
-        }
-        messages.push({ role: 'user', content: results });
-        continue;
-      }
-      record.status = data.stop_reason === 'refusal' ? 'refused' : 'done';
-      stopReason = data.stop_reason;
-      break;
+    results = await Promise.all(picks.map((t) => work(s, t, ctx)));
+    // one SKILL.md every run, so the files get written while the agents work their tasks
+    const extra = picks[0]?.kind === 'skill-file' ? null : nextTask({ ...s, tasks: s.tasks.filter((t) => t.kind === 'skill-file') });
+    const used = results.reduce((x, r) => x + r.w.costUsd, 0);
+    if (extra && Date.now() < deadline.getTime() - 60_000 && used + CALL_WORST_USD <= runLimit) {
+      const c = await writeSkillFile(s, extra, ctx);
+      record.costUsd += c;
+      record.skillCostUsd = c;
     }
-  } catch (e) {
-    record.status = e.name === 'TimeoutError' ? 'window-ended' : 'error';
-    console.error(`[origin] ${e.name}: ${e.message}`);
   } finally {
     running = null;
   }
-  if (record.status === 'done' && stopReason === 'max_tokens') record.status = 'cut-off';
-  // Every run also writes one SKILL.md in its own call, so the files get written even while
-  // the owner's tasks keep the main work busy. It needs time and budget left over.
-  const extra = task?.kind === 'skill-file' ? null : nextTask({ ...s, tasks: s.tasks.filter((t) => t.kind === 'skill-file') });
-  if (extra && Date.now() < deadline.getTime() - 60_000 && record.costUsd + CALL_WORST_USD <= runLimit) {
-    try {
-      running = record;
-      extra.sharedWith = s.tasks.filter((x) => x !== extra && x.kind === 'skill-file' && x.status === 'approved' && roleOf(x) === roleOf(extra)).map((x) => x.agentName);
-      const prompt = [roster(s), skillFileBrief(s, extra), 'Reply with only one JSON object in a ```json block: {"skillFile": {"name": "a short skill name", "description": "one line on when this agent uses it", "body": "the full Markdown"}}'].join('\n\n');
-      const r = await deps.fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': deps.key || KEY, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: MODEL, max_tokens: 16000, system: s.instructions, messages: [{ role: 'user', content: prompt }] }),
-        signal: AbortSignal.timeout(Math.max(5_000, deadline.getTime() - Date.now())),
-      });
-      record.calls++;
-      if (r.ok) {
-        const data = await r.json();
-        const c = costOf(MODEL, data.usage || {});
-        if (c == null) record.costKnown = false; else record.costUsd += c;
-        const file = cleanSkillFile(parseResult((data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join(''))?.skillFile);
-        if (file) { saveSkillFile(s, extra, file, new Date().toISOString()); record.skillFileFor = extra.agentName; logProgress(s, extra, { at: new Date().toISOString(), runId: record.id, pct: 100, note: `ORIGIN wrote ${extra.agentName}'s SKILL.md.` }); }
-      } else console.error(`[origin] SKILL.md call answered ${r.status}`);
-    } catch (e) {
-      console.error(`[origin] SKILL.md call: ${e.name}`);
-    } finally {
-      running = null;
-    }
-  }
   record.endedAt = new Date().toISOString();
-  const out = parseResult(text);
-  if (out) {
-    if (typeof out.memory === 'string') s.memory = out.memory.slice(0, 8000);
-    if (typeof out.nextAction === 'string') s.nextAction = out.nextAction.slice(0, 1000);
-    // at most one new task proposal per run, none while the owner still has one to decide; agents up to agentsPerRun
-    const t = Array.isArray(out.proposedTasks) ? out.proposedTasks[0] : null;
-    const agents = [...(Array.isArray(out.proposedAgents) ? out.proposedAgents : []), ...(out.proposedAgent && typeof out.proposedAgent === 'object' ? [out.proposedAgent] : [])]
-      .filter((a) => a && typeof a === 'object' && a.name && a.parentId)
-      .filter((a, i, all) => all.findIndex((b) => String(b.name).toLowerCase() === String(a.name).toLowerCase()) === i)
-      .slice(0, agentsPerRun(s));
-    const wasPending = pendingCount(s);
-    const self = canSelfApprove(s);
-    if ((self || !wasPending) && t?.title) {
-      s.tasks.push({ id: newId('task'), title: String(t.title).slice(0, 160), detail: String(t.detail || '').slice(0, 1000), status: self ? 'approved' : 'proposed', by: 'origin', createdAt: record.endedAt, ...(typeof t.agentId === 'string' && (s.agents || []).some((a) => a.id === t.agentId) ? { agentId: t.agentId } : {}) });
-      if (self) logProgress(s, null, { at: record.endedAt, runId: record.id, note: `ORIGIN set itself a task: ${String(t.title).slice(0, 160)}.` });
-    }
-    if (s.autoAgents !== false || (!wasPending && !t?.title)) {
-      for (const a of agents) {
-        const num = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Math.round(Number(v)))) : d);
-        s.agentProposals.push({
-          id: newId('agentp'), parentId: String(a.parentId).slice(0, 80), name: String(a.name).slice(0, 60), specialty: String(a.specialty || '').slice(0, 200),
-          purpose: String(a.purpose || '').slice(0, 1000), skill: String(a.skill || 'Research').slice(0, 40),
-          bankSkillIds: (Array.isArray(a.bankSkillIds) ? a.bankSkillIds : []).map(String).slice(0, 10),
-          everyMinutes: num(a.everyMinutes, 15, 10_080, 240), maxMinutes: num(a.maxMinutes, 1, 60, 5), reason: String(a.reason || '').slice(0, 300),
-          skillFile: cleanSkillFile(a.skillFile), auto: s.autoAgents !== false, status: 'proposed', createdAt: record.endedAt,
-        });
-        logProgress(s, null, { at: record.endedAt, runId: record.id, agentId: String(a.parentId).slice(0, 80), note: `${s.autoAgents !== false ? 'Created' : 'Proposed'} a new agent: ${String(a.name).slice(0, 60)}.` });
-      }
-    }
-    // a task that can't go on until the owner decides steps aside instead of holding every run
-    if (task && task.kind !== 'skill-file' && (out.waitingOnOwner === true || (pendingCount(s) > wasPending && !(out.completedTaskIds || []).includes(task.id)))) task.waitingOnOwner = true;
-    const file = task?.kind === 'skill-file' ? cleanSkillFile(out.skillFile) : null;
-    if (file) { saveSkillFile(s, task, file, record.endedAt); logProgress(s, task, { at: record.endedAt, runId: record.id, pct: 100, note: `ORIGIN wrote ${task.agentName}'s SKILL.md.` }); }
-    // only the task this run worked on can be completed or stopped by it
-    if (task && Array.isArray(out.completedTaskIds) && out.completedTaskIds.includes(task.id)) task.status = 'done';
-    if (task && task.status === 'approved' && Array.isArray(out.stopTaskIds) && out.stopTaskIds.includes(task.id)) {
-      stopTask(task, `ORIGIN stopped it: ${String(out.stopReason || 'its spend pattern was too high for its value').slice(0, 300)}`, record.endedAt);
-    }
-    if (task && task.kind !== 'skill-file') {
-      const pct = task.status === 'done' ? 100 : Number(out.progress?.percent);
-      const note = String(out.progress?.note || out.summary || '').slice(0, 400);
-      if (Number.isFinite(pct)) task.progress = Math.max(0, Math.min(100, Math.round(pct)));
-      if (note || Number.isFinite(pct)) logProgress(s, task, { at: record.endedAt, runId: record.id, pct: task.progress ?? null, note });
-    }
-    record.summary = String(out.summary || '').slice(0, 300);
-    record.notify = out.notifyOwner ? String(out.notifyOwner).slice(0, 500) : null;
-  } else if (record.status === 'done') record.status = 'no-result';
-  const round = (n) => Math.round(n * 1e6) / 1e6;
-  record.agentId = AGENT_ID;
-  record.taskId = task?.id ?? null;
-  if (task) {
-    task.spentUsd = round((task.spentUsd || 0) + record.costUsd);
-    task.runCosts = [...(task.runCosts || []), round(record.costUsd)].slice(-50);
+  const lead = results.find((r) => !r.task?.agentId) ?? results[0];
+  for (const r of results) applyOut(s, r, record.endedAt, record, r === lead);
+  // per task: spend, budget watch
+  for (const { task, w } of results) {
+    if (!task) continue;
+    task.spentUsd = round6((task.spentUsd || 0) + w.costUsd);
+    task.runCosts = [...(task.runCosts || []), round6(w.costUsd)].slice(-50);
     const why = task.status === 'approved' ? budgetWatch(task) : null;
     if (why) stopTask(task, `Budget watch stopped it: ${why}`, record.endedAt);
-    if (task.status === 'stopped') record.notify = `Stopped "${task.title}". ${task.stopReason}`;
+    if (task.status === 'stopped') w.notify = `Stopped "${task.title}". ${task.stopReason}`;
   }
+  const ws = results.map((r) => r.w);
+  record.workers = ws.map(({ taskId, agentId, agentName, title, costUsd, status, rounds, summary }) => ({ taskId, agentId, agentName, title, costUsd: round6(costUsd), status, rounds, summary }));
+  record.costUsd = round6(record.costUsd + ws.reduce((x, w) => x + w.costUsd, 0));
+  record.costKnown = record.costKnown && ws.every((w) => w.costKnown);
+  record.calls += ws.reduce((x, w) => x + w.calls, 0);
+  record.searches = ws.reduce((x, w) => x + w.searches, 0);
+  record.fetches = ws.reduce((x, w) => x + w.fetches, 0);
+  record.status = ws.length === 1 ? ws[0].status : ws.some((w) => w.status === 'done') ? 'done' : ws[0].status;
+  record.summary = ws.length === 1 ? (ws[0].summary || '') : ws.filter((w) => w.summary).map((w) => `${w.agentName}: ${w.summary}`).join(' · ').slice(0, 600);
+  const publishAsks = ws.reduce((x, w) => x + (w.publishAsks || 0), 0);
+  const notes = [...ws.map((w) => w.notify).filter(Boolean), ...(publishAsks ? [`${publishAsks} product${publishAsks === 1 ? '' : 's'} ready for you to publish in ORIGIN runs.`] : [])];
+  record.notify = notes.length ? notes.join(' ').slice(0, 800) : null;
+  record.agentId = ws[0].agentId;
+  record.taskId = ws[0].taskId;
   // The owner (and console questions) may have changed the state while the run worked:
   // merge this run's results into the current file instead of overwriting it.
   const now = loadState(deps.file);
   rollMonth(now);
   now.memory = s.memory; now.nextAction = s.nextAction;
+  const worked = new Set(results.map((r) => r.task?.id).filter(Boolean));
   for (const t of s.tasks) {
     const cur = now.tasks.find((x) => x.id === t.id);
     if (!cur) now.tasks.push(t);
-    else if (t.id === task?.id) {
-      Object.assign(cur, { spentUsd: t.spentUsd, runCosts: t.runCosts, ...(t.progress != null ? { progress: t.progress } : {}) });
+    else if (worked.has(t.id)) {
+      Object.assign(cur, { spentUsd: t.spentUsd, runCosts: t.runCosts, ...(t.progress != null ? { progress: t.progress } : {}), ...(t.steps ? { steps: t.steps } : {}), ...(t.notes ? { notes: t.notes } : {}) });
       if (cur.status === 'approved' && t.status === 'done') cur.status = 'done';
       if (cur.status === 'approved' && t.status !== 'approved') Object.assign(cur, { status: t.status, stopReason: t.stopReason, stoppedAt: t.stoppedAt });
       if (t.waitingOnOwner) cur.waitingOnOwner = true;
@@ -437,10 +542,10 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   for (const a of s.agentProposals) if (!now.agentProposals.some((x) => x.id === a.id)) now.agentProposals.push(a);
   for (const f of s.skillFiles) if (!now.skillFiles.some((x) => x.id === f.id)) now.skillFiles.push(f);
   for (const r of s.publishRequests || []) if (!(now.publishRequests || []).some((x) => x.id === r.id)) now.publishRequests = [...(now.publishRequests || []), r].slice(-100);
-  if (record.publishAsks) record.notify = `${record.notify ? `${record.notify} ` : ''}${record.publishAsks} product${record.publishAsks === 1 ? '' : 's'} ready for you to publish in ORIGIN runs.`;
   for (const e of s.progressLog || []) if (!(now.progressLog || []).some((x) => x.id === e.id)) now.progressLog = [...(now.progressLog || []), e].slice(-PROGRESS_KEEP);
-  now.ledger.spentUsd = round(now.ledger.spentUsd + record.costUsd);
-  now.ledger.byAgent[AGENT_ID] = round((now.ledger.byAgent[AGENT_ID] || 0) + record.costUsd);
+  // spend goes to the agent each worker was; SKILL.md writing is ORIGIN's
+  for (const w of ws) charge(now.ledger, w.agentId, w.costUsd);
+  if (record.skillCostUsd) charge(now.ledger, AGENT_ID, record.skillCostUsd);
   if (!record.costKnown) now.ledger.unknownCostRuns++;
   now.runs = [record, ...now.runs].slice(0, 50);
   if (trigger === 'schedule') now.lastScheduledAt = record.startedAt;
@@ -560,11 +665,9 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
   // no await between this load and save, so a run in progress can't lose it
   const now = loadState(deps.file);
   rollMonth(now);
-  const round = (n) => Math.round(n * 1e6) / 1e6;
   if (cost == null) now.ledger.unknownCostRuns++;
-  else { now.ledger.spentUsd = round(now.ledger.spentUsd + cost); now.ledger.byAgent[AGENT_ID] = round((now.ledger.byAgent[AGENT_ID] || 0) + cost); }
+  else charge(now.ledger, agent?.id ?? AGENT_ID, cost);
   const approved = consent ? applyConsent(now, consent) : null;
-  if (cost != null && agent) now.ledger.byAgent[AGENT_ID] = round(now.ledger.byAgent[AGENT_ID] - cost), now.ledger.byAgent[agent.id] = round((now.ledger.byAgent[agent.id] || 0) + cost);
   now.asks = [{ at: new Date().toISOString(), q, a: answer.slice(0, 4000), costUsd: cost, approved, agentId: agent?.id ?? null, by: agent?.name ?? 'ORIGIN' }, ...(now.asks || [])].slice(0, 20);
   saveState(now, deps.file);
   return { ok: true, answer, costUsd: cost, taskTitle: task?.title ?? null, approved, by: agent?.name ?? 'ORIGIN' };
@@ -574,7 +677,7 @@ function publicState() {
   const s = loadState(); rollMonth(s);
   return {
     configured: Boolean(KEY), model: MODEL, capUsd: CAP, everyMinutes: EVERY_MIN, maxMinutes: MAX_MIN, schedule: SCHEDULE,
-    spentUsd: s.ledger.spentUsd, spentByAgent: s.ledger.byAgent, taskBudgetUsd: TASK_BUDGET_USD, unknownCostRuns: s.ledger.unknownCostRuns, month: s.ledger.month, running: running ? running.startedAt : null,
+    spentUsd: s.ledger.spentUsd, spentByAgent: s.ledger.byAgent, ...dailyAllowance(s), parallel: PARALLEL, rounds: MAX_ROUNDS, taskBudgetUsd: TASK_BUDGET_USD, unknownCostRuns: s.ledger.unknownCostRuns, month: s.ledger.month, running: running ? running.startedAt : null,
     synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, etsy: etsyPublic(), printify: printifyPublic(), publishRequests: (s.publishRequests || []).slice(-30), skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
     // with no scheduled run yet, the next one starts within a minute
     nextScheduledAt: SCHEDULE ? new Date(s.lastScheduledAt ? Math.max(Date.now(), Date.parse(s.lastScheduledAt) + EVERY_MIN * 60_000) : Date.now() + 60_000).toISOString() : null,
@@ -719,6 +822,15 @@ function tick() {
   const s = loadState();
   const last = s.lastScheduledAt ? Date.parse(s.lastScheduledAt) : 0;
   if (Date.now() - last < EVERY_MIN * 60_000) return;
+  // pacing: scheduled runs stop for the day once today's share of the cap is used (manual runs still work)
+  rollMonth(s);
+  const day = dailyAllowance(s);
+  if (day.spentTodayUsd >= day.allowanceUsd) {
+    const why = `today's share of the cap ($${day.allowanceUsd.toFixed(2)}) is used; scheduled runs resume tomorrow`;
+    if (why !== lastSkip) console.log(`[origin] scheduled run skipped: ${why}`);
+    lastSkip = why;
+    return;
+  }
   runOnce('schedule').then((r) => {
     // a run that can't start is retried every minute; say why once, not every minute
     const line = `[origin] scheduled run: ${r.ok ? `${r.run.status}, $${r.run.costUsd.toFixed(4)}` : r.reason}`;
