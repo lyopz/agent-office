@@ -1041,3 +1041,16 @@ describe('origin runner: research tools are routed to the trend runner', () => {
     expect(runner.isTrendTool('printify_create_product')).toBe(false);
   });
 });
+
+describe('origin runner: memes come from Pinterest, steered by the owner', () => {
+  test('the meme brief puts Pinterest first, skips old engravings, and carries what the owner wants', () => {
+    const task = { title: 'STORE: Find memes and save them to memez', detail: '', stage: 'memes' };
+    const none = runner.memeBrief({}, task);
+    expect(none).toMatch(/Pinterest first/);
+    expect(none).toMatch(/site:pinterest\.com/);
+    expect(none).toMatch(/not use assets_public_domain/);
+    expect(none).toMatch(/What to look for/);
+    expect(runner.memeBrief({ memeLookFor: 'cats acting like people' }, task)).toMatch(/WHAT THE OWNER WANTS YOU TO LOOK FOR .*cats acting like people/);
+    expect(runner.memeBrief({}, { title: 'Write the shop policy', detail: '' })).toBe('');
+  });
+});

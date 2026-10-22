@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, BookOpen, CircleDollarSign, ExternalLink, FileText, Play, RotateCcw, ShieldCheck, Sparkles, Store, Sunrise, Users, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import { useOrigin } from '../brain/useOrigin';
-import { runOrigin, runnerStatus, startStore, storeAction, taskAction, type RunnerStatus, type RunnerTask, type TaskReport } from '../brain/originLink';
+import { runOrigin, runnerStatus, setMemeLookFor, startStore, storeAction, taskAction, type RunnerStatus, type RunnerTask, type TaskReport } from '../brain/originLink';
 import { moneyByBranch } from '../brain/branchMoney';
 import { ProgressBar, ProgressLog } from '../brain/Progress';
 import { STATUS_COLOR } from '../brain/status';
@@ -73,6 +73,14 @@ export function Dashboard() {
     if (!r) { notify(`${leader}'s runner did not answer, so the store did not start. Start it with npm.cmd run origin.`, 'warn'); return; }
     notify(r.started ? `${r.run.ventureName}'s store started: ${r.order.map((x, i) => `${i + 1}. ${x}`).join(' ')}` : `${r.run.ventureName}'s store is already running (step ${r.run.stage + 1} of ${r.order.length}).`);
     useOrigin.setState({ status: await runnerStatus() });
+  };
+  // what the owner wants the scouts to look for; kept as typed until saved
+  const [lookFor, setLookFor] = useState<string | null>(null);
+  const saveLookFor = async () => {
+    const { notify } = useStore.getState();
+    const ok = await setMemeLookFor(lookFor ?? '');
+    notify(ok ? 'Saved. The scouts follow it from their next run.' : `${leader}'s runner did not answer, so it was not saved.`, ok ? undefined : 'warn');
+    if (ok) { setLookFor(null); useOrigin.setState({ status: await runnerStatus() }); }
   };
   const storeDo = async (action: 'stop' | 'restart', runId: string, name: string) => {
     const { notify } = useStore.getState();
@@ -233,6 +241,12 @@ export function Dashboard() {
         <h4><Store size={13} /> Start store <span className="count">{(st?.storeRuns ?? []).filter((r) => r.status === 'running' || r.status === 'waiting').length} running</span></h4>
         <p className="note">One button runs a store's whole job in order. Each step starts when the last one is done, inside each task's budget and the monthly cap. You can also type "start store" in the console.</p>
         <ol className="store-order">{(st?.storeOrder ?? ['Research what is selling now', 'Find memes and save them to memez', 'Design shirts from memez (no AI)', 'Ads for the products you approved']).map((x, i) => <li key={i}>{x}{i === 2 ? <small> · then your Yes in Approvals makes and lists each product</small> : null}</li>)}</ol>
+        <label className="look-for">
+          <b>What to look for</b>
+          <span className="small muted">Tell the scouts what memes to find on Pinterest: subjects, the kind of humour, accounts or boards, and what to avoid. They follow it before their own ideas.</span>
+          <textarea rows={3} maxLength={1500} value={lookFor ?? st?.memeLookFor ?? ''} placeholder='e.g. "cats acting like people, deadpan captions, reaction faces; search Pinterest for: cursed cat meme, silly animal meme; no politics, no old drawings"' onChange={(e) => setLookFor(e.target.value)} />
+          {lookFor != null && lookFor !== (st?.memeLookFor ?? '') && <button className="btn sm primary" disabled={!live} onClick={() => void saveLookFor()}>Save what to look for</button>}
+        </label>
         <div className="store-start">
           {(st?.storeVentures?.length ?? 0) > 1 && <select value={storeId} onChange={(e) => setStoreId(e.target.value)} aria-label="Which store">{st!.storeVentures!.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select>}
           <button className="btn sm primary" disabled={!live || starting} onClick={() => void runStore()}><Play size={13} /> {starting ? 'Starting…' : `Start ${st?.storeVentures?.find((v) => v.id === storeId)?.name ?? st?.storeVentures?.[0]?.name ?? leader}'s store`}</button>
