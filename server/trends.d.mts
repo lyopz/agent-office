@@ -1,12 +1,7 @@
 // Types for the parts of trends.mjs the app and tests use.
 export const GOOGLE_TRENDS_TOOL: { name: string; description: string; input_schema: Record<string, unknown> };
-export const ASSETS_TOOL: { name: string; description: string; input_schema: Record<string, unknown> };
 export const TREND_TOOLS: { name: string }[];
 export const COPYRIGHT_RULES: string;
-export interface PublicAsset { title: string | null; creator: string | null; licence: string; source: string; page: string; file: string; preview: string | null; width?: number; height?: number; about: string | null }
-export function commonsAssets(query: string, limit: number, deps?: { fetch?: unknown }): Promise<PublicAsset[]>;
-export function openverseAssets(query: string, limit: number, deps?: { fetch?: unknown }): Promise<PublicAsset[]>;
-export function publicDomainAssets(input: { query: string; limit?: number }, deps?: { fetch?: unknown }): Promise<{ query: string; licence_filter: string; items: PublicAsset[]; notes: string[]; note: string }>;
 export const TREND_SOURCES: string;
 export function trendTask(task: { title?: string; detail?: string } | null | undefined, agentName?: string): boolean;
 export function parseTrendsRss(xml: string): { title: string; traffic: string | null; published: string | null; news: { title: string; source: string; url: string }[] }[];

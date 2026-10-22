@@ -67,6 +67,19 @@ async function shopId(deps) {
 }
 
 let blueprints = null;
+/** Where a design prints on a garment, in Printify's terms (x and y are the centre, 0 to 1 of the print area). */
+export const PLACEMENT_SPOTS = {
+  front_center: { position: 'front', x: 0.5, y: 0.4, scale: 0.8 },
+  full_front: { position: 'front', x: 0.5, y: 0.5, scale: 1 },
+  left_chest: { position: 'front', x: 0.72, y: 0.22, scale: 0.3 },
+  back: { position: 'back', x: 0.5, y: 0.4, scale: 1 },
+};
+/** The print-area placeholder for a design: a named placement, or position and scale given by hand. */
+export function placeholder(input) {
+  const spot = PLACEMENT_SPOTS[input.placement] || { position: String(input.position || 'front'), x: 0.5, y: 0.5, scale: 1 };
+  return { position: spot.position, images: [{ id: String(input.image_id), x: spot.x, y: spot.y, scale: Number(input.scale) || spot.scale, angle: 0 }] };
+}
+
 const tools = {
   async printify_find_product_type(input, deps) {
     blueprints ??= await pf('/catalog/blueprints.json', { deps });
@@ -102,7 +115,7 @@ const tools = {
       title: String(input.title || '').slice(0, 140), description: String(input.description || '').slice(0, 5000),
       blueprint_id: Number(input.blueprint_id), print_provider_id: Number(input.print_provider_id),
       variants: variantIds.map((id) => ({ id, price: cents, is_enabled: true })),
-      print_areas: [{ variant_ids: variantIds, placeholders: [{ position: String(input.position || 'front'), images: [{ id: String(input.image_id), x: 0.5, y: 0.5, scale: Number(input.scale) || 1, angle: 0 }] }] }],
+      print_areas: [{ variant_ids: variantIds, placeholders: [placeholder(input)] }],
       ...(Array.isArray(input.tags) ? { tags: input.tags.map((t) => String(t).slice(0, 20)).slice(0, 13) } : {}),
     };
     const p = await pf(`/shops/${shop}/products.json`, { deps, method: 'POST', body });
@@ -120,7 +133,7 @@ export const PRINTIFY_TOOLS = [
   { name: 'printify_providers', description: 'Print providers that make a blueprint, with their country.', input_schema: { type: 'object', properties: { blueprint_id: { type: 'integer' } }, required: ['blueprint_id'] } },
   { name: 'printify_variants', description: 'Sizes and colors (variant ids) a provider offers for a blueprint, and the print positions.', input_schema: { type: 'object', properties: { blueprint_id: { type: 'integer' }, print_provider_id: { type: 'integer' } }, required: ['blueprint_id', 'print_provider_id'] } },
   { name: 'printify_upload_design', description: 'Upload a design to Printify. Either write the design yourself as complete SVG markup (typography with <text> is fine, simple vector art; size it for print, e.g. viewBox 0 0 4500 5400 for shirts, transparent background) in "svg", or give a public image "url". The runner renders SVG to a print-size PNG before uploading. Returns image_id.', input_schema: { type: 'object', properties: { file_name: { type: 'string' }, svg: { type: 'string' }, url: { type: 'string' } } } },
-  { name: 'printify_create_product', description: "Create a product in the owner's Printify shop from an uploaded design. It is NOT published: it waits in Printify until the owner approves it. Use a researched price, an SEO title, a full description and 13 tags.", input_schema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, blueprint_id: { type: 'integer' }, print_provider_id: { type: 'integer' }, variant_ids: { type: 'array', items: { type: 'integer' } }, price_usd: { type: 'number' }, image_id: { type: 'string' }, position: { type: 'string', description: 'usually front' }, scale: { type: 'number' }, tags: { type: 'array', items: { type: 'string' }, maxItems: 13 } }, required: ['title', 'description', 'blueprint_id', 'print_provider_id', 'variant_ids', 'price_usd', 'image_id'] } },
+  { name: 'printify_create_product', description: "Create a product in the owner's Printify shop from an uploaded design. It is NOT published: it waits in Printify until the owner approves it. Use a researched price, an SEO title, a full description and 13 tags.", input_schema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, blueprint_id: { type: 'integer' }, print_provider_id: { type: 'integer' }, variant_ids: { type: 'array', items: { type: 'integer' } }, price_usd: { type: 'number' }, image_id: { type: 'string' }, placement: { type: 'string', enum: ['front_center', 'full_front', 'left_chest', 'back'], description: "where the design prints; use the design's placement when it has one" }, position: { type: 'string', description: 'usually front (ignored when placement is given)' }, scale: { type: 'number' }, tags: { type: 'array', items: { type: 'string' }, maxItems: 13 } }, required: ['title', 'description', 'blueprint_id', 'print_provider_id', 'variant_ids', 'price_usd', 'image_id'] } },
   { name: 'printify_my_products', description: "The products already in the owner's Printify shop and whether each is published.", input_schema: { type: 'object', properties: { limit: { type: 'integer' } } } },
   { name: 'printify_request_publish', description: "Ask the owner to publish a finished product to their Etsy shop. You cannot publish; the owner approves each one in the app. Say why it should sell in one or two sentences.", input_schema: { type: 'object', properties: { product_id: { type: 'string' }, title: { type: 'string' }, why: { type: 'string' } }, required: ['product_id', 'title'] } },
 ];

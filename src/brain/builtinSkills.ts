@@ -11,7 +11,7 @@ import type { Agent, BankSkill, OfficeDoc } from '../model/types';
 export const MEME_DESIGN_ID = 'skill_builtin_meme_design';
 export const TREND_SCOUT_ID = 'skill_builtin_trend_scout';
 export const AD_STRATEGY_ID = 'skill_builtin_ad_strategy';
-export const BUILTIN_SKILL_VERSION = 1;
+export const BUILTIN_SKILL_VERSION = 2;
 const versionTag = `builtin-v${BUILTIN_SKILL_VERSION}`;
 
 const ORIGIN = 'agent_origin';
@@ -39,7 +39,7 @@ You turn a trend, a joke or the owner's words into original designs, save them w
 A. From a concept to a batch of five (the default for every design ask).
 1. Decode: write the joke in one sentence and its grammar in another (for example "small animal + impossible seriousness + two-word slang"). Name the one detail that must stay untouched.
 2. Caption: write three to five options of 1 to 7 words (2 to 5 is best). Keep the owner's wording exactly when they gave one, including typos and lowercase. Pick one; keep the runner-up for the title.
-3. Image first, the owner's preferred way: find a real image with assets_public_domain (public domain or CC0 only; open the page and confirm the licence) and lay the caption over it with design_caption_image. The image stays as it is; the words make the joke, like a real meme. An image you generated with design_generate_image can be captioned the same way (design_id). Draw an SVG or use Canva only when no fitting free image exists or the owner asks for drawn art. Never a photo or frame from TikTok, Instagram, Pinterest, Reddit or any social post: those are other people's work and a meme is not public domain, so a found meme is studied for its joke and remade with a free image.
+3. Image first, the owner's way: take a meme the owner picked Yes on in memez (files_source with picks "yes"; the scouts find them on Pinterest, Reddit and Imgflip) and use design_caption_image with a light touch. Keep the meme as it is; add a few words in a font that fits the picture (hand for doodles and hand-drawn memes, plain lowercase for deadpan, impact for a classic macro), or no_caption when it already has its words. Crop or cut the background only when it clearly prints better. Choose the placement: front_center, full_front, left_chest or back. A meme the owner has not picked, or said No to, is refused. No Wikipedia or public-domain image search. A meme or post is someone's work, so a design on it is a flagged draft the owner reviews, never listed as it is.
 4. Make it, then compare it with the idea: is the same joke instantly recognisable, is anything added that competes with it, does it look like an actual meme and not AI art? Remove before you add.
 5. Save with design_save (title and assets filled in). Stop at five waiting designs for the ask; set waitingOnOwner true and finish the run. The owner decides in Approvals.
 B. The gate every design passes before it is saved: Spot (which trend or joke, seen where and when, or "owner's idea"), Decode, Pitch (captions), Rights gate (is every element yours, public domain, or the owner's; is the phrase trademark-searched), Mock up (the minimal version first), Compare (joke intact, nothing extra), then the owner Approves.
@@ -61,13 +61,13 @@ Formulas: epic hero + minor inconvenience; cute animal + impossible threat; fami
 Caption language: current slang, abbreviations, ironic understatement, misspellings, low-effort punchlines and comment-section phrasing, but only when they sound natural. "locked in", "yapper", "bro", "nah", "fr", "lowkey", "idk", "ngl", "shi" and the crying emoji are illustrations, not a claim they are fresh now. Read every caption aloud: would a real person send it in a group chat or laugh seeing it on a shirt? If the joke needs explaining, shorten it or drop it.
 Good against bad, in words: a serious boom operator aims an absurdly huge furry microphone at the viewer, captioned "CAN YOU SAY THAT LOUDER? I'M DEAF" in one plain bold face above and below. Good: the person and microphone unchanged, the white background removed for a dark shirt, nothing else. Bad: the same image buried under giant cyan 3D letters and fake lightning, which swallows the gag and looks like generic AI merch. Check every design against this pair before saving.
 design_caption_image fonts: impact (classic meme caption, uppercase, white with a black outline), bold, plain (deadpan lowercase), mono, serif (mock-serious), hand; top and bottom captions of 0 to 6 words each; cutout true puts the words outside the image on a transparent sheet. Fonts. SVG designs are rendered to PNG on the owner's PC with its installed fonts, so in SVG use Windows fonts only: Impact (classic macro), Arial Black or Bahnschrift (plain bold), Segoe UI (dry deadpan), Comic Sans MS (ironic), Courier New (deadpan terminal), Georgia (mock-serious). In Canva use open Google Fonts: Anton or Bebas Neue (tall understated caps), Archivo Black (plain bold caption), Bangers or Luckiest Guy (chunky comic), Permanent Marker or Caveat or Indie Flower (scribbly hand lettering), Space Mono or Special Elite (deadpan or typewriter), Fredoka (round cute animal humour), DM Sans (neutral), Alfa Slab One (heavy statement), VT323 or Press Start 2P or Pixelify Sans or Silkscreen (pixel nostalgia). One font per design. A pixel look is fine; a game's own font, logo or art is not.
-Original only: never copy a meme image, character, logo, brand, celebrity, song lyric or another seller's design; a meme format may inspire an original phrase and original art, nothing more. Before a phrase, web_search it with "trademark" and "site:uspto.gov"; drop it if a live registration or a known brand owns it, and say in the title that you checked. Images you did not draw come only from assets_public_domain, with title, source page and licence in design_save's assets.
+Original only: never copy a meme image, character, logo, brand, celebrity, song lyric or another seller's design; a meme format may inspire an original phrase and original art, nothing more. Before a phrase, web_search it with "trademark" and "site:uspto.gov"; drop it if a live registration or a known brand owns it, and say in the title that you checked. Pictures come only from the memes the owner picked in memez, or their own files.
 
 ## 5. Inputs and sources
 - Trend Scout's concept list (joke, grammar, caption idea, evidence, saturation, rights notes). Treat its "experimental seed" label as unproven.
 - The owner's words in the task and their Design style note; both outrank this file.
-- assets_public_domain for vintage plates, engravings, maps and icons an original can build on; open the source page and confirm the licence before using it.
-- Pinterest, TikTok and Instagram through web search for inspiration only (which styles and phrases recur); a pin or a post is someone's work and never a free image.
+- The owner's memez folder: the memes the scouts saved and the owner picked Yes on (files_source with picks "yes").
+- Pinterest, TikTok and Instagram for what recurs; the scouts save the pictures to memez for the owner's pick, and a design on one is a flagged draft.
 - etsy_search to see what already exists: a phrase with thousands of listings is late; pivot to an adjacent original.
 The owner's reference gallery, described so you learn the humour; the pictures are other people's work and none is cleared, so reproduce none of them:
 1. FIH: a plain fish, a pair of white high-top sneakers, the word "fih". Lesson: a tiny distorted word plus an impossible image carries a whole shirt. Use new animals, objects and spellings.
@@ -84,7 +84,7 @@ The owner's reference gallery, described so you learn the humour; the pictures a
 
 ## 6. Deliverables
 - design_caption_image for the default image-plus-caption design (assets filled from the asset search result), or design_save: svg or image, assets filled, and a title in this shape: caption, then the subject in a few words, then why it is funny in a few words, then "phrase trademark-searched" with the date. Example: "fih: a plain fish in high-tops; absurd misspelling; phrase trademark-searched 2026-10-21".
-- taskNotes for the batch: one line per design (joke, caption, what stays untouched, trend evidence or "owner's idea", rights status: original or public-domain asset with licence, suggested shirt colour) and the list of declined jokes you will not remake.
+- taskNotes for the batch: one line per design (joke, caption, what stays untouched, trend evidence or "owner's idea", rights status: original, the owner's file, or a draft on a picked meme, placement, suggested shirt colour) and the list of declined jokes you will not remake.
 - After a Yes: the Printify product with price, title, description and 13 tags, then printify_request_publish.
 
 ## 7. Quality bar

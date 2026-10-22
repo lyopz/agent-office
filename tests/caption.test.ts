@@ -1,18 +1,10 @@
-// Captioned images: a public-domain image with meme text laid over it, rendered like any SVG design.
+// Captioned images: a meme the owner picked, with a few words laid over it, rendered like any SVG design.
 import { describe, expect, test } from 'vitest';
-import { CAPTION_TOOL, captionImage, captionSvg, hostAllowed, imageSize, wrapCaption } from '../server/caption.mjs';
+import { CAPTION_TOOL, captionImage, captionSvg, imageSize, wrapCaption } from '../server/caption.mjs';
 
 const png1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 
 describe('captioned images', () => {
-  test('only public-domain hosts are accepted', () => {
-    expect(hostAllowed('https://upload.wikimedia.org/wikipedia/commons/a/a1/Rose.jpg')).toBe(true);
-    expect(hostAllowed('https://live.staticflickr.com/1/2_o.jpg')).toBe(true);
-    expect(hostAllowed('https://i.pinimg.com/originals/x.jpg')).toBe(false);
-    expect(hostAllowed('https://p16-sign.tiktokcdn.com/x.jpeg')).toBe(false);
-    expect(hostAllowed('http://upload.wikimedia.org/x.jpg')).toBe(false);
-  });
-
   test('image sizes come from PNG and JPEG headers', () => {
     expect(imageSize(png1x1)).toEqual({ mime: 'image/png', width: 1, height: 1 });
     const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x02, 0x58, 0x03, 0x20, 0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01]);
@@ -33,19 +25,17 @@ describe('captioned images', () => {
     expect(cut).not.toMatch(/viewBox="0 0 1000 800"/);
   });
 
-  test('a found image is fetched from an allowed host, must carry its licence, and renders to PNG', async () => {
-    const urls: string[] = [];
-    const fetch = async (u: string) => { urls.push(u); return { ok: true, status: 200, arrayBuffer: async () => png1x1.buffer.slice(png1x1.byteOffset, png1x1.byteOffset + png1x1.byteLength) }; };
+  test('web images are refused; a meme with its own words needs no caption; the placement is kept', async () => {
     const svgToPng = async (svg: string) => ({ png: Buffer.from(`PNG:${svg.length}`), width: 4500, height: 4500 });
-    const r = await captionImage({ image_url: 'https://upload.wikimedia.org/x.png', top: 'fih', assets: [{ title: 'Fish', page: 'https://commons.wikimedia.org/wiki/File:Fish.png', licence: 'Public domain' }] }, { fetch, svgToPng });
-    expect(urls).toEqual(['https://upload.wikimedia.org/x.png']);
-    expect(r.png.toString()).toMatch(/^PNG:/);
-    expect(r.caption).toBe('fih');
-    expect(r.original).toEqual({ width: 1, height: 1, mime: 'image/png' });
-    await expect(captionImage({ image_url: 'https://upload.wikimedia.org/x.png', top: 'fih' }, { fetch, svgToPng })).rejects.toThrow(/assets/);
-    await expect(captionImage({ image_url: 'https://i.pinimg.com/x.jpg', top: 'fih', assets: [{}] }, { fetch, svgToPng })).rejects.toThrow(/public-domain source/);
-    await expect(captionImage({ design_id: 'nope', top: 'x' }, { fetch, svgToPng, readDesign: () => null })).rejects.toThrow(/gallery/);
+    const readSource = () => ({ buf: png1x1, kind: 'png', meta: { usable: 'reference', pick: 'yes' }, ref: 'memez/doodle.png' });
+    await expect(captionImage({ image_url: 'https://upload.wikimedia.org/x.png', top: 'fih' }, { svgToPng })).rejects.toThrow(/Web images are not used/);
+    await expect(captionImage({ source_file: 'memez/doodle.png' }, { svgToPng, readSource })).rejects.toThrow(/no_caption/);
+    const r: any = await captionImage({ source_file: 'memez/doodle.png', no_caption: true, placement: 'left_chest' }, { svgToPng, readSource });
+    expect(r).toMatchObject({ caption: '', placement: 'left_chest', rights: 'reference' });
+    expect((await captionImage({ source_file: 'memez/doodle.png', top: 'me', placement: 'sleeve' }, { svgToPng, readSource })).placement).toBe('front_center');
+    await expect(captionImage({ design_id: 'nope', top: 'x' }, { svgToPng, readDesign: () => null })).rejects.toThrow(/gallery/);
     expect(CAPTION_TOOL.name).toBe('design_caption_image');
+    expect(JSON.stringify(CAPTION_TOOL)).not.toMatch(/assets_public_domain|image_url/);
   });
 });
 

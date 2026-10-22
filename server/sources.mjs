@@ -2,7 +2,7 @@
 // one is origin-data/memez; the owner can link more (their own ideas, photos and drawings). The trend
 // scouts save images they find online into memez with a sidecar (<file>.json) that records the title,
 // source page and licence: a public-domain or CC0 image is "print" (it can go on a shirt), anything
-// else is "reference" (study the joke, remake it with a free image). The owner's own files carry no
+// else is "reference" (designs on it are drafts, never sold as they are). Every saved meme waits for the owner's Yes or No, and only Yes picks are designed. The owner's own files carry no
 // sidecar and are "owner": theirs to print. Declining a design made from a saved image deletes that
 // one file and its sidecar; the owner's files are never deleted.
 import fs from 'node:fs';
@@ -56,9 +56,25 @@ export function listSourceFiles(folder, limit = MAX_FILES) {
     let st; try { st = fs.statSync(file); } catch { continue; }
     if (!st.isFile()) continue;
     const meta = readMeta(file);
-    out.push({ ref: `${folder.id}/${name}`, folder: folder.id, name, bytes: st.size, kind: /\.png$/i.test(name) ? 'png' : 'jpg', usable: meta ? (meta.usable || usableFor(meta.licence)) : 'owner', title: meta?.title ?? null, page: meta?.page ?? null, licence: meta?.licence ?? (meta ? 'unknown' : 'the owner\'s own file'), savedBy: meta?.agentName ?? null, at: meta?.at ?? st.mtime.toISOString(), note: meta?.note ?? null, tags: Array.isArray(meta?.tags) ? meta.tags : [], taskId: meta?.taskId ?? null });
+    out.push({ ref: `${folder.id}/${name}`, folder: folder.id, name, bytes: st.size, kind: /\.png$/i.test(name) ? 'png' : 'jpg', usable: meta ? (meta.usable || usableFor(meta.licence)) : 'owner', title: meta?.title ?? null, page: meta?.page ?? null, licence: meta?.licence ?? (meta ? 'unknown' : 'the owner\'s own file'), savedBy: meta?.agentName ?? null, at: meta?.at ?? st.mtime.toISOString(), note: meta?.note ?? null, tags: Array.isArray(meta?.tags) ? meta.tags : [], taskId: meta?.taskId ?? null, pick: pickOf(meta), pickedAt: meta?.pickedAt ?? null });
   }
   return out;
+}
+/** The owner's pick on a saved meme: yes, no, or waiting; their own files need no pick. */
+export const pickOf = (meta) => (!meta ? 'owner' : meta.pick === 'yes' || meta.pick === 'no' ? meta.pick : 'waiting');
+/** The owner's Yes or No on one meme a scout saved. Only a Yes lets the designers use it; a No keeps the file but no one designs from it. */
+export function setSourcePick(folders, ref, pick) {
+  const r = resolveRef(folders, ref);
+  const meta = r && readMeta(r.file);
+  if (!meta || !['yes', 'no', 'waiting'].includes(pick)) return null;
+  if (pick === 'waiting') delete meta.pick; else meta.pick = pick;
+  meta.pickedAt = new Date().toISOString();
+  fs.writeFileSync(`${r.file}.json`, JSON.stringify(meta, null, 2));
+  return { ref: `${r.folder.id}/${r.name}`, pick: pickOf(meta) };
+}
+/** The memes the scouts saved that still wait for the owner's Yes or No, newest first. */
+export function memesToPick(s, dataDir, limit = 60) {
+  return sourceFolders(s, dataDir).flatMap((f) => listSourceFiles(f)).filter((x) => x.pick === 'waiting').sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
 }
 /** What the app shows: each folder with its counts, never the files' bytes. */
 export function sourcesPublic(s, dataDir) {
@@ -146,11 +162,11 @@ export const SOURCE_NOTE_TOOL = {
 export const SOURCE_LIST_TOOL = {
   name: 'files_source',
   description: "The owner's design sources: the memez folder (images the scouts saved, with licence) and any folder the owner linked (their own files). Each file says what it may be used for: print (public domain or CC0, can go on a shirt), owner (the owner's own file, theirs to print), or reference (someone else's work: learn the joke, never print it). Use a print or owner file in design_caption_image with source_file.",
-  input_schema: { type: 'object', properties: { folder: { type: 'string', description: 'one folder id or label, default all' }, query: { type: 'string', description: 'search words (any of them) in the file name, title, note or tags; best matches first' }, limit: { type: 'integer', minimum: 1, maximum: 100 } } },
+  input_schema: { type: 'object', properties: { folder: { type: 'string', description: 'one folder id or label, default all' }, query: { type: 'string', description: 'search words (any of them) in the file name, title, note or tags; best matches first' }, limit: { type: 'integer', minimum: 1, maximum: 100 }, picks: { type: 'string', enum: ['yes', 'waiting', 'all'], description: 'yes: only memes the owner picked Yes (and their own files), the ones a design may use; waiting: saved memes they have not picked yet; all (default): both. Memes they said No to are never listed.' } } },
 };
 export const SOURCE_SAVE_TOOL = {
   name: 'source_save',
-  description: "Save an image you found online into the owner's memez folder for the design agents, with its title, source page and licence: a meme template from trends_memes (image link), a picture post from Reddit, a free image from assets_public_domain, or any other https image file. A public-domain or CC0 image is saved as print and may go on a shirt; anything else (a meme, a post, a photo someone owns) is saved as reference: the designers may open it and make a draft (caption, crop) so the owner sees the idea, but it is flagged and never listed for sale as it is; to sell it, remake it with a free image or their own drawing. If the owner declines a design made from a saved image, that file is deleted.",
+  description: "Save an image you found online into the owner's memez folder for the design agents, with its title, source page and licence: a meme template from trends_memes (image link), a picture post from Reddit, a pin's picture (i.pinimg.com), or any other https image file. A public-domain or CC0 image is saved as print and may go on a shirt; anything else (a meme, a post, a photo someone owns) is saved as reference: the designers may open it and make a draft (caption, crop) so the owner sees the idea, but it is flagged and never listed for sale as it is; to sell it, remake it with a free image or their own drawing. If the owner declines a design made from a saved image, that file is deleted.",
   input_schema: { type: 'object', properties: { image_url: { type: 'string', description: 'the https URL of the image file itself' }, file_name: { type: 'string' }, title: { type: 'string' }, page: { type: 'string', description: 'the page it was found on' }, licence: { type: 'string', description: 'as stated by the source, e.g. "Public domain", "CC0", "CC BY 4.0", or "unknown (someone\'s post)"' }, note: { type: 'string', description: 'why it matters: the joke, the trend, where it is rising' }, tags: { type: 'array', items: { type: 'string' }, description: 'search words for the designers: the theme, the subject, the joke (e.g. ["frog", "monday", "tired"])' }, folder: { type: 'string', description: 'folder id, default memez' } }, required: ['image_url', 'title', 'page'] },
 };
 export const SOURCE_TOOLS = [SOURCE_LIST_TOOL, SOURCE_SAVE_TOOL, SOURCE_NOTE_TOOL];
@@ -166,9 +182,9 @@ export async function runSourceTool(name, input, s, dataDir, by, deps = {}) {
       // any of the words may match the name, title, note or tags; files matching more words come first
       const words = q.split(/[\s,]+/).filter((w) => w.length > 1);
       const hits = (x) => { const hay = `${x.name} ${x.title || ''} ${x.note || ''} ${(x.tags || []).join(' ')}`.toLowerCase(); return words.filter((w) => hay.includes(w)).length; };
-      const files = pick.flatMap((f) => listSourceFiles(f)).map((x) => ({ ...x, score: words.length ? hits(x) : 0 })).filter((x) => !words.length || x.score > 0).sort((a, b) => b.score - a.score || b.at.localeCompare(a.at)).slice(0, limit);
+      const files = pick.flatMap((f) => listSourceFiles(f)).map((x) => ({ ...x, score: words.length ? hits(x) : 0 })).filter((x) => x.pick !== 'no' && (input.picks === 'yes' ? ['yes', 'owner'].includes(x.pick) : input.picks === 'waiting' ? x.pick === 'waiting' : true)).filter((x) => !words.length || x.score > 0).sort((a, b) => b.score - a.score || b.at.localeCompare(a.at)).slice(0, limit);
       const notes = pick.flatMap((f) => listMemeNotes(f, 30)).filter((x) => !q || `${x.title} ${x.caption || ''} ${x.note || ''}`.toLowerCase().includes(q)).slice(0, limit);
-      return { content: JSON.stringify({ folders: folders.map((f) => ({ id: f.id, label: f.label })), files: files.map(({ ref, usable, title, licence, page, note, tags, savedBy, at, kind }) => ({ ref, usable, title, licence, page, note, tags, savedBy, at, kind })), notes: notes.map(({ ref, title, platform, page, caption, stats, licence, pinId, note, savedBy, at }) => ({ ref, title, platform, page, caption, stats, licence, pinId, note, savedBy, at })), note: 'print and owner files may go on a shirt (design_caption_image source_file); a reference file can be drafted on with the same tool but the draft is never sold as it is.' }), isError: false };
+      return { content: JSON.stringify({ folders: folders.map((f) => ({ id: f.id, label: f.label })), files: files.map(({ ref, usable, title, licence, page, note, tags, savedBy, at, kind, pick }) => ({ ref, usable, title, licence, page, note, tags, savedBy, at, kind, pick })), notes: notes.map(({ ref, title, platform, page, caption, stats, licence, pinId, note, savedBy, at }) => ({ ref, title, platform, page, caption, stats, licence, pinId, note, savedBy, at })), note: 'Design only from files with pick "yes" (the owner said Yes to that meme) or "owner" (their own file); a "waiting" meme is not picked yet and design_caption_image refuses it. print and owner files may go on a shirt; a reference file gives a draft that is never sold as it is.' }), isError: false };
     }
     if (name === SOURCE_NOTE_TOOL.name) {
       if (!String(input.title || '').trim() || !String(input.page || '').trim()) return { content: 'Give the title and the page URL.', isError: true };
@@ -178,7 +194,7 @@ export async function runSourceTool(name, input, s, dataDir, by, deps = {}) {
     if (name === SOURCE_SAVE_TOOL.name) {
       const folder = folders.find((f) => f.id === (input.folder || MEMEZ) || f.label === input.folder) || folders[0];
       const r = await saveSourceImage(folder, input, by, deps);
-      return { content: JSON.stringify({ saved: true, ...r, note: r.usable === 'print' ? 'Public domain or CC0: the designers may caption it.' : 'Saved as reference only: the designers learn the joke from it and remake it with a free image or their own drawing; it never goes on a product.' }), isError: false };
+      return { content: JSON.stringify({ saved: true, ...r, note: r.usable === 'print' ? 'Public domain or CC0: the designers may caption it.' : 'Saved to memez. It waits in the owner\'s Approvals for their Yes or No; only a Yes pick is designed, and as someone\'s work a design on it is a draft, never listed as it is.' }), isError: false };
     }
     return { content: `Unknown source tool ${name}`, isError: true };
   } catch (e) { return { content: `${name}: ${e.message}`, isError: true }; }
@@ -186,6 +202,6 @@ export async function runSourceTool(name, input, s, dataDir, by, deps = {}) {
 
 /** The sentence in every design brief about the source folders. */
 export function sourcesBrief(s, dataDir) {
-  const list = sourceFolders(s, dataDir).map((f) => { const files = listSourceFiles(f); return `${f.label}: ${files.length} file${files.length === 1 ? '' : 's'}${files.length ? ` (${files.filter((x) => x.usable !== 'reference').length} printable, ${files.filter((x) => x.usable === 'reference').length} reference)` : ''}`; });
-  return ` SOURCE FOLDERS (the owner's design sources on their PC: ${list.join('; ')}): files_source lists them. Any file can be opened with design_caption_image (source_file; caption, crop): a file marked print or owner may go on a shirt; a file marked reference is someone else's work, so a design made from it is a DRAFT the owner sees (flagged, never listed for sale); to sell the joke, remake it with a free image or your own drawing. Scouts save what they find with source_save (title, page and licence recorded; anything not public domain or CC0 is saved as reference) and keep a meme's info without its picture with source_note. When the owner declines a design made from a saved image, that one file is deleted.`;
+  const list = sourceFolders(s, dataDir).map((f) => { const files = listSourceFiles(f); return `${f.label}: ${files.length} file${files.length === 1 ? '' : 's'}${files.length ? ` (${files.filter((x) => x.pick === 'yes' || x.pick === 'owner').length} the owner picked or owns, ${files.filter((x) => x.pick === 'waiting').length} waiting for their pick)` : ''}`; });
+  return ` SOURCE FOLDERS (the owner's design sources on their PC: ${list.join('; ')}): files_source lists them. THE OWNER PICKS THE MEMES: every meme a scout saves waits in their Approvals for Yes or No, and a design may only use a file they said Yes to (pick "yes") or their own file (pick "owner"); list those with files_source picks "yes". If none is picked yet, make no design: say so in notifyOwner and stop. A picked file can be opened with design_caption_image (source_file; caption, crop): a file marked print or owner may go on a shirt; a file marked reference is someone else's work, so a design made from it is a DRAFT the owner sees (flagged, never listed for sale as it is). Scouts save what they find with source_save (title, page and licence recorded) and keep a meme's info without its picture with source_note. When the owner declines a design made from a saved image, that one file is deleted.`;
 }

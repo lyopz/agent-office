@@ -948,7 +948,7 @@ describe('origin runner: start store, routing and reports', () => {
     { id: 's1', name: 'Meme Scout', title: 'finds memes', kind: 'skill', ventureId: 'v1' },
     { id: 'd1', name: 'Designer', title: 'design', kind: 'skill', ventureId: 'v1' },
   ];
-  test('the store run goes research, memes, design, then waits for the owner before ads', () => {
+  test('the store run goes research, memes, the owner\'s picks, design, then waits for the owner before ads', async () => {
     const s: any = { agents, tasks: [], designs: [], publishRequests: [] };
     const r = runner.startStore(s, '', '2026-10-22T00:00:00.000Z');
     expect(r.started).toBe(true);
@@ -958,9 +958,23 @@ describe('origin runner: start store, routing and reports', () => {
     const [memes] = runner.advanceStores(s);
     expect(memes).toMatchObject({ agentId: 's1', stage: 'memes' });
     expect(memes.detail).toMatch(/frogs, mondays/);
+    // the scout saved two memes: the run waits for the owner's picks, then designs from the Yes only
+    const memez = path.join(process.env.ORIGIN_DATA_DIR!, 'memez');
+    fs.mkdirSync(memez, { recursive: true });
+    for (const n of ['frog', 'monday']) { fs.writeFileSync(path.join(memez, `${n}.png`), 'png'); fs.writeFileSync(path.join(memez, `${n}.png.json`), JSON.stringify({ title: `${n} doodle`, page: 'https://pin', licence: 'unknown', taskId: memes.id, tags: [n] })); }
     memes.status = 'done';
+    expect(runner.advanceStores(s)).toHaveLength(0);
+    expect(s.storeRuns[0]).toMatchObject({ status: 'waiting', note: expect.stringMatching(/2 memes wait for your Yes or No/) });
+    const sources = await import('../server/sources.mjs');
+    const folders = sources.sourceFolders(s, process.env.ORIGIN_DATA_DIR!);
+    expect(sources.memesToPick(s, process.env.ORIGIN_DATA_DIR!).map((x: any) => x.ref).sort()).toEqual(['memez/frog.png', 'memez/monday.png']);
+    sources.setSourcePick(folders, 'memez/frog.png', 'yes');
+    sources.setSourcePick(folders, 'memez/monday.png', 'no');
     const [design] = runner.advanceStores(s);
     expect(design).toMatchObject({ agentId: 'd1', stage: 'design', count: 5 });
+    expect(design.detail).toMatch(/memez\/frog\.png: frog doodle/);
+    expect(design.detail).not.toMatch(/monday/);
+    s.designs.push({ id: 'design_f', taskId: design.id, sourceFile: 'memez/frog.png', status: 'waiting' });
     design.waitingOnOwner = true;
     expect(runner.advanceStores(s)).toHaveLength(0);
     expect(s.storeRuns[0].status).toBe('waiting');
@@ -1025,17 +1039,18 @@ describe('origin runner: start store, routing and reports', () => {
 });
 
 describe('origin runner: research tools are routed to the trend runner', () => {
-  test('assets_public_domain and trademark_check reach the trend runner, not the shop tools', async () => {
+  test('trademark_check reaches the trend runner, not the shop tools', async () => {
     write({ ...base, agents: [{ id: 's1', name: 'Trend Scout' }], tasks: [{ id: 't1', title: 'find 5 memes', detail: '', status: 'approved', by: 'owner', agentId: 's1', focus: true, createdAt: '' }] });
     const trendCalls: string[] = [], shopCalls: string[] = [];
-    const tools = { tools: [{ name: 'assets_public_domain', description: 'd', input_schema: { type: 'object', properties: {} } }, { name: 'trademark_check', description: 'd', input_schema: { type: 'object', properties: {} } }],
+    const tools = { tools: [{ name: 'trends_google', description: 'd', input_schema: { type: 'object', properties: {} } }, { name: 'trademark_check', description: 'd', input_schema: { type: 'object', properties: {} } }],
       run: async (n: string) => { shopCalls.push(n); return { content: `unknown tool ${n}`, isError: true }; },
       trends: async (n: string) => { trendCalls.push(n); return { content: '{"ok":true}', isError: false }; } };
     const seen: any[] = [];
     let n = 0;
-    const fetch = async (_u: string, init: any) => { n++; seen.push(JSON.parse(init.body)); return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'a', name: 'assets_public_domain', input: { query: 'frog' } }, { type: 'tool_use', id: 'b', name: 'trademark_check', input: { phrase: 'oh look' } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
+    const fetch = async (_u: string, init: any) => { n++; seen.push(JSON.parse(init.body)); return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'a', name: 'trends_google', input: {} }, { type: 'tool_use', id: 'b', name: 'trademark_check', input: { phrase: 'oh look' } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
     await runner.runOnce('focus', { fetch, file, key: 'test', etsy: tools } as any);
-    expect(trendCalls).toEqual(['assets_public_domain', 'trademark_check']);
+    expect(trendCalls).toEqual(['trends_google', 'trademark_check']);
+    expect(runner.isTrendTool('assets_public_domain')).toBe(false);
     expect(shopCalls).toEqual([]);
     expect(runner.isTrendTool('trends_google')).toBe(true);
     expect(runner.isTrendTool('printify_create_product')).toBe(false);
@@ -1048,7 +1063,8 @@ describe('origin runner: memes come from Pinterest, steered by the owner', () =>
     const none = runner.memeBrief({}, task);
     expect(none).toMatch(/Pinterest first/);
     expect(none).toMatch(/site:pinterest\.com/);
-    expect(none).toMatch(/not use assets_public_domain/);
+    expect(none).toMatch(/No Wikipedia/);
+    expect(none).toMatch(/web_fetch each one/);
     expect(none).toMatch(/What to look for/);
     expect(runner.memeBrief({ memeLookFor: 'cats acting like people' }, task)).toMatch(/WHAT THE OWNER WANTS YOU TO LOOK FOR .*cats acting like people/);
     expect(runner.memeBrief({}, { title: 'Write the shop policy', detail: '' })).toBe('');

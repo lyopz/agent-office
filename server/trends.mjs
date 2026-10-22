@@ -1,6 +1,6 @@
 // Trend research for the agents, from public sources only: Google's daily trending searches
-// (a public RSS feed, free, no login) and free-to-use images (public domain and CC0, from
-// Wikimedia Commons and Openverse). TikTok's Creative Center and Pinterest Trends only
+// (a public RSS feed, free, no login), meme databases and the trademark search. No image
+// search on Wikimedia or Openverse: memes come from Pinterest, Reddit and Imgflip. TikTok's Creative Center and Pinterest Trends only
 // render in a browser, and Instagram has no public trend page, so those go through
 // web_search for fresh roundups; TREND_SOURCES says how, so agents never log in, scrape,
 // or use the owner's own social accounts.
@@ -11,21 +11,13 @@ const GOOGLE_TRENDS = 'https://trends.google.com/trending/rss';
 const IMGFLIP = 'https://api.imgflip.com/get_memes';
 const REDDIT = 'https://www.reddit.com';
 const MEME_SUBS = ['memes', 'dankmemes', 'me_irl', 'wholesomememes', 'MemeEconomy'];
-const COMMONS = 'https://commons.wikimedia.org/w/api.php';
-const OPENVERSE = 'https://api.openverse.org/v1/images/';
 const MAX_ITEMS = 25;
-const MAX_ASSETS = 12;
 const UA = 'the-brain/1.0 (research for the owner; a few public reads per task)';
 
 export const GOOGLE_TRENDS_TOOL = {
   name: 'trends_google',
   description: "Google's trending searches for the last day (public RSS feed, free, no search fee, no login): each rising search with its approximate traffic and the news headlines behind it. Use it to see whether a meme, phrase or moment born on TikTok or Instagram is breaking into general search; a phrase that is here and in a fresh TikTok roundup is real. Then verify it on Etsy with etsy_search.",
   input_schema: { type: 'object', properties: { geo: { type: 'string', description: 'two-letter country code, default US' }, limit: { type: 'integer', description: `how many searches, 1 to ${MAX_ITEMS}, default ${MAX_ITEMS}` } } },
-};
-export const ASSETS_TOOL = {
-  name: 'assets_public_domain',
-  description: "Find images that are free to use on products: public domain and CC0 only, from Wikimedia Commons (and Openverse when Commons has little). Returns each image's title, creator, licence, source page and file URL. Not for memes (old art is not funny); only when the owner asks for vintage art. Use it for vintage illustrations, botanical plates, old maps, engravings, posters and icons an original design can build on; never for memes, logos, characters or photos of real people. Record every asset you use (title, source URL, licence) in design_save's assets so the owner sees where it came from, and open the source page to confirm the licence before using it.",
-  input_schema: { type: 'object', properties: { query: { type: 'string', description: 'what to look for, e.g. "vintage botanical rose engraving"' }, limit: { type: 'integer', description: `how many, 1 to ${MAX_ASSETS}` } }, required: ['query'] },
 };
 export const MEMES_TOOL = {
   name: 'trends_memes',
@@ -58,7 +50,7 @@ export async function trademarkCheck(input, deps = {}) {
   const clothing = live.filter((m) => m.classes.some((c) => /(^|\D)0?25(\D|$)/.test(c)) || /cloth|shirt|apparel|t-shirt/i.test(m.goods));
   return { phrase, checked: true, total: hits.length, live: live.length, clothing: clothing.length, verdict: clothing.length ? 'RISK: a live mark covers clothing; do not sell this phrase' : live.length ? 'caution: live marks exist outside clothing; fine for a joke on a shirt unless it copies their brand' : 'clear: no live mark found for these words', marks: live.slice(0, 10), manual };
 }
-export const TREND_TOOLS = [GOOGLE_TRENDS_TOOL, MEMES_TOOL, ASSETS_TOOL, TRADEMARK_TOOL];
+export const TREND_TOOLS = [GOOGLE_TRENDS_TOOL, MEMES_TOOL, TRADEMARK_TOOL];
 /** The trend tools this PC offers: the public ones always, Instagram and Pinterest once the owner connected them. */
 export function trendTools(conn = trendsPublic()) {
   return [...TREND_TOOLS, ...(conn.instagram?.configured ? [INSTAGRAM_TOOL] : []), ...(conn.pinterest?.configured ? [PINTEREST_TOOL] : [])];
@@ -76,7 +68,7 @@ export function trendSources(conn = trendsPublic()) {
 }
 
 /** What a design may and may not use, so nothing the owner lists is copied or trademarked. */
-export const COPYRIGHT_RULES = `ORIGINAL ONLY: a design the owner lists must be your own work. Never copy a meme image, a character, a logo, a brand, a celebrity's name or likeness, song lyrics or another seller's design; a meme format or a trend may inspire an original phrase and original art, nothing more. Before you build on a phrase, run trademark_check on it and drop it if a live mark covers clothing (class 25) or a known brand owns it; say in the design's title that you checked. If trademark_check says unchecked, flag the phrase "TM unchecked" in your notes and the design's title and carry on: the owner sees the flag before saying Yes. A design that will be sold uses only pictures that are public domain, CC0 or the owner's own, with each one's title, source URL and licence saved in its assets; a meme or post from Pinterest, Reddit or Imgflip in memez is reference, so a design on it is a flagged draft for the owner to review, never listed as it is.`;
+export const COPYRIGHT_RULES = `ORIGINAL ONLY: a design the owner lists must be your own work. Never copy a meme image, a character, a logo, a brand, a celebrity's name or likeness, song lyrics or another seller's design; a meme format or a trend may inspire an original phrase and original art, nothing more. Before you build on a phrase, run trademark_check on it and drop it if a live mark covers clothing (class 25) or a known brand owns it; say in the design's title that you checked. If trademark_check says unchecked, flag the phrase "TM unchecked" in your notes and the design's title and carry on: the owner sees the flag before saying Yes. A design uses only memes the owner picked Yes on in memez, or their own files; a meme or post from Pinterest, Reddit or Imgflip in memez is reference, so a design on it is a flagged draft for the owner to review, never listed as it is.`;
 
 /** True when a task (or its agent) is about trends, memes or social video, so the brief explains the sources. */
 export const trendTask = (task, agentName = '') => /\btrend|tiktok|tik tok|instagram|\breels?\b|viral|meme|hashtag|short.?video|what.?s selling|what sells/i.test(`${task?.title || ''} ${task?.detail || ''} ${agentName || ''}`);
@@ -107,49 +99,6 @@ export async function googleTrends(input = {}, deps = {}) {
   return { source: `Google Trends daily trending searches, ${geo}`, url: `${GOOGLE_TRENDS}?geo=${geo}`, fetchedAt: new Date().toISOString(), items };
 }
 
-const PUBLIC_DOMAIN = /public domain|\bcc0\b|\bpdm\b|no known copyright/i;
-const strip = (html) => String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-
-/** Wikimedia Commons files for a query, public domain and CC0 only. */
-export async function commonsAssets(query, limit, deps = {}) {
-  const f = deps.fetch ?? globalThis.fetch;
-  const u = `${COMMONS}?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=${Math.min(50, limit * 4)}&gsrsearch=${encodeURIComponent(query)}&prop=imageinfo&iiprop=url|extmetadata|size&iiurlwidth=1024&iiextmetadatafilter=LicenseShortName|Artist|ObjectName|ImageDescription`;
-  const r = await f(u, { headers: { 'user-agent': UA } });
-  if (!r.ok) throw new Error(`Wikimedia Commons answered ${r.status}`);
-  const data = await r.json();
-  const out = [];
-  for (const pg of Object.values(data?.query?.pages || {})) {
-    const ii = pg.imageinfo?.[0]; const md = ii?.extmetadata || {};
-    const licence = md.LicenseShortName?.value || '';
-    if (!ii || !PUBLIC_DOMAIN.test(licence)) continue;
-    out.push({ title: strip(md.ObjectName?.value) || String(pg.title || '').replace(/^File:/, ''), creator: strip(md.Artist?.value) || null, licence, source: 'Wikimedia Commons', page: ii.descriptionurl, file: ii.url, preview: ii.thumburl || null, width: ii.width, height: ii.height, about: strip(md.ImageDescription?.value).slice(0, 200) || null });
-    if (out.length >= limit) break;
-  }
-  return out;
-}
-
-/** Openverse images for a query, public domain and CC0 only (anonymous use allows a few calls an hour). */
-export async function openverseAssets(query, limit, deps = {}) {
-  const f = deps.fetch ?? globalThis.fetch;
-  const r = await f(`${OPENVERSE}?q=${encodeURIComponent(query)}&license=cc0,pdm&page_size=${limit}`, { headers: { 'user-agent': UA, accept: 'application/json' } });
-  if (r.status === 429) throw new Error('Openverse allows only a few anonymous searches an hour; try later or use Wikimedia Commons results');
-  if (!r.ok) throw new Error(`Openverse answered ${r.status}`);
-  const data = await r.json();
-  return (data?.results || []).filter((x) => PUBLIC_DOMAIN.test(`${x.license} ${x.license_version || ''}`) || ['cc0', 'pdm'].includes(String(x.license).toLowerCase())).slice(0, limit)
-    .map((x) => ({ title: x.title || null, creator: x.creator || null, licence: String(x.license || '').toUpperCase() + (x.license_url ? ` (${x.license_url})` : ''), source: `Openverse (${x.source || x.provider || 'provider'})`, page: x.foreign_landing_url, file: x.url, preview: x.thumbnail || null, width: x.width, height: x.height, about: null }));
-}
-
-/** Free-to-use images for a design: Commons first, Openverse when Commons has little. */
-export async function publicDomainAssets(input = {}, deps = {}) {
-  const query = String(input?.query || '').trim();
-  if (!query) throw new Error('Say what to look for in query');
-  const limit = Math.min(MAX_ASSETS, Math.max(1, Number(input?.limit) || MAX_ASSETS));
-  const notes = [];
-  let items = [];
-  try { items = await commonsAssets(query, limit, deps); } catch (e) { notes.push(e.message); }
-  if (items.length < 3) { try { items = [...items, ...(await openverseAssets(query, limit - items.length, deps))]; } catch (e) { notes.push(e.message); } }
-  return { query, licence_filter: 'public domain and CC0 only', items, notes, note: 'Open each page URL and confirm the licence before using the file; save the title, page URL and licence of every asset you use in design_save assets.' };
-}
 
 /** Run one of the trend tools for an agent; the result is text for the model. */
 const SUB = /^[A-Za-z0-9_]{2,21}$/;
@@ -189,7 +138,6 @@ export async function popularMemes(input = {}, deps = {}) {
 export async function runTrendTool(name, input, deps = {}) {
   try {
     if (name === GOOGLE_TRENDS_TOOL.name) return { content: JSON.stringify(await googleTrends(input, deps)), isError: false };
-    if (name === ASSETS_TOOL.name) return { content: JSON.stringify(await publicDomainAssets(input, deps)), isError: false };
     if (name === MEMES_TOOL.name) return { content: JSON.stringify(await popularMemes(input, deps)), isError: false };
     if (name === TRADEMARK_TOOL.name) return { content: JSON.stringify(await trademarkCheck(input, deps)), isError: false };
     if (name === INSTAGRAM_TOOL.name) return { content: JSON.stringify(await instagramTool(input, deps.instagram ?? {})), isError: false };

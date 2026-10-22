@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react';
 import { BadgeCheck, Check, CircleDollarSign, FolderOpen, Images, Palette, Plus, Repeat, Trash2, X, AlertTriangle } from 'lucide-react';
 import { useStore } from '../store/store';
 import { useOrigin } from '../brain/useOrigin';
-import { designDecision, designUrl, mockupUrl, publishDecision, runnerStatus, setBudgets, setDesignStyle, sourceAction, sourceUrl, type DesignEntry, type PublishRequest, type RunnerStatus } from '../brain/originLink';
+import { designDecision, designUrl, mockupUrl, publishDecision, runnerStatus, setBudgets, setDesignStyle, sourceAction, sourceUrl, type DesignEntry, type PublishRequest, type RunnerStatus, type SourceFile } from '../brain/originLink';
 import { ORIGIN_ID } from '../brain/opportunity';
 import { usd } from './Dashboard';
 
@@ -37,6 +37,13 @@ export function Approvals() {
     else notify(action === 'approve' ? (r.note ?? `Yes to "${d.title}": ${d.agentName} is making the product and will list it on your store.`) : `No to "${d.title}"${r.printify ? ` (${r.printify})` : ''}.`);
     void refresh();
   };
+  const pickMeme = async (m: SourceFile, pick: 'yes' | 'no') => {
+    setBusy(m.ref);
+    const r = await sourceAction({ action: 'pick', file: m.ref, pick });
+    setBusy(null);
+    if (!r?.ok) notify(r?.error ?? 'The runner did not answer.', 'warn');
+    void refresh();
+  };
   const product = async (r: PublishRequest, action: 'publish' | 'reject') => {
     setBusy(r.id);
     const x = await publishDecision(r.id, action);
@@ -53,16 +60,36 @@ export function Approvals() {
   const products = (st.publishRequests ?? []).filter((r) => r.status === 'waiting');
   const taskOf = (id: string | null) => st.tasks.find((t) => t.id === id);
   const groups = [...new Map(waiting.map((d) => [d.taskId ?? '', d])).keys()];
+  const memes = st.memePicks ?? [];
+  const placeName = { front_center: 'front, centred', full_front: 'full front', left_chest: 'left chest', back: 'back' } as const;
 
   return (
     <div className="dash approvals">
       <div className="dash-head">
         <div>
           <span className="kicker"><i />APPROVALS</span>
-          <h2>{waiting.length + products.length ? `${waiting.length + products.length} waiting for your Yes or No` : 'Nothing waiting right now'}</h2>
+          <h2>{waiting.length + products.length + memes.length ? `${waiting.length + products.length + memes.length} waiting for your Yes or No` : 'Nothing waiting right now'}</h2>
           <p>Yes on a design: the agent that made it builds the Printify product and lists it on your store (that Yes is the approval; Etsy charges {usd(st.budgets?.listingFeeUsd ?? 0.2)} a listing). No deletes it from Printify too. Each ask shows at most 5 designs at a time; the agent makes more when you decide.</p>
         </div>
       </div>
+
+      {memes.length > 0 && <section id="approvals-memes" className="card approval-group">
+        <h4><Images size={13} /> Memes to pick <span className="count">{memes.length} found by the scouts · only your Yes picks get designed</span></h4>
+        <div className="approval-grid">
+          {memes.map((m) => <figure key={m.ref} className="approval-card">
+            <RunnerImage load={sourceUrl} id={m.ref} alt={m.title ?? m.name} />
+            <figcaption>
+              <b>{m.title ?? m.name}</b>
+              <span>{m.savedBy ?? 'a scout'} · {when(m.at)}{m.page ? <> · <a href={m.page} target="_blank" rel="noreferrer">source</a></> : null}</span>
+              {m.tags?.length ? <span className="small muted">{m.tags.join(', ')}</span> : null}
+              <div className="approval-actions">
+                <button className="btn sm danger" disabled={busy === m.ref} onClick={() => void pickMeme(m, 'no')}><X size={13} /> No</button>
+                <button className="btn sm primary" disabled={busy === m.ref} onClick={() => void pickMeme(m, 'yes')}><Check size={13} /> Yes, design it</button>
+              </div>
+            </figcaption>
+          </figure>)}
+        </div>
+      </section>}
 
       {groups.map((taskId) => {
         const t = taskOf(taskId);
@@ -74,12 +101,12 @@ export function Approvals() {
               <RunnerImage load={designUrl} id={d.id} alt={d.title} />
               <figcaption>
                 <b>{d.title}</b>
-                <span>{d.agentName} · {when(d.at)}{d.source === 'canva' ? ' · Canva' : d.source === 'caption' ? ' · captioned image' : d.kind === 'svg' ? ' · SVG' : ' · image'}</span>
+                <span>{d.agentName} · {when(d.at)}{d.source === 'canva' ? ' · Canva' : d.source === 'caption' ? ' · captioned image' : d.kind === 'svg' ? ' · SVG' : ' · image'}{d.placement ? ` · prints ${placeName[d.placement]}` : ''}</span>
                 {d.sourceFile || d.assets?.length ? <div className="approval-source">
                   {d.sourceFile ? <RunnerImage load={sourceUrl} id={d.sourceFile} alt={`The image ${d.title} was made from`} cls="approval-source-img" /> : null}
                   <span className="small muted">Made from {d.assets?.length ? d.assets.map((x, i) => <span key={i}>{i ? ', ' : ''}{x.page ? <a href={x.page} target="_blank" rel="noreferrer">{x.title || 'an image'}</a> : (x.title || 'an image')}{x.licence ? ` (${x.licence})` : ''}</span>) : <>a saved image{d.rights === 'owner' ? ' of yours' : ''}</>}{d.sourceFile ? <> · <code>{d.sourceFile}</code></> : null}</span>
                 </div> : <span className="small muted">{d.source === 'canva' ? `Made in Canva by ${d.agentName}` : `Drawn by ${d.agentName}, no source image`}</span>}
-                {d.rights === 'reference' && <span className="small warn"><AlertTriangle size={11} /> Draft on someone's image: for the idea only, not for sale. Yes keeps it; ask for a remake with a free image to sell it.</span>}
+                {d.rights === 'reference' && <span className="small warn"><AlertTriangle size={11} /> Draft on someone's image: for the idea only, not for sale. Yes keeps it; it is not listed for sale as it is.</span>}
                 <div className="approval-actions">
                   <button className="btn sm danger" disabled={busy === d.id} onClick={() => void decide(d, 'reject')}><X size={13} /> No</button>
                   <button className="btn sm primary" disabled={busy === d.id} onClick={() => void decide(d, 'approve')}><Check size={13} /> {d.rights === 'reference' ? 'Keep the draft' : 'Yes, make and list it'}</button>

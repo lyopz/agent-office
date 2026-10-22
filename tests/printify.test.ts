@@ -42,3 +42,12 @@ describe('printify', () => {
     expect(PRINTIFY_TOOLS.map((t) => t.name).filter((n) => /publish/.test(n))).toEqual(['printify_request_publish']);
   });
 });
+
+describe('printify placement', () => {
+  test('a named placement sets the print side, spot and size', async () => {
+    const { placeholder } = await import('../server/printify.mjs');
+    expect(placeholder({ image_id: 'i1', placement: 'left_chest' })).toEqual({ position: 'front', images: [{ id: 'i1', x: 0.72, y: 0.22, scale: 0.3, angle: 0 }] });
+    expect(placeholder({ image_id: 'i1', placement: 'back' }).position).toBe('back');
+    expect(placeholder({ image_id: 'i1' })).toEqual({ position: 'front', images: [{ id: 'i1', x: 0.5, y: 0.5, scale: 1, angle: 0 }] });
+  });
+});

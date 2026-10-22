@@ -1,7 +1,7 @@
 export const MEMEZ: string;
 export const usableFor: (licence: string) => 'print' | 'reference';
 export interface SourceFolder { id: string; label: string; path: string; builtin?: boolean; addedAt?: string }
-export interface SourceFile { ref: string; folder: string; name: string; bytes: number; kind: 'png' | 'jpg'; usable: 'print' | 'reference' | 'owner'; title: string | null; page: string | null; licence: string; savedBy: string | null; at: string; note: string | null; tags?: string[]; taskId?: string | null }
+export interface SourceFile { ref: string; folder: string; name: string; bytes: number; kind: 'png' | 'jpg'; usable: 'print' | 'reference' | 'owner'; title: string | null; page: string | null; licence: string; savedBy: string | null; at: string; note: string | null; tags?: string[]; taskId?: string | null; tags?: string[]; taskId?: string | null; pick: 'yes' | 'no' | 'waiting' | 'owner'; pickedAt?: string | null }
 export function sourceFolders(s: Record<string, unknown>, dataDir: string): SourceFolder[];
 export function addSourceFolder(s: Record<string, unknown>, f: { path: string; label?: string }): SourceFolder;
 export function removeSourceFolder(s: Record<string, unknown>, id: string): boolean;
@@ -18,3 +18,6 @@ export function sourcesBrief(s: Record<string, unknown>, dataDir: string): strin
 export function saveMemeNote(folder: SourceFolder, info: Record<string, unknown>, by?: Record<string, unknown> | null): Record<string, unknown> & { ref: string };
 export function listMemeNotes(folder: SourceFolder, limit?: number): Record<string, unknown>[];
 export const SOURCE_NOTE_TOOL: { name: string; description: string; input_schema: Record<string, unknown> };
+export function pickOf(meta: Record<string, unknown> | null): 'yes' | 'no' | 'waiting' | 'owner';
+export function setSourcePick(folders: SourceFolder[], ref: string, pick: string): { ref: string; pick: 'yes' | 'no' | 'waiting' | 'owner' } | null;
+export function memesToPick(s: Record<string, unknown>, dataDir: string, limit?: number): SourceFile[];

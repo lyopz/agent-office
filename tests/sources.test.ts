@@ -50,7 +50,7 @@ describe('design sources', () => {
     expect(listSourceFiles(memez).map((f) => f.name)).toEqual(['A fish.png', 'mine.png']);
     const pub = sourcesPublic(s, dir);
     expect(pub[0]).toMatchObject({ id: 'memez', files: 2, printable: 2, reference: 0 });
-    expect(sourcesBrief(s, dir)).toMatch(/memez: 2 files \(2 printable, 0 reference\)/);
+    expect(sourcesBrief(s, dir)).toMatch(/memez: 2 files \(1 the owner picked or owns, 1 waiting for their pick\)/);
     expect(await saveSourceImage(memez, { image_url: 'http://insecure/x.png', title: 't', page: 'p' }, null, { fetch: fetchPng }).catch((e) => e.message)).toMatch(/https/);
     expect(await saveSourceImage(memez, { image_url: 'https://x/y.png', title: '', page: 'p' }, null, { fetch: fetchPng }).catch((e) => e.message)).toMatch(/title and the page/);
   });
@@ -85,5 +85,26 @@ describe('design sources', () => {
     expect(listed.files).toEqual([]);
     expect(listed.notes.map((n: any) => n.title)).toEqual(['fih shirt']);
     expect(sourcesPublic(s, dir)[0]).toMatchObject({ id: 'memez', notes: 2 });
+  });
+});
+
+describe('the owner picks the memes', () => {
+  test('a saved meme waits for a pick; files_source lists Yes picks and never No; the owner\'s own files need no pick', async () => {
+    const { memesToPick, setSourcePick } = await import('../server/sources.mjs');
+    const dir = tmp(); const s: Record<string, unknown> = {};
+    const memez = sourceFolders(s, dir)[0];
+    await saveSourceImage(memez, { image_url: 'https://i.pinimg.com/a.png', title: 'Doodle cat', page: 'https://pin/1', licence: 'unknown' }, null, { fetch: fetchPng });
+    await saveSourceImage(memez, { image_url: 'https://i.pinimg.com/b.png', title: 'Doodle dog', page: 'https://pin/2', licence: 'unknown' }, null, { fetch: fetchPng });
+    fs.writeFileSync(path.join(memez.path, 'mine.png'), PNG);
+    expect(memesToPick(s, dir).map((x) => x.title).sort()).toEqual(['Doodle cat', 'Doodle dog']);
+    expect(setSourcePick(sourceFolders(s, dir), 'memez/Doodle cat.png', 'yes')).toEqual({ ref: 'memez/Doodle cat.png', pick: 'yes' });
+    setSourcePick(sourceFolders(s, dir), 'memez/Doodle dog.png', 'no');
+    expect(setSourcePick(sourceFolders(s, dir), 'memez/mine.png', 'yes')).toBeNull(); // the owner's own file
+    expect(memesToPick(s, dir)).toEqual([]);
+    const list = async (picks?: string) => JSON.parse((await runSourceTool('files_source', picks ? { picks } : {}, s, dir, null)).content).files.map((f: any) => `${f.ref}:${f.pick}`).sort();
+    expect(await list()).toEqual(['memez/Doodle cat.png:yes', 'memez/mine.png:owner']);
+    expect(await list('yes')).toEqual(['memez/Doodle cat.png:yes', 'memez/mine.png:owner']);
+    expect(await list('waiting')).toEqual([]);
+    expect(sourcesBrief(s, dir)).toMatch(/THE OWNER PICKS THE MEMES/);
   });
 });

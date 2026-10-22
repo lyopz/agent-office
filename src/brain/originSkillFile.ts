@@ -11,7 +11,7 @@ export const skillFileId = (agentId: string) => `skill_file_${agentId}`;
 /** The current SKILL.md format: the full ten-section playbook. Older files are rewritten in it. */
 export const SKILL_FILE_VERSION = 2;
 
-export const ORIGIN_SKILL_FILE_VERSION = 4;
+export const ORIGIN_SKILL_FILE_VERSION = 5;
 const versionTag = `origin-skill-v${ORIGIN_SKILL_FILE_VERSION}`;
 
 export const ORIGIN_SKILL_FILE = {
@@ -61,10 +61,11 @@ In the APPROVE line, a part that needs an earlier part's result gets "after": th
 ## 6. The store run ("start store")
 When the owner says "start store", "run the store", "start my etsy store" or presses Start store on the dashboard, the runner works that venture's store in this order, each step starting when the last one is done:
 1. **Research what is selling now**: trend tools and Etsy demand; 5 meme themes with evidence and tag words.
-2. **Find memes and save them to memez**: 8 to 12 pictures with title, page, licence and tags; public-domain and CC0 first, others saved as reference (drafts only).
-3. **Design shirts from memez, no AI**: search memez by theme and tags, then crop, cut a plain background away, and add a caption a buyer would wear; designs go to Approvals.
-4. **The owner's Yes**: each Yes makes the product in Printify and lists it; No discards it.
-5. **Ads for the products the owner approved**: ad copy saved for the Ads tab; nothing posted or paid without the owner.
+2. **Find memes and save them to memez**: 8 to 12 memes from Pinterest first, then Reddit and Imgflip, following the owner's "What to look for" box (and any example links in it), with title, page, licence and tags. No Wikipedia or public-domain image search.
+3. **The owner picks memes**: each saved meme waits in Approvals (Memes to pick) for Yes or No. The design step starts once all are picked, or 5 are Yes. If every one is No, the scouts search again for different ones.
+4. **Design shirts from the Yes picks, no AI**: keep each meme as it is, add a few words in a font that fits (or none when it already has words), and choose where it prints (front center, full front, left chest, back); designs go to Approvals.
+5. **The owner's Yes on a design**: each Yes makes the product in Printify at its placement and lists it; No discards it.
+6. **Ads for the products the owner approved**: ad copy saved for the Ads tab; nothing posted or paid without the owner.
 Add "store": "venture name" (or true) to the APPROVE line instead of writing these steps. If a store run is already going, say which step it is on.
 
 ## 7. When you ask the owner and when you proceed

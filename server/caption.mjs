@@ -1,25 +1,26 @@
-// Captioned images for the design agents: a found image (public domain or CC0, from the hosts the
-// asset search returns, or an image an agent generated into the gallery) with meme-style text laid
-// over it. The image is wrapped in SVG with the text and rendered to a print-size PNG by the same
-// renderer as SVG designs, so the fonts are the owner's PC's installed fonts.
+// Captioned images for the design agents: a meme the owner picked from memez (or one of their own files,
+// or an image already in the gallery) with a few words laid over it. The image is wrapped in SVG with
+// the text and rendered to a print-size PNG by the same renderer as SVG designs, so the fonts are the
+// owner's PC's installed fonts. No web image search: memes come from the scouts' memez folder.
 const PRINT_WIDTH = 4500;
 const MAX_BYTES = 25_000_000;
-/** Where a found image may come from: the public-domain sources assets_public_domain searches. */
-export const IMAGE_HOSTS = [/(^|\.)upload\.wikimedia\.org$/, /(^|\.)commons\.wikimedia\.org$/, /(^|\.)staticflickr\.com$/, /(^|\.)rawpixel\.com$/, /(^|\.)loc\.gov$/, /(^|\.)metmuseum\.org$/, /(^|\.)openverse\.org$/, /(^|\.)si\.edu$/, /(^|\.)nypl\.org$/, /(^|\.)europeana\.eu$/, /(^|\.)archive\.org$/];
+/** Where a design prints on the garment. */
+export const PLACEMENTS = ['front_center', 'full_front', 'left_chest', 'back'];
 const FONTS = { impact: 'Impact, Haettenschweiler, "Arial Black", sans-serif', bold: '"Arial Black", Bahnschrift, Arial, sans-serif', plain: '"Segoe UI", Arial, sans-serif', mono: '"Courier New", monospace', serif: 'Georgia, "Times New Roman", serif', hand: '"Segoe Print", "Comic Sans MS", cursive' };
 
 export const CAPTION_TOOL = {
   name: 'design_caption_image',
-  description: "The way to make a meme shirt design: take an image you found with assets_public_domain (its file URL), a file from the owner's source folders (source_file: memez or a linked folder), or an image already in the owner's gallery (its design_id), edit it (crop to what matters; remove_background cuts a plain background away so only the subject stays; cutout puts the words outside the picture, sticker style) and lay a short caption over it in meme style. The image is not redrawn and no AI is used; the text makes the joke. Saved to the owner's Approvals like any design. A print or owner file can be listed; a reference file (someone's meme or post saved to memez) makes a DRAFT: the owner sees it flagged and it is never listed for sale as it is. Images straight from the web must be public domain or CC0.",
+  description: "The way to make a meme shirt design: take a meme the owner picked Yes on in memez (source_file; files_source with picks \"yes\" lists them), one of the owner's own files, or an image already in their gallery (design_id), and keep it as it is: add a few words in a font that fits the picture, or no words at all (no_caption) when the meme already has its own text. Crop or remove_background only when it clearly prints better. The image is not redrawn and no AI is used. Say where it goes on the shirt (placement). Saved to the owner's Approvals like any design. A reference file (someone's meme or post) makes a DRAFT: the owner sees it flagged and it is never listed for sale as it is.",
   input_schema: { type: 'object', properties: {
-    image_url: { type: 'string', description: 'the file URL from an assets_public_domain result (not the page URL)' },
     design_id: { type: 'string', description: 'or: an image already in the gallery (from design_generate_image or an earlier save)' },
-    source_file: { type: 'string', description: 'or: a file from files_source, e.g. memez/fish.png (print and owner files can be sold; a reference file gives a flagged draft)' },
+    source_file: { type: 'string', description: 'a file from files_source the owner picked Yes on (or their own file), e.g. memez/fish.png; a reference file gives a flagged draft' },
+    no_caption: { type: 'boolean', description: 'true when the meme already carries its own words: no text is added' },
+    placement: { type: 'string', enum: PLACEMENTS, description: 'where it prints: front_center (most designs), full_front (a big picture), left_chest (a small doodle or one-liner, pocket size), back (a big piece, with a small mark on the front optional). Pick what suits this design.' },
     crop: { type: 'object', description: 'optional: keep only this part of the image, in percent of its width and height, e.g. {"x": 10, "y": 0, "w": 80, "h": 100} (after remove_background, percent of the cut-out)', properties: { x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' } } },
     remove_background: { type: 'boolean', description: 'true cuts a plain background (white, one flat colour) away on this PC, no AI, and trims to the subject, so it prints as a sticker on the shirt; a photo with a real background is left as it is and the result says so' },
     top: { type: 'string', description: 'caption above, 0 to 6 words; leave empty for none' },
     bottom: { type: 'string', description: 'caption below, 0 to 6 words; leave empty for none' },
-    font: { type: 'string', enum: Object.keys(FONTS), description: 'impact (classic meme), bold, plain (deadpan), mono, serif (mock-serious), hand' },
+    font: { type: 'string', enum: Object.keys(FONTS), description: 'pick the one that fits the picture: hand (scribbly, for doodles and hand-drawn memes), plain (deadpan lowercase), impact (classic meme macro), bold, mono, serif (mock-serious)' },
     uppercase: { type: 'boolean', description: 'default true for impact, false otherwise' },
     color: { type: 'string', description: 'text colour, default white with a black outline' },
     cutout: { type: 'boolean', description: 'true keeps the image at its own size on a transparent sheet with the text outside it (sticker look); false lays the text over the image' },
@@ -28,8 +29,6 @@ export const CAPTION_TOOL = {
     file_name: { type: 'string' },
   } },
 };
-
-export const hostAllowed = (url) => { try { const h = new URL(url).hostname.toLowerCase(); return new URL(url).protocol === 'https:' && IMAGE_HOSTS.some((re) => re.test(h)); } catch { return false; } };
 
 /** Width and height from a PNG or JPEG header; null when the bytes are neither. */
 export function imageSize(buf) {
@@ -102,7 +101,7 @@ export function cropBox(c, size) {
  */
 export async function captionImage(input, deps) {
   const top = String(input?.top || '').trim().slice(0, 80), bottom = String(input?.bottom || '').trim().slice(0, 80);
-  if (!top && !bottom && !input?.cutout) throw new Error('Give a caption in top or bottom (or both).');
+  if (!top && !bottom && !input?.cutout && !input?.no_caption) throw new Error('Give a caption in top or bottom, or no_caption true when the meme already has its own words.');
   let buf, source, sourceMeta = null;
   if (input?.source_file) {
     const f = deps.readSource?.(String(input.source_file));
@@ -113,15 +112,7 @@ export async function captionImage(input, deps) {
     if (!d) throw new Error('No image with that design_id is in the gallery.');
     if (d.kind === 'svg') throw new Error('That design is an SVG; caption a png or jpg image, or write the words into the SVG itself.');
     buf = d.buf; source = `gallery:${input.design_id}`;
-  } else if (input?.image_url) {
-    const url = String(input.image_url);
-    if (!hostAllowed(url)) throw new Error('That image is not from a public-domain source this tool accepts (Wikimedia Commons, Flickr Commons, rawpixel, Library of Congress, the Met, Smithsonian, NYPL, Europeana, Internet Archive, Openverse). Use a file URL from assets_public_domain, or an image you generated (design_id).');
-    const f = deps.fetch ?? globalThis.fetch;
-    const r = await f(url, { headers: { 'user-agent': 'the-brain/1.0 (one public-domain image for the owner\'s design)' } });
-    if (!r.ok) throw new Error(`The image could not be fetched (${r.status}).`);
-    buf = Buffer.from(await r.arrayBuffer()); source = url;
-    if (!Array.isArray(input.assets) || !input.assets.length) throw new Error('Record the image in assets (title, page, licence) so the owner sees where it came from.');
-  } else throw new Error('Give image_url (from assets_public_domain), source_file (from files_source) or design_id.');
+  } else throw new Error(input?.image_url ? 'Web images are not used: design from a meme the owner picked in memez (source_file from files_source) or a design_id.' : 'Give source_file (from files_source) or design_id.');
   if (buf.length > MAX_BYTES) throw new Error('That image is too large (over 25 MB).');
   let size = imageSize(buf);
   if (!size) throw new Error('That file is not a PNG or JPEG image.');
@@ -143,5 +134,6 @@ export async function captionImage(input, deps) {
   const out = await deps.svgToPng(svg);
   if (!out) throw new Error('The image renderer is not installed on this PC (run npm.cmd install once).');
   const rights = sourceMeta ? (sourceMeta.usable || 'reference') : input?.source_file ? 'owner' : 'print';
-  return { png: out.png, width: out.width, height: out.height, source, sourceFile: input?.source_file ? String(input.source_file) : null, sourceMeta, rights, background, crop: crop ? { x: crop.x, y: crop.y, w: crop.w, h: crop.h } : null, caption: [top, bottom].filter(Boolean).join(' / '), original: { width: size.width, height: size.height, mime: size.mime } };
+  const placement = PLACEMENTS.includes(input?.placement) ? input.placement : 'front_center';
+  return { placement, png: out.png, width: out.width, height: out.height, source, sourceFile: input?.source_file ? String(input.source_file) : null, sourceMeta, rights, background, crop: crop ? { x: crop.x, y: crop.y, w: crop.w, h: crop.h } : null, caption: [top, bottom].filter(Boolean).join(' / '), original: { width: size.width, height: size.height, mime: size.mime } };
 }
