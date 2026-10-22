@@ -9,7 +9,7 @@ import { Settings } from './ui/Settings';
 import { Approvals } from './ui/Approvals';
 import { Charts } from './ui/Charts';
 import { Ads } from './ui/Ads';
-import BrainUniverse from './brain/BrainUniverse';
+import BrainUniverse from './brain/UniverseView';
 import { ConfirmDialog } from './ui/primitives';
 import { useShortcuts } from './ui/actions';
 import { useApplyTheme } from './ui/ThemeEditor';
