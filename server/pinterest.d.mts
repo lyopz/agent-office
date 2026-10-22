@@ -1,7 +1,14 @@
 export function pinterestConfig(): Record<string, unknown> | null;
 export function savePinterest(cfg: Record<string, unknown>): void;
 export const MEMEZ_BOARD: string;
-export function pinterestPublic(cfg?: Record<string, unknown> | null): { configured: boolean; username: string | null; board: string | null; canSave: boolean };
+export function pinterestPublic(cfg?: Record<string, unknown> | null): { configured: boolean; username: string | null; board: string | null; canSave: boolean; expiresAt: string | null; renews: boolean; refreshedAt: string | null; refreshError: string | null };
+export const PINTEREST_PORT: number;
+export const REDIRECT_URI: string;
+export const SCOPES: string[];
+export function authorizeUrl(appId: string, state: string): string;
+export function exchangeCode(cfg: Record<string, unknown>, code: string, fetch?: unknown): Promise<Record<string, unknown>>;
+export function refreshPinterest(cfg: Record<string, unknown>, fetch?: unknown): Promise<Record<string, unknown>>;
+export function pinterestMaintain(deps?: { config?: Record<string, unknown> | null; fetch?: unknown; save?: (cfg: Record<string, unknown>) => void; now?: number }): Promise<{ status: string; expiresAt?: string | null; error?: string }>;
 export function findOrCreateBoard(cfg: Record<string, unknown>, fetch?: unknown): Promise<{ id: string; name: string }>;
 export function savePin(cfg: Record<string, unknown>, pinId: string, fetch?: unknown): Promise<Record<string, unknown>>;
 export function unsavePin(cfg: Record<string, unknown>, pinId: string, fetch?: unknown): Promise<{ removed: string; title: string }>;

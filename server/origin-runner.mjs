@@ -26,6 +26,8 @@ import { IMAGE_TOOL, generateImage, imageWorstUsd, openaiPublic } from './openai
 import { CANVA_AI, callCanva, canvaFiles, canvaName, canvaPublic, canvaText, canvaTools, connectInProgress, forgetCanva, startConnect } from './canva.mjs';
 import { voicePublic, voiceRoute } from './openai-voice.mjs';
 import { COPYRIGHT_RULES, runTrendTool, trendSources, trendTask, trendTools, trendsPublic } from './trends.mjs';
+import { instagramMaintain } from './instagram.mjs';
+import { pinterestMaintain } from './pinterest.mjs';
 import { DEGEN_TOOL, degenBankSkill, degenCatalog, degenSkill, degenSkillsForRole } from './degen-skills.mjs';
 import { SOURCE_TOOLS, addSourceFolder, deleteSourceFile, readSourceFile, removeSourceFolder, runSourceTool, saveMemeNote, sourceFolders, sourcesBrief, sourcesPublic } from './sources.mjs';
 import { DESIGN_STYLE, cleanStyleNote, styleGuide } from './design-style.mjs';
@@ -1677,7 +1679,18 @@ export function reopenRepeats(s, now = Date.now()) {
   return back;
 }
 
+// The social sign-ins renew themselves: checked every six hours, each one is refreshed when due.
+let tokensCheckedAt = 0;
+function maintainTokens() {
+  if (Date.now() - tokensCheckedAt < 6 * 3_600_000) return;
+  tokensCheckedAt = Date.now();
+  for (const [name, fn] of [['instagram', instagramMaintain], ['pinterest', pinterestMaintain]]) {
+    fn().then((r) => { if (r.status !== 'not connected' && r.status !== 'not due' && r.status !== 'too new') console.log(`[origin] ${name} token: ${r.status}${r.error ? ` (${r.error})` : ''}${r.expiresAt ? `, valid until ${String(r.expiresAt).slice(0, 10)}` : ''}`); }).catch((e) => console.log(`[origin] ${name} token check failed: ${e.message}`));
+  }
+}
+
 function tick() {
+  maintainTokens();
   readInbox();
   const s0 = loadState();
   const again = reopenRepeats(s0);

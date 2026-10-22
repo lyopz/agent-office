@@ -231,7 +231,7 @@ Two bank skills written from the owner's own meme-design playbook (`src/brain/bu
 
 ## Trend sources and connectors
 
-Always on, free: Google Trends, the Imgflip and Reddit meme databases (`trends_memes`: formats and jokes, never the images) and public-domain images. Optional, with your own accounts: `npm run set-instagram` (a token from your Meta app: the dashboard's Instagram-login token reads your own account's numbers and posts; a Facebook Login for Business token with Instagram Public Content Access adds hashtag search, 30 hashtags a week) and `npm run set-pinterest` (Pinterest trends and pin search for ideas). Tokens stay in `%APPDATA%\the-brain\`. TikTok has no API for small sellers, so TikTok trends come from fresh public roundups found with web search.
+Always on, free: Google Trends, the Imgflip and Reddit meme databases (`trends_memes`: formats and jokes, never the images) and public-domain images. Optional, with your own accounts: `npm run set-instagram` (a token from your Meta app: the dashboard's Instagram-login token reads your own account's numbers and posts; a Facebook Login for Business token with Instagram Public Content Access adds hashtag search, 30 hashtags a week) and `npm run connect-pinterest` (a browser sign-in with a refresh token; `set-pinterest` still takes a pasted token). Tokens stay in `%APPDATA%\the-brain\`. The runner renews them by itself: Instagram-login tokens weekly through Meta's refresh call (Facebook-login tokens too, when the app id and secret were given), Pinterest through its refresh token; the runs panel shows until when each is valid. TikTok has no API for small sellers, so TikTok trends come from fresh public roundups found with web search.
 
 ## Design sources (memez)
 

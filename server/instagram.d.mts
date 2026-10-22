@@ -1,7 +1,11 @@
 export const HASHTAG_LIMIT: number;
 export function instagramConfig(): Record<string, unknown> | null;
 export function saveInstagram(cfg: Record<string, unknown>): void;
-export function instagramPublic(cfg?: Record<string, unknown> | null): { configured: boolean; kind: 'instagram' | 'facebook' | null; hashtags: boolean; username: string | null; hashtagsLeft: number | null };
+export const TOKEN_DAYS: number;
+export function canRenew(cfg: Record<string, unknown> | null): boolean;
+export function instagramPublic(cfg?: Record<string, unknown> | null): { configured: boolean; kind: 'instagram' | 'facebook' | null; hashtags: boolean; username: string | null; hashtagsLeft: number | null; expiresAt: string | null; renews: boolean; refreshedAt: string | null; refreshError: string | null };
+export function refreshInstagram(cfg: Record<string, unknown>, fetch?: unknown): Promise<Record<string, unknown>>;
+export function instagramMaintain(deps?: { config?: Record<string, unknown> | null; fetch?: unknown; save?: (cfg: Record<string, unknown>) => void; now?: number }): Promise<{ status: string; expiresAt?: string | null; error?: string }>;
 export function pingInstagram(cfg: Record<string, unknown>, fetch?: unknown): Promise<{ igUserId: string; username: string }>;
 export const INSTAGRAM_TOOL: { name: string; description: string; input_schema: Record<string, unknown> };
 type Deps = { config?: Record<string, unknown> | null; fetch?: unknown; save?: (cfg: Record<string, unknown>) => void };

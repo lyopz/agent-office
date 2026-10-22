@@ -26,7 +26,8 @@ export interface AdEntry { id: string; productId: string; productTitle: string; 
 export interface SourceFile { ref: string; folder: string; name: string; bytes: number; kind: 'png' | 'jpg'; usable: 'print' | 'reference' | 'owner'; title: string | null; page: string | null; licence: string; savedBy: string | null; at: string; note: string | null }
 export interface SourceFolderInfo { id: string; label: string; path: string; builtin: boolean; exists: boolean; files: number; printable: number; reference: number; notes?: number; recent: SourceFile[] }
 /** Which trend sources this PC offers (never a token). */
-export interface TrendSources { google: boolean; memes: boolean; instagram: { configured: boolean; kind?: 'instagram' | 'facebook' | null; hashtags?: boolean; username: string | null; hashtagsLeft: number | null }; pinterest: { configured: boolean; username: string | null; board?: string | null; canSave?: boolean } }
+export interface TokenLife { expiresAt?: string | null; renews?: boolean; refreshedAt?: string | null; refreshError?: string | null }
+export interface TrendSources { google: boolean; memes: boolean; instagram: TokenLife & { configured: boolean; kind?: 'instagram' | 'facebook' | null; hashtags?: boolean; username: string | null; hashtagsLeft: number | null }; pinterest: TokenLife & { configured: boolean; username: string | null; board?: string | null; canSave?: boolean } }
 export interface MoneyEntry { id: string; agentId: string; kind: 'income' | 'expense'; usd: number; note: string; at: string }
 export interface SaleLine { id: string; orderId: string; at: string; status: string; productId: string; title: string; quantity: number; revenueUsd: number | null; costUsd: number; agentId: string | null; agentName: string | null }
 /** A design an agent made, kept on the owner's PC: SVG it wrote or a PNG from the image model. */

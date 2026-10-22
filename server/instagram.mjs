@@ -29,12 +29,51 @@ export function saveInstagram(cfg) {
   fs.renameSync(tmp, FILE());
 }
 const kindOf = (cfg) => (cfg?.kind === 'instagram' ? 'instagram' : 'facebook');
-/** What the app may see: whether Instagram is connected, which token kind, and the hashtag allowance left. */
+export const TOKEN_DAYS = 60;
+const DAY = 86_400_000;
+/** Whether the runner can renew this token by itself: always for an Instagram-login token, for a Facebook-login token only with the app id and secret. */
+export const canRenew = (cfg) => !!cfg?.token && (kindOf(cfg) === 'instagram' || !!(cfg.appId && cfg.appSecret));
+/** What the app may see: whether Instagram is connected, which token kind, the hashtag allowance left, and the token's expiry and renewal. */
 export function instagramPublic(cfg = instagramConfig()) {
   const used = (cfg?.recent || []).filter((r) => Date.now() - Date.parse(r.at) < WEEK).length;
   const configured = !!(cfg?.token && cfg?.igUserId);
   const kind = configured ? kindOf(cfg) : null;
-  return { configured, kind, hashtags: kind === 'facebook', username: cfg?.username ?? null, hashtagsLeft: configured && kind === 'facebook' ? Math.max(0, HASHTAG_LIMIT - used) : null };
+  return { configured, kind, hashtags: kind === 'facebook', username: cfg?.username ?? null, hashtagsLeft: configured && kind === 'facebook' ? Math.max(0, HASHTAG_LIMIT - used) : null, expiresAt: configured ? cfg.expiresAt ?? null : null, renews: configured && canRenew(cfg), refreshedAt: configured ? cfg.refreshedAt ?? null : null, refreshError: configured ? cfg.refreshError ?? null : null };
+}
+
+/** Get a fresh 60-day token from Meta for the one saved. Instagram-login tokens refresh with no secret (graph.instagram.com/refresh_access_token, token at least a day old); Facebook-login tokens are exchanged with the app id and secret (fb_exchange_token). Returns the updated config without saving it. */
+export async function refreshInstagram(cfg, f = globalThis.fetch) {
+  if (!cfg?.token) throw new Error('Instagram is not connected.');
+  let data;
+  if (kindOf(cfg) === 'instagram') {
+    data = await graphGet('refresh_access_token', { grant_type: 'ig_refresh_token' }, cfg, f);
+  } else {
+    if (!cfg.appId || !cfg.appSecret) throw new Error('a Facebook-login token renews only with the app id and secret: run npm.cmd run set-instagram again and give them.');
+    data = await graphGet('oauth/access_token', { grant_type: 'fb_exchange_token', client_id: cfg.appId, client_secret: cfg.appSecret, fb_exchange_token: cfg.token }, cfg, f);
+  }
+  if (!data.access_token) throw new Error('Instagram: Meta returned no token.');
+  const seconds = Number(data.expires_in) || TOKEN_DAYS * DAY / 1000;
+  return { ...cfg, token: String(data.access_token), refreshedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + seconds * 1000).toISOString(), refreshError: null };
+}
+/** Renew the saved token when it is due: a week after the last renewal (or the first save), never within a day of it, and always when under 10 days are left. Called by the runner; saves the result. Returns what happened. */
+export async function instagramMaintain(deps = {}) {
+  const cfg = deps.config ?? instagramConfig();
+  const now = deps.now ?? Date.now();
+  if (!cfg?.token || !cfg?.igUserId) return { status: 'not connected' };
+  if (!canRenew(cfg)) return { status: 'manual', expiresAt: cfg.expiresAt ?? null };
+  const issued = Date.parse(cfg.refreshedAt || cfg.savedAt || 0) || 0;
+  const expires = Date.parse(cfg.expiresAt || 0) || issued + TOKEN_DAYS * DAY;
+  if (expires <= now) return { status: 'expired', expiresAt: cfg.expiresAt ?? null };
+  if (now - issued < DAY) return { status: 'too new', expiresAt: cfg.expiresAt ?? null };
+  if (now - issued < 7 * DAY && expires - now > 10 * DAY) return { status: 'not due', expiresAt: cfg.expiresAt ?? null };
+  try {
+    const next = await refreshInstagram(cfg, deps.fetch ?? globalThis.fetch);
+    (deps.save ?? saveInstagram)(next);
+    return { status: 'renewed', expiresAt: next.expiresAt };
+  } catch (e) {
+    (deps.save ?? saveInstagram)({ ...cfg, refreshError: `${new Date(now).toISOString()} ${e.message}`.slice(0, 300) });
+    return { status: 'failed', error: e.message, expiresAt: cfg.expiresAt ?? null };
+  }
 }
 
 // READ ONLY: every call here is a GET. Nothing in this file can post, comment, like, follow or change the owner's account; the scopes used (instagram_business_basic, or instagram_basic + pages_show_list) are read scopes.

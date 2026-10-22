@@ -73,8 +73,8 @@ describe('meme databases and connectors', () => {
     expect(JSON.stringify(r)).not.toMatch(/i\.redd\.it|i\.imgflip/);
     const bad: any = await popularMemes({ source: 'reddit', subreddit: 'bad name!' }, { fetch });
     expect(bad.reddit_errors[0]).toMatch(/not a subreddit/);
-    expect(trendTools({ google: true, memes: true, instagram: { configured: false, kind: null, hashtags: false, username: null, hashtagsLeft: null }, pinterest: { configured: false, username: null, board: null, canSave: false } }).map((t) => t.name)).toEqual(['trends_google', 'trends_memes', 'assets_public_domain']);
-    expect(trendTools({ google: true, memes: true, instagram: { configured: true, kind: 'facebook', hashtags: true, username: 'ed', hashtagsLeft: 30 }, pinterest: { configured: true, username: 'ed', board: 'memez', canSave: true } }).map((t) => t.name)).toContain('trends_instagram');
+    expect(trendTools({ google: true, memes: true, instagram: { configured: false, kind: null, hashtags: false, username: null, hashtagsLeft: null, expiresAt: null, renews: false, refreshedAt: null, refreshError: null }, pinterest: { configured: false, username: null, board: null, canSave: false, expiresAt: null, renews: false, refreshedAt: null, refreshError: null } }).map((t) => t.name)).toEqual(['trends_google', 'trends_memes', 'assets_public_domain']);
+    expect(trendTools({ google: true, memes: true, instagram: { configured: true, kind: 'facebook', hashtags: true, username: 'ed', hashtagsLeft: 30, expiresAt: null, renews: false, refreshedAt: null, refreshError: null }, pinterest: { configured: true, username: 'ed', board: 'memez', canSave: true, expiresAt: null, renews: false, refreshedAt: null, refreshError: null } }).map((t) => t.name)).toContain('trends_instagram');
     expect(trendSources()).not.toMatch(/INSTAGRAM CONNECTED/);
     expect(TREND_SOURCES).toMatch(/MEME DATABASES: trends_memes/);
     expect(MEMES_TOOL.name).toBe('trends_memes');
@@ -95,7 +95,7 @@ describe('meme databases and connectors', () => {
     expect(r.posts).toEqual([{ caption: 'fih shirt day', type: 'IMAGE', likes: 10, comments: 2, at: '2026-10-20T00:00:00+0000', link: 'https://www.instagram.com/p/x/' }]);
     expect(JSON.stringify(r)).not.toMatch(/cdn\/x\.jpg/);
     expect(saved[0].recent).toEqual([expect.objectContaining({ tag: 'fihshirt' })]);
-    expect(instagramPublic(saved[0])).toEqual({ configured: true, kind: 'facebook', hashtags: true, username: null, hashtagsLeft: 29 });
+    expect(instagramPublic(saved[0])).toEqual({ configured: true, kind: 'facebook', hashtags: true, username: null, hashtagsLeft: 29, expiresAt: null, renews: false, refreshedAt: null, refreshError: null });
     await expect(instagramHashtag({ hashtag: 'x' }, { config: { token: 't', igUserId: '1', recent: [] }, fetch: async () => ({ ok: false, status: 400, json: async () => ({ error: { code: 190 } }) }) })).rejects.toThrow(/expired/);
     await expect(instagramHashtag({ hashtag: 'x' }, { config: null as any })).rejects.toThrow(/set-instagram/);
   });
@@ -113,7 +113,7 @@ describe('meme databases and connectors', () => {
     };
     expect(await pingInstagram({ kind: 'instagram', token: 't' }, fetch)).toEqual({ igUserId: '777', username: 'memezarizing' });
     const cfg: any = { kind: 'instagram', token: 't', igUserId: '777', username: 'memezarizing' };
-    expect(instagramPublic(cfg)).toEqual({ configured: true, kind: 'instagram', hashtags: false, username: 'memezarizing', hashtagsLeft: null });
+    expect(instagramPublic(cfg)).toEqual({ configured: true, kind: 'instagram', hashtags: false, username: 'memezarizing', hashtagsLeft: null, expiresAt: null, renews: true, refreshedAt: null, refreshError: null });
     expect(await instagramTool({ action: 'account' }, { config: cfg, fetch })).toEqual({ username: 'memezarizing', followers: 120, posts: 9, hashtagSearch: false });
     const mine: any = await instagramTool({ action: 'my_posts' }, { config: cfg, fetch });
     expect(mine.posts).toEqual([{ caption: 'fih', type: 'IMAGE', likes: 5, comments: 1, at: '2026-10-19T00:00:00+0000', link: 'https://www.instagram.com/p/y/' }]);
@@ -159,7 +159,7 @@ describe('meme databases and connectors', () => {
       return { ok: false, status: 400, json: async () => ({ message: `unexpected ${method} ${url}` }) };
     };
     const cfg: any = { token: 'tok', username: 'ed' };
-    expect(pinterestPublic(cfg)).toEqual({ configured: true, username: 'ed', board: null, canSave: false });
+    expect(pinterestPublic(cfg)).toEqual({ configured: true, username: 'ed', board: null, canSave: false, expiresAt: null, renews: false, refreshedAt: null, refreshError: null });
     await expect(savePin(cfg, '1', fetch)).rejects.toThrow(/no memez board yet/);
     const board = await findOrCreateBoard(cfg, fetch);
     expect(board).toEqual({ id: 'b-memez', name: MEMEZ_BOARD });
@@ -185,5 +185,48 @@ describe('meme databases and connectors', () => {
     // Nothing else is ever written: every non-GET call so far is the board creation, the save, or the delete on the memez board.
     const writes = calls.filter((c) => c.method !== 'GET');
     expect(writes.map((c) => `${c.method} ${c.url.split('/v5/')[1]}`)).toEqual(['POST boards', 'POST pins/1/save', 'DELETE pins/1']);
+  });
+
+  test('tokens renew themselves: Instagram weekly through Meta (no secret for the Instagram-login kind), Pinterest through its refresh token; a hand-pasted Pinterest token stays manual', async () => {
+    const { instagramMaintain, refreshInstagram } = await import('../server/instagram.mjs');
+    const { exchangeCode, pinterestMaintain, authorizeUrl, REDIRECT_URI } = await import('../server/pinterest.mjs');
+    const DAY = 86_400_000; const now = Date.parse('2026-10-22T00:00:00Z');
+    const saved: any[] = [];
+    const igFetch = async (u: URL, init: any) => {
+      const url = String(u); expect(init.method).toBe('GET');
+      if (url.startsWith('https://graph.instagram.com/v21.0/refresh_access_token?grant_type=ig_refresh_token')) return { ok: true, json: async () => ({ access_token: 'IGAAnew', token_type: 'bearer', expires_in: 60 * 86_400 }) };
+      if (url.startsWith('https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token') && url.includes('client_secret=sec')) return { ok: true, json: async () => ({ access_token: 'EAAnew', expires_in: 5_000_000 }) };
+      return { ok: false, status: 400, json: async () => ({ error: { code: 190, message: 'bad' } }) };
+    };
+    const ig: any = { kind: 'instagram', token: 'IGAAold', igUserId: '7', savedAt: new Date(now - 8 * DAY).toISOString(), expiresAt: new Date(now + 52 * DAY).toISOString() };
+    expect(await instagramMaintain({ config: { ...ig, savedAt: new Date(now - 3600_000).toISOString() }, now, fetch: igFetch, save: (c: any) => saved.push(c) })).toMatchObject({ status: 'too new' });
+    expect(await instagramMaintain({ config: { ...ig, savedAt: new Date(now - 2 * DAY).toISOString() }, now, fetch: igFetch, save: (c: any) => saved.push(c) })).toMatchObject({ status: 'not due' });
+    expect(await instagramMaintain({ config: ig, now, fetch: igFetch, save: (c: any) => saved.push(c) })).toMatchObject({ status: 'renewed' });
+    expect(saved[0]).toMatchObject({ token: 'IGAAnew', refreshError: null, igUserId: '7' });
+    expect(Date.parse(saved[0].expiresAt) - Date.now()).toBeGreaterThan(59 * DAY);
+    // a Facebook-login token without the app secret stays manual; with it, it is exchanged
+    expect(await instagramMaintain({ config: { kind: 'facebook', token: 'EAAold', igUserId: '1', savedAt: new Date(now - 8 * DAY).toISOString() }, now, fetch: igFetch, save: () => {} })).toMatchObject({ status: 'manual' });
+    expect((await refreshInstagram({ kind: 'facebook', token: 'EAAold', igUserId: '1', appId: '42', appSecret: 'sec' }, igFetch)).token).toBe('EAAnew');
+    // a failed renewal is recorded, the old token kept
+    saved.length = 0;
+    expect(await instagramMaintain({ config: { ...ig, token: 'IGAAbroken' }, now, fetch: async () => ({ ok: false, status: 400, json: async () => ({ error: { code: 190, message: 'cannot parse' } }) }), save: (c: any) => saved.push(c) })).toMatchObject({ status: 'failed' });
+    expect(saved[0]).toMatchObject({ token: 'IGAAbroken' }); expect(saved[0].refreshError).toMatch(/cannot parse/);
+
+    const pinFetch = async (u: URL | string, init: any) => {
+      expect(String(u)).toBe('https://api.pinterest.com/v5/oauth/token'); expect(init.method).toBe('POST');
+      expect(init.headers.authorization).toBe(`Basic ${Buffer.from('app:secret').toString('base64')}`);
+      const body = new URLSearchParams(init.body);
+      if (body.get('grant_type') === 'authorization_code') { expect(body.get('redirect_uri')).toBe(REDIRECT_URI); return { ok: true, json: async () => ({ access_token: 'pina1', refresh_token: 'pinr1', expires_in: 2_592_000, refresh_token_expires_in: 5_184_000, scope: 'pins:read' }) }; }
+      if (body.get('grant_type') === 'refresh_token' && body.get('refresh_token') === 'pinr1') return { ok: true, json: async () => ({ access_token: 'pina2', refresh_token: 'pinr2', expires_in: 2_592_000, refresh_token_expires_at: Math.floor(now / 1000) + 5_184_000 }) };
+      return { ok: false, status: 400, json: async () => ({ message: 'bad grant' }) };
+    };
+    expect(authorizeUrl('app', 'st')).toMatch(/^https:\/\/www\.pinterest\.com\/oauth\/\?client_id=app&redirect_uri=http%3A%2F%2Flocalhost%3A8789%2Fcallback&response_type=code&scope=.*&state=st$/);
+    const first: any = await exchangeCode({ appId: 'app', appSecret: 'secret' }, 'code1', pinFetch);
+    expect(first).toMatchObject({ token: 'pina1', refresh: 'pinr1', via: 'oauth', refreshError: null });
+    const pinSaved: any[] = [];
+    expect(await pinterestMaintain({ config: first, now: Date.parse(first.refreshedAt) + DAY, fetch: pinFetch, save: (c: any) => pinSaved.push(c) })).toMatchObject({ status: 'not due' });
+    expect(await pinterestMaintain({ config: first, now: Date.parse(first.refreshedAt) + 22 * DAY, fetch: pinFetch, save: (c: any) => pinSaved.push(c) })).toMatchObject({ status: 'renewed' });
+    expect(pinSaved[0]).toMatchObject({ token: 'pina2', refresh: 'pinr2', appId: 'app' });
+    expect(await pinterestMaintain({ config: { token: 'pasted-by-hand-token-xyz', username: 'ed' }, now, fetch: pinFetch, save: () => {} })).toMatchObject({ status: 'manual' });
   });
 });

@@ -22,7 +22,62 @@ export function savePinterest(cfg) {
 }
 export const MEMEZ_BOARD = 'memez';
 export function pinterestPublic(cfg = pinterestConfig()) {
-  return { configured: !!cfg?.token, username: cfg?.username ?? null, board: cfg?.boardName ?? null, canSave: !!cfg?.boardId };
+  const configured = !!cfg?.token;
+  return { configured, username: cfg?.username ?? null, board: cfg?.boardName ?? null, canSave: !!cfg?.boardId, expiresAt: configured ? cfg.expiresAt ?? null : null, renews: configured && !!cfg.refresh, refreshedAt: configured ? cfg.refreshedAt ?? null : null, refreshError: configured ? cfg.refreshError ?? null : null };
+}
+
+// ---------- sign-in with a refresh token, so the runner renews the token itself ----------
+export const PINTEREST_PORT = 8789;
+export const REDIRECT_URI = `http://localhost:${PINTEREST_PORT}/callback`;
+export const SCOPES = ['user_accounts:read', 'boards:read', 'pins:read', 'boards:write', 'pins:write'];
+const DAY = 86_400_000;
+/** Pinterest's token endpoint with the app id and secret; grant is authorization_code or refresh_token. */
+async function tokenCall(cfg, body, f = globalThis.fetch) {
+  const r = await f(`${API}/oauth/token`, { method: 'POST', headers: { authorization: `Basic ${Buffer.from(`${cfg.appId}:${cfg.appSecret}`).toString('base64')}`, 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }, body: new URLSearchParams(body).toString(), signal: AbortSignal.timeout(20_000) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.access_token) throw new Error(`Pinterest sign-in: ${data.message || data.error_description || data.error || `HTTP ${r.status}`}`);
+  return data;
+}
+const keepTokens = (cfg, t, now = Date.now()) => ({
+  ...cfg, token: t.access_token, refresh: t.refresh_token || cfg.refresh || null, scope: t.scope || cfg.scope || null, via: 'oauth',
+  expiresAt: new Date(now + (Number(t.expires_in) || 30 * DAY / 1000) * 1000).toISOString(),
+  refreshExpiresAt: t.refresh_token_expires_at ? new Date(Number(t.refresh_token_expires_at) * 1000).toISOString() : t.refresh_token_expires_in ? new Date(now + Number(t.refresh_token_expires_in) * 1000).toISOString() : cfg.refreshExpiresAt ?? null,
+  refreshedAt: new Date(now).toISOString(), refreshError: null,
+});
+/** The link the owner opens to allow the app, and the state to check on the way back. */
+export function authorizeUrl(appId, state) {
+  const u = new URL('https://www.pinterest.com/oauth/');
+  for (const [k, v] of Object.entries({ client_id: appId, redirect_uri: REDIRECT_URI, response_type: 'code', scope: SCOPES.join(','), state })) u.searchParams.set(k, v);
+  return u.toString();
+}
+/** Turn the code Pinterest sent back into tokens. Returns the config to save (not saved here). */
+export async function exchangeCode(cfg, code, f = globalThis.fetch) {
+  return keepTokens(cfg, await tokenCall(cfg, { grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI }, f));
+}
+/** A fresh access token (30 days) and refresh token (60 days, continuous) from the saved refresh token. Not saved here. */
+export async function refreshPinterest(cfg, f = globalThis.fetch) {
+  if (!cfg?.refresh || !cfg.appId || !cfg.appSecret) throw new Error('Pinterest renews itself only after npm.cmd run connect-pinterest (a token pasted by hand cannot be renewed).');
+  return keepTokens(cfg, await tokenCall(cfg, { grant_type: 'refresh_token', refresh_token: cfg.refresh }, f));
+}
+/** Renew when due: under 10 days left on the access token, or under 20 on the refresh token, or three weeks since the last renewal. Called by the runner; saves the result. */
+export async function pinterestMaintain(deps = {}) {
+  const cfg = deps.config ?? pinterestConfig();
+  const now = deps.now ?? Date.now();
+  if (!cfg?.token) return { status: 'not connected' };
+  if (!cfg.refresh || !cfg.appId || !cfg.appSecret) return { status: 'manual', expiresAt: cfg.expiresAt ?? null };
+  const refreshed = Date.parse(cfg.refreshedAt || cfg.savedAt || 0) || 0;
+  const expires = Date.parse(cfg.expiresAt || 0) || refreshed + 30 * DAY;
+  const refreshExpires = Date.parse(cfg.refreshExpiresAt || 0) || refreshed + 60 * DAY;
+  if (refreshExpires <= now) return { status: 'expired', expiresAt: cfg.expiresAt ?? null };
+  if (expires - now > 10 * DAY && refreshExpires - now > 20 * DAY && now - refreshed < 21 * DAY) return { status: 'not due', expiresAt: cfg.expiresAt ?? null };
+  try {
+    const next = await refreshPinterest(cfg, deps.fetch ?? globalThis.fetch);
+    (deps.save ?? savePinterest)(next);
+    return { status: 'renewed', expiresAt: next.expiresAt };
+  } catch (e) {
+    (deps.save ?? savePinterest)({ ...cfg, refreshError: `${new Date(now).toISOString()} ${e.message}`.slice(0, 300) });
+    return { status: 'failed', error: e.message, expiresAt: cfg.expiresAt ?? null };
+  }
 }
 
 // READS are GETs. The only writes are in pinWrite below: save a pin to the owner's memez board, remove a pin from that board, and make that board once at setup. Nothing here can comment, follow, post to another board or change the account. Scopes: pins:read, boards:read, user_accounts:read, and pins:write + boards:write used for the memez board only.

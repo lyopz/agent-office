@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Play, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useStore } from '../store/store';
-import { agentProposalAction, designUrl, mockupUrl, publishDecision, runnerStatus, setAutoAgents, connectCanva, setAutoTasks, setCanvaLimit, setImageCap, syncOrigin, taskAction, type AgentProposal, type DesignEntry, type PublishRequest, type RunnerStatus, type RunnerTask } from './originLink';
+import { agentProposalAction, designUrl, mockupUrl, publishDecision, runnerStatus, setAutoAgents, connectCanva, setAutoTasks, setCanvaLimit, setImageCap, syncOrigin, taskAction, type AgentProposal, type DesignEntry, type PublishRequest, type RunnerStatus, type RunnerTask, type TokenLife } from './originLink';
 import { branchKind, describeWindow } from './opportunity';
 import { createProposedAgent } from './skillFiles';
 import { ProgressBar, ProgressLog } from './Progress';
@@ -33,6 +33,14 @@ function Designs({ list }: { list: DesignEntry[] }) {
  * approval is the spending limit), its notes and recent runs. Reads from
  * server/origin-runner.mjs; without it, explains how to start it.
  */
+
+/** One clause on a social token's life: whether the runner renews it and until when it is valid. */
+function tokenLife(t: TokenLife, script: string): string {
+  const until = t.expiresAt ? new Date(t.expiresAt).toLocaleDateString() : null;
+  if (t.renews) return `; renews itself${until ? `, valid until ${until}` : ''}${t.refreshError ? ` (last renewal failed: ${t.refreshError.slice(25)})` : ''}`;
+  return until ? `; valid until ${until}, then run npm.cmd run ${script} again` : '';
+}
+
 export default function OriginRuns({ onNotice }: { onNotice: (text: string) => void }) {
   const doc = useStore((s) => s.doc);
   const [st, setSt] = useState<RunnerStatus | null | undefined>(undefined);
@@ -179,8 +187,8 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
           : <>not connected. <button className="creator-secondary" style={{ display: 'inline-flex' }} onClick={() => void act(async () => { const r = await connectCanva(); if (r && !r.ok) onNotice(r.reason ?? 'Canva did not answer.'); if (r?.ok && r.url) setCanvaUrl(r.url); return r?.ok ? r : null; }, "Canva's sign-in opened in your browser: sign in and press Allow.")}>Connect Canva</button>{(canvaUrl || st.canva?.connecting?.url) && <> If the browser did not open, <a href={canvaUrl || st.canva?.connecting?.url} target="_blank" rel="noreferrer">open the sign-in here</a>.</>}</>}</li>
         {st.etsy?.configured && <li><span className="badge live">on</span> <b>Etsy research</b> · read-only</li>}
         <li><span className="badge live">on</span> <b>Trends</b> · Google Trends, Imgflip and Reddit meme databases, public-domain images (always on, free)</li>
-        <li><span className={`badge ${st.trends?.instagram.configured ? 'live' : 'off'}`}>{st.trends?.instagram.configured ? 'on' : 'off'}</span> <b>Instagram</b> · {st.trends?.instagram.configured ? `@${st.trends.instagram.username ?? 'connected'}: ${st.trends.instagram.hashtags ? `own account and hashtag search, ${st.trends.instagram.hashtagsLeft ?? 30} hashtag look-ups left this week` : 'own account numbers and posts (Instagram login token; hashtag search needs a Facebook Login for Business token)'}` : 'not connected: npm.cmd run set-instagram'}</li>
-        <li><span className={`badge ${st.trends?.pinterest.configured ? 'live' : 'off'}`}>{st.trends?.pinterest.configured ? 'on' : 'off'}</span> <b>Pinterest trends</b> · {st.trends?.pinterest.configured ? `${st.trends.pinterest.username ?? 'connected'}; trending keywords and pin search for ideas${st.trends.pinterest.canSave ? `; pins may be saved to and removed from your secret "${st.trends.pinterest.board ?? 'memez'}" board, the only thing the app writes to` : ''}` : 'not connected: npm.cmd run set-pinterest (needs a Pinterest developer app)'}</li>
+        <li><span className={`badge ${st.trends?.instagram.configured ? 'live' : 'off'}`}>{st.trends?.instagram.configured ? 'on' : 'off'}</span> <b>Instagram</b> · {st.trends?.instagram.configured ? `@${st.trends.instagram.username ?? 'connected'}: ${st.trends.instagram.hashtags ? `own account and hashtag search, ${st.trends.instagram.hashtagsLeft ?? 30} hashtag look-ups left this week` : 'own account numbers and posts (Instagram login token; hashtag search needs a Facebook Login for Business token)'}${tokenLife(st.trends.instagram, 'set-instagram')}` : 'not connected: npm.cmd run set-instagram'}</li>
+        <li><span className={`badge ${st.trends?.pinterest.configured ? 'live' : 'off'}`}>{st.trends?.pinterest.configured ? 'on' : 'off'}</span> <b>Pinterest trends</b> · {st.trends?.pinterest.configured ? `${st.trends.pinterest.username ?? 'connected'}; trending keywords and pin search for ideas${st.trends.pinterest.canSave ? `; pins may be saved to and removed from your secret "${st.trends.pinterest.board ?? 'memez'}" board, the only thing the app writes to` : ''}${tokenLife(st.trends.pinterest, 'connect-pinterest')}` : 'not connected: npm.cmd run connect-pinterest (needs a Pinterest developer app)'}</li>
         <li><span className={`badge ${st.degen ? 'live' : 'off'}`}>{st.degen ? 'on' : 'off'}</span> <b>Skill library</b> · {st.degen ? `${st.degen.skills} skills from degen-skill (${st.degen.from === 'local' ? 'your PC' : 'GitHub'}), ${st.degen.given} handed out` : 'read on the next run (a degen-skill clone next to the app, or GitHub)'}</li>
       </ul>
       {st.canva && (st.canva.configured || st.canva.log.length > 0) && <>

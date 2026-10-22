@@ -20,6 +20,7 @@
     "set-openai": "node server/set-openai.mjs",
     "set-instagram": "node server/set-instagram.mjs",
     "set-pinterest": "node server/set-pinterest.mjs",
+    "connect-pinterest": "node server/connect-pinterest.mjs",
     "connect-canva": "node server/connect-canva.mjs",
     "desktop": "npm run build && electron .",
     "desktop:dev": "node desktop/dev.cjs",
