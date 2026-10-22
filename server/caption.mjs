@@ -10,12 +10,13 @@ const FONTS = { impact: 'Impact, Haettenschweiler, "Arial Black", sans-serif', b
 
 export const CAPTION_TOOL = {
   name: 'design_caption_image',
-  description: "The default way to make a meme shirt design: take an image you found with assets_public_domain (its file URL), a file from the owner's source folders (source_file: memez or a linked folder), or an image already in the owner's gallery (its design_id), and lay a short caption over it in meme style, optionally cropped first. The image is not redrawn; the text makes the joke. Saved to the owner's Approvals like any design. A print or owner file can be listed; a reference file (someone's meme or post saved to memez) makes a DRAFT: the owner sees it flagged and it is never listed for sale as it is. Images straight from the web must be public domain or CC0.",
+  description: "The way to make a meme shirt design: take an image you found with assets_public_domain (its file URL), a file from the owner's source folders (source_file: memez or a linked folder), or an image already in the owner's gallery (its design_id), edit it (crop to what matters; remove_background cuts a plain background away so only the subject stays; cutout puts the words outside the picture, sticker style) and lay a short caption over it in meme style. The image is not redrawn and no AI is used; the text makes the joke. Saved to the owner's Approvals like any design. A print or owner file can be listed; a reference file (someone's meme or post saved to memez) makes a DRAFT: the owner sees it flagged and it is never listed for sale as it is. Images straight from the web must be public domain or CC0.",
   input_schema: { type: 'object', properties: {
     image_url: { type: 'string', description: 'the file URL from an assets_public_domain result (not the page URL)' },
     design_id: { type: 'string', description: 'or: an image already in the gallery (from design_generate_image or an earlier save)' },
     source_file: { type: 'string', description: 'or: a file from files_source, e.g. memez/fish.png (print and owner files can be sold; a reference file gives a flagged draft)' },
-    crop: { type: 'object', description: 'optional: keep only this part of the image, in percent of its width and height, e.g. {"x": 10, "y": 0, "w": 80, "h": 100}', properties: { x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' } } },
+    crop: { type: 'object', description: 'optional: keep only this part of the image, in percent of its width and height, e.g. {"x": 10, "y": 0, "w": 80, "h": 100} (after remove_background, percent of the cut-out)', properties: { x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' } } },
+    remove_background: { type: 'boolean', description: 'true cuts a plain background (white, one flat colour) away on this PC, no AI, and trims to the subject, so it prints as a sticker on the shirt; a photo with a real background is left as it is and the result says so' },
     top: { type: 'string', description: 'caption above, 0 to 6 words; leave empty for none' },
     bottom: { type: 'string', description: 'caption below, 0 to 6 words; leave empty for none' },
     font: { type: 'string', enum: Object.keys(FONTS), description: 'impact (classic meme), bold, plain (deadpan), mono, serif (mock-serious), hand' },
@@ -122,8 +123,16 @@ export async function captionImage(input, deps) {
     if (!Array.isArray(input.assets) || !input.assets.length) throw new Error('Record the image in assets (title, page, licence) so the owner sees where it came from.');
   } else throw new Error('Give image_url (from assets_public_domain), source_file (from files_source) or design_id.');
   if (buf.length > MAX_BYTES) throw new Error('That image is too large (over 25 MB).');
-  const size = imageSize(buf);
+  let size = imageSize(buf);
   if (!size) throw new Error('That file is not a PNG or JPEG image.');
+  // the background cut away on this PC (plain backgrounds only), then the subject trimmed to its box
+  let background = null;
+  if (input?.remove_background) {
+    if (!deps.cutout) throw new Error('Background removal is not available in this runner.');
+    const cut = await deps.cutout(buf, size);
+    if (cut) { buf = cut.png; size = { mime: 'image/png', width: cut.width, height: cut.height }; background = { removed: Math.round(cut.removed * 100), trimmed: cut.trimmed }; }
+    else background = { removed: 0, note: 'no plain background found (a photo with a real background); the image is used as it is' };
+  }
   // an optional crop window, in percent of the original
   const crop = cropBox(input?.crop, size);
   const shown = crop ? { width: crop.w, height: crop.h } : size;
@@ -134,5 +143,5 @@ export async function captionImage(input, deps) {
   const out = await deps.svgToPng(svg);
   if (!out) throw new Error('The image renderer is not installed on this PC (run npm.cmd install once).');
   const rights = sourceMeta ? (sourceMeta.usable || 'reference') : input?.source_file ? 'owner' : 'print';
-  return { png: out.png, width: out.width, height: out.height, source, sourceFile: input?.source_file ? String(input.source_file) : null, sourceMeta, rights, crop: crop ? { x: crop.x, y: crop.y, w: crop.w, h: crop.h } : null, caption: [top, bottom].filter(Boolean).join(' / '), original: { width: size.width, height: size.height, mime: size.mime } };
+  return { png: out.png, width: out.width, height: out.height, source, sourceFile: input?.source_file ? String(input.source_file) : null, sourceMeta, rights, background, crop: crop ? { x: crop.x, y: crop.y, w: crop.w, h: crop.h } : null, caption: [top, bottom].filter(Boolean).join(' / '), original: { width: size.width, height: size.height, mime: size.mime } };
 }

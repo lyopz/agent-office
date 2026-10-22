@@ -704,7 +704,7 @@ describe('origin runner: designs', () => {
     expect(runner.svgTooPlain('<svg viewBox="0 0 10 10"><circle r="2"/><rect width="1" height="1"/></svg>')).toMatch(/couple of basic shapes/);
   });
 
-  test('Canva stays open while hand-drawn SVGs are off: the brief names it as the main way', async () => {
+  test('Canva export still works while drawn art is off, but the brief says edit a found image and Canva AI is refused', async () => {
     write({ ...base, agents: [{ id: 'd1', name: 'Mockup & Design' }], tasks: [{ id: 't1', title: 'Fish meme shirts', detail: 'funny fish', status: 'approved', by: 'owner', agentId: 'd1', focus: true, createdAt: '' }] });
     const calls: any[] = [];
     const tools = { tools: [{ name: 'canva_export_design', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }), canva: async (name: string, input: any) => { calls.push({ name, input }); return { content: [{ type: 'text', text: '{"url":"https://export-download.canva.com/x.png"}' }] }; }, canvaFiles: async () => [{ ext: 'png', b64: Buffer.from('png-bytes').toString('base64') }] };
@@ -715,8 +715,9 @@ describe('origin runner: designs', () => {
     expect(calls).toHaveLength(1);
     expect(read().designs).toHaveLength(1);
     expect(read().designs[0]).toMatchObject({ source: 'canva', kind: 'png', taskId: 't1' });
-    expect(seen[0].messages[0].content).toMatch(/IN CANVA \(the owner's account, the main way\)/);
-    expect(seen[0].messages[0].content).toMatch(/NOTHING ELSE ON THIS TASK/);
+    expect(seen[0].messages[0].content).toMatch(/a real picture, edited, no AI art/);
+    expect(seen[0].messages[0].content).toMatch(/remove_background/);
+    expect(seen[0].messages[0].content).toMatch(/NOTHING ELSE ON THIS TASK: hand-drawn SVGs \(design_save\) and Canva AI design or image generation are refused/);
   });
 
   test('a task that asks for drawn art may still use design_save', () => {
