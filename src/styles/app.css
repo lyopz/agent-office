@@ -237,6 +237,7 @@ table.data tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transp
 .store-order small { color: var(--muted); }
 .store-start { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .store-run { padding: 6px 0; border-top: 1px solid var(--line); font-size: var(--fs-sm); }
+.store-run-actions { display: flex; gap: 6px; margin-top: 4px; }
 .report-list { display: grid; gap: 6px; }
 .report { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 11px; background: rgba(0,0,0,.18); }
 .report summary { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; cursor: pointer; }

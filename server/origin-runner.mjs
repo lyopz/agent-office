@@ -316,6 +316,23 @@ export function advanceStores(s, at = new Date().toISOString()) {
   return added;
 }
 export const STORE_ORDER = STORE_STAGES.map((x) => x.title);
+/** The owner's Stop on a store run: the run and its open step stop (no more spend); its waiting designs leave Approvals. Saved files and decided designs stay. */
+export function stopStore(s, runId, at = new Date().toISOString()) {
+  const run = (s.storeRuns || []).find((r) => r.id === runId) || (s.storeRuns || []).filter((r) => ['running', 'waiting'].includes(r.status)).at(-1);
+  if (!run) return null;
+  let cleared = 0;
+  for (const t of s.tasks) if (run.taskIds.includes(t.id) && t.status === 'approved') { cleared += cancelTask(s, t, at).cleared; t.stopReason = 'You stopped the store run.'; }
+  if (['running', 'waiting'].includes(run.status)) Object.assign(run, { status: 'stopped', endedAt: at, note: 'You stopped it.' });
+  return { run, cleared };
+}
+/** The owner's Restart: the run is stopped and a fresh one starts at step 1 for the same store. */
+export function restartStore(s, runId, at = new Date().toISOString()) {
+  const old = stopStore(s, runId, at);
+  const ventureId = old?.run.ventureId ?? '';
+  // the same store's other open steps (an older stuck task of the same name) stop too, so step 1 starts clean
+  for (const t of s.tasks) if (t.status === 'approved' && t.storeRunId) { const r = (s.storeRuns || []).find((x) => x.id === t.storeRunId); if (!r || r.ventureId === ventureId) cancelTask(s, t, at); }
+  return startStore(s, ventureId, at);
+}
 
 /** A short report on each finished task: what it did, what came of it, what it cost, and where to open the result. */
 export function taskReports(s, files = [], n = 12) {
@@ -1686,6 +1703,18 @@ async function handle(req, res) {
   if (url === '/api/origin/store') {
     // the owner's Start store button: the venture's store worked through in order
     const s = loadState();
+    if (body.action === 'stop') {
+      const r = stopStore(s, String(body.runId || ''));
+      if (!r) return send(req, res, 404, { ok: false, error: 'No store run is going.' });
+      saveState(s);
+      return send(req, res, 200, { ok: true, stopped: true, run: r.run, cleared: r.cleared, order: STORE_ORDER });
+    }
+    if (body.action === 'restart') {
+      const r = restartStore(s, String(body.runId || ''));
+      saveState(s);
+      setTimeout(startFocus, 500);
+      return send(req, res, 200, { ok: true, started: r.started, run: r.run, order: STORE_ORDER });
+    }
     if (body.action !== 'start') return send(req, res, 400, { error: 'unknown action' });
     const r = startStore(s, typeof body.ventureId === 'string' ? body.ventureId : '');
     saveState(s);

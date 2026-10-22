@@ -2,10 +2,10 @@
 // what each branch has spent and earned, who is busy, and what waits for the owner. Everything
 // here is real: it comes from JARVIS's runner (useOrigin) and the brain itself; nothing is simulated.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, BookOpen, CircleDollarSign, ExternalLink, FileText, Play, ShieldCheck, Sparkles, Store, Sunrise, Users, X } from 'lucide-react';
+import { Activity, BookOpen, CircleDollarSign, ExternalLink, FileText, Play, RotateCcw, ShieldCheck, Sparkles, Store, Sunrise, Users, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import { useOrigin } from '../brain/useOrigin';
-import { runOrigin, runnerStatus, startStore, taskAction, type RunnerStatus, type RunnerTask, type TaskReport } from '../brain/originLink';
+import { runOrigin, runnerStatus, startStore, storeAction, taskAction, type RunnerStatus, type RunnerTask, type TaskReport } from '../brain/originLink';
 import { moneyByBranch } from '../brain/branchMoney';
 import { ProgressBar, ProgressLog } from '../brain/Progress';
 import { STATUS_COLOR } from '../brain/status';
@@ -72,6 +72,15 @@ export function Dashboard() {
     setStarting(false);
     if (!r) { notify(`${leader}'s runner did not answer, so the store did not start. Start it with npm.cmd run origin.`, 'warn'); return; }
     notify(r.started ? `${r.run.ventureName}'s store started: ${r.order.map((x, i) => `${i + 1}. ${x}`).join(' ')}` : `${r.run.ventureName}'s store is already running (step ${r.run.stage + 1} of ${r.order.length}).`);
+    useOrigin.setState({ status: await runnerStatus() });
+  };
+  const storeDo = async (action: 'stop' | 'restart', runId: string, name: string) => {
+    const { notify } = useStore.getState();
+    setStarting(true);
+    const r = await storeAction(action, runId);
+    setStarting(false);
+    if (!r?.ok) { notify(r?.error ?? `${leader}'s runner did not answer.`, 'warn'); return; }
+    notify(action === 'stop' ? `Stopped ${name}'s store run: no more runs or spend on it${r.cleared ? `, and ${r.cleared} waiting design${r.cleared === 1 ? '' : 's'} left Approvals` : ''}. Memez files and decided designs stay.` : `Restarted ${name}'s store from step 1: ${r.order[0]}.`);
     useOrigin.setState({ status: await runnerStatus() });
   };
   const runNow = async () => {
@@ -232,6 +241,10 @@ export function Dashboard() {
           <b>{r.ventureName}</b> <span className={`approval-state ${r.status === 'done' ? 'published' : r.status === 'stopped' ? '' : 'approved'}`}>{r.status}</span>
           <span className="small muted"> · step {Math.min(r.stage + 1, (st?.storeOrder ?? []).length || 4)} of {(st?.storeOrder ?? []).length || 4}: {(st?.storeOrder ?? [])[r.stage] ?? ''} · started {when(r.startedAt)}</span>
           {r.note ? <p className="small muted">{r.note}</p> : null}
+          <span className="store-run-actions">
+            {(r.status === 'running' || r.status === 'waiting') && <button className="btn sm danger" disabled={!live || starting} onClick={() => void storeDo('stop', r.id, r.ventureName)}><X size={12} /> Stop</button>}
+            <button className="btn sm" disabled={!live || starting} onClick={() => void storeDo('restart', r.id, r.ventureName)}><RotateCcw size={12} /> Restart from step 1</button>
+          </span>
         </div>)}
       </div>
 

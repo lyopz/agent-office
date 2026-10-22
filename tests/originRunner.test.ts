@@ -970,6 +970,23 @@ describe('origin runner: start store, routing and reports', () => {
     expect(ads.detail).toMatch(/frog tee/);
   });
 
+  test('Stop ends the run and its open step; Restart starts fresh at step 1', () => {
+    const s: any = { agents, tasks: [], designs: [], publishRequests: [] };
+    const first = runner.startStore(s);
+    first.task!.status = 'done';
+    const [memes] = runner.advanceStores(s);
+    s.designs.push({ id: 'design_1', taskId: memes.id, status: 'waiting' }, { id: 'design_2', taskId: memes.id, status: 'approved' });
+    const stop = runner.stopStore(s, first.run.id)!;
+    expect(stop.cleared).toBe(1);
+    expect(memes.status).toBe('stopped');
+    expect(s.storeRuns[0].status).toBe('stopped');
+    expect(s.designs.map((d: any) => d.status)).toEqual(['rejected', 'approved']);
+    const again = runner.restartStore(s, first.run.id);
+    expect(again.started).toBe(true);
+    expect(again.task).toMatchObject({ stage: 'research', status: 'approved' });
+    expect(s.storeRuns.at(-1).status).toBe('running');
+  });
+
   test('a cancelled step stops the store run', () => {
     const s: any = { agents, tasks: [], designs: [], publishRequests: [] };
     const r = runner.startStore(s);

@@ -41,6 +41,8 @@ export function startStore(s: Record<string, unknown>, ref?: string, at?: string
 export function advanceStores(s: Record<string, unknown>, at?: string): Record<string, any>[];
 export function taskReports(s: Record<string, unknown>, files?: { taskId?: string | null }[], n?: number): Record<string, any>[];
 export function releaseWaiting(s: Record<string, unknown>, at?: string): Record<string, any>[];
+export function stopStore(s: Record<string, unknown>, runId: string, at?: string): { run: Record<string, any>; cleared: number } | null;
+export function restartStore(s: Record<string, unknown>, runId: string, at?: string): { run: Record<string, any>; task: Record<string, any> | null; started: boolean };
 export function cancelTask(s: Record<string, unknown>, task: Record<string, unknown>, at?: string): { cleared: number };
 export function distributeDegen(s: Record<string, unknown>): Promise<{ given: { skill: string; agents: string[]; already: number }[]; errors: string[] }>;
 export const isTrendTool: (name: string) => boolean;

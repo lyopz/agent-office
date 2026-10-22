@@ -162,6 +162,10 @@ export async function setAutoAgents(autoAgents: boolean) {
 export async function startStore(ventureId?: string) {
   return (await call<{ ok: boolean; started: boolean; run: StoreRun; order: string[] }>('/store', { action: 'start', ventureId }))?.data ?? null;
 }
+/** Stop a store run (no more spend), or restart it from step 1. */
+export async function storeAction(action: 'stop' | 'restart', runId: string) {
+  return (await call<{ ok: boolean; started?: boolean; stopped?: boolean; run: StoreRun; cleared?: number; order: string[]; error?: string }>('/store', { action, runId }))?.data ?? null;
+}
 
 /** Whether agents may draw designs themselves (SVG, Canva, generated art) instead of captioning the images they find. */
 export async function setAllowDrawnDesigns(allowDrawnDesigns: boolean) {
