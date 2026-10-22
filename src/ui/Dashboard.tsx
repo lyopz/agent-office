@@ -2,10 +2,10 @@
 // what each branch has spent and earned, who is busy, and what waits for the owner. Everything
 // here is real: it comes from JARVIS's runner (useOrigin) and the brain itself; nothing is simulated.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, BookOpen, CircleDollarSign, Play, ShieldCheck, Sparkles, Sunrise, X } from 'lucide-react';
+import { Activity, BookOpen, CircleDollarSign, ExternalLink, FileText, Play, ShieldCheck, Sparkles, Store, Sunrise, Users, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import { useOrigin } from '../brain/useOrigin';
-import { runOrigin, runnerStatus, taskAction, type RunnerStatus, type RunnerTask } from '../brain/originLink';
+import { runOrigin, runnerStatus, startStore, taskAction, type RunnerStatus, type RunnerTask, type TaskReport } from '../brain/originLink';
 import { moneyByBranch } from '../brain/branchMoney';
 import { ProgressBar, ProgressLog } from '../brain/Progress';
 import { STATUS_COLOR } from '../brain/status';
@@ -23,6 +23,12 @@ const seenAt = () => { try { return Number(localStorage.getItem(SEEN_KEY)) || 0;
 export const usd = (n: number) => `${n < 0 ? '-' : ''}$${Math.abs(n).toFixed(Math.abs(n) < 1 && n !== 0 ? 3 : 2)}`;
 const when = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+/** Go to where a finished task's result is: a section of Approvals, or the Ads page. */
+function openResult(open: NonNullable<TaskReport['open']>) {
+  useStore.getState().setUi({ page: open.page });
+  if (open.anchor) setTimeout(() => document.getElementById(open.anchor!)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250);
+}
 
 /** Open the brain page on one of JARVIS's dialogs (its runs, the agent creator, ideas). */
 function openBrain(tab: 'runs' | 'ideas' | 'agent') {
@@ -54,6 +60,18 @@ export function Dashboard() {
     if (!r) { notify(`${leader}'s runner did not answer, so "${t.title}" was not cancelled.`, 'warn'); return; }
     const cleared = r.cleared ?? 0;
     notify(`Cancelled "${t.title}": no more runs or spend on it${cleared ? `, and ${cleared} waiting design${cleared === 1 ? '' : 's'} taken off your approval list` : ''}. Approve it again under ${leader}'s runs if you change your mind.`);
+    useOrigin.setState({ status: await runnerStatus() });
+  };
+  // the Start store button: which venture's store, and the click
+  const [storeId, setStoreId] = useState('');
+  const [starting, setStarting] = useState(false);
+  const runStore = async () => {
+    const { notify } = useStore.getState();
+    setStarting(true);
+    const r = await startStore(storeId || st?.storeVentures?.[0]?.id);
+    setStarting(false);
+    if (!r) { notify(`${leader}'s runner did not answer, so the store did not start. Start it with npm.cmd run origin.`, 'warn'); return; }
+    notify(r.started ? `${r.run.ventureName}'s store started: ${r.order.map((x, i) => `${i + 1}. ${x}`).join(' ')}` : `${r.run.ventureName}'s store is already running (step ${r.run.stage + 1} of ${r.order.length}).`);
     useOrigin.setState({ status: await runnerStatus() });
   };
   const runNow = async () => {
@@ -183,6 +201,60 @@ export function Dashboard() {
           ))}
         </div>
         {working.length > 8 && <p className="note">And {working.length - 8} more under {leader}'s runs.</p>}
+      </div>
+
+      <div className="card span-5">
+        <h4><Users size={13} /> Agents online <span className="count">{live ? `${(st?.workingNow ?? []).length} working now` : 'runner off'}</span></h4>
+        {!live && <p className="note">The runner is off, so no agent is online. Start it on your PC with npm.cmd run origin.</p>}
+        <div className="agent-online-list">
+          {agents.filter((a) => a.enabled).map((a) => {
+            const now = (st?.workingNow ?? []).find((w) => w.agentId === a.id);
+            const queued = now ? undefined : tasks.find((t) => t.status === 'approved' && !t.kind && (t.agentId ?? ORIGIN_ID) === a.id && !t.waitingOnOwner);
+            const state = !live ? 'offline' : now ? 'working' : queued ? 'queued' : 'idle';
+            return <div key={a.id} className={`agent-online ${state}`}>
+              <i aria-hidden />
+              <b>{a.identity.name}</b>
+              <span>{state === 'working' ? `working now on "${now!.title}"` : state === 'queued' ? `next run: "${queued!.title}"` : state === 'idle' ? 'online, nothing to do' : 'offline'}</span>
+            </div>;
+          })}
+        </div>
+      </div>
+
+      <div className="card span-7">
+        <h4><Store size={13} /> Start store <span className="count">{(st?.storeRuns ?? []).filter((r) => r.status === 'running' || r.status === 'waiting').length} running</span></h4>
+        <p className="note">One button runs a store's whole job in order. Each step starts when the last one is done, inside each task's budget and the monthly cap. You can also type "start store" in the console.</p>
+        <ol className="store-order">{(st?.storeOrder ?? ['Research what is selling now', 'Find memes and save them to memez', 'Design shirts from memez (no AI)', 'Ads for the products you approved']).map((x, i) => <li key={i}>{x}{i === 2 ? <small> · then your Yes in Approvals makes and lists each product</small> : null}</li>)}</ol>
+        <div className="store-start">
+          {(st?.storeVentures?.length ?? 0) > 1 && <select value={storeId} onChange={(e) => setStoreId(e.target.value)} aria-label="Which store">{st!.storeVentures!.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select>}
+          <button className="btn sm primary" disabled={!live || starting} onClick={() => void runStore()}><Play size={13} /> {starting ? 'Starting…' : `Start ${st?.storeVentures?.find((v) => v.id === storeId)?.name ?? st?.storeVentures?.[0]?.name ?? leader}'s store`}</button>
+        </div>
+        {(st?.storeRuns ?? []).slice(0, 3).map((r) => <div key={r.id} className="store-run">
+          <b>{r.ventureName}</b> <span className={`approval-state ${r.status === 'done' ? 'published' : r.status === 'stopped' ? '' : 'approved'}`}>{r.status}</span>
+          <span className="small muted"> · step {Math.min(r.stage + 1, (st?.storeOrder ?? []).length || 4)} of {(st?.storeOrder ?? []).length || 4}: {(st?.storeOrder ?? [])[r.stage] ?? ''} · started {when(r.startedAt)}</span>
+          {r.note ? <p className="small muted">{r.note}</p> : null}
+        </div>)}
+      </div>
+
+      <div className="card span-12">
+        <h4><FileText size={13} /> Finished tasks <span className="count">{(st?.reports ?? []).length} reports</span></h4>
+        {!(st?.reports ?? []).length && <p className="note">Each task that finishes gets a report here: what was done, what came of it, what it cost, and a button to its result.</p>}
+        <div className="report-list">
+          {(st?.reports ?? []).map((r) => <details key={r.id} className="report">
+            <summary>
+              <b>{r.title}</b>
+              <span className="small muted">{r.agentName} · {r.doneAt ? when(r.doneAt) : 'done'} · {usd(r.spentUsd)} over {r.runs} run{r.runs === 1 ? '' : 's'}</span>
+              {r.open && <button className="btn sm" onClick={(e) => { e.preventDefault(); openResult(r.open!); }}><ExternalLink size={12} /> {r.open.label}</button>}
+            </summary>
+            <ul className="report-facts">
+              {r.steps ? <li>{r.stepsDone} of {r.steps} steps done</li> : null}
+              {r.saved ? <li>{r.saved} image{r.saved === 1 ? '' : 's'} saved to memez</li> : null}
+              {r.designs.made ? <li>{r.designs.made} design{r.designs.made === 1 ? '' : 's'}: {r.designs.waiting} waiting for you, {r.designs.yes} yes, {r.designs.no} no</li> : null}
+              {r.products.made ? <li>{r.products.listed} of {r.products.made} product{r.products.made === 1 ? '' : 's'} listed{r.products.titles.length ? `: ${r.products.titles.join(', ')}` : ''}</li> : null}
+              {r.ads ? <li>{r.ads} ad{r.ads === 1 ? '' : 's'} made</li> : null}
+            </ul>
+            <pre className="origin-notes">{r.summary}</pre>
+          </details>)}
+        </div>
       </div>
 
       <div className="card span-5">

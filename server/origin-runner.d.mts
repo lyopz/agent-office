@@ -33,5 +33,13 @@ export const adTask: (t: { title?: string; detail?: string } | null | undefined,
 export function adsBrief(s: Record<string, unknown>, task: Record<string, unknown> | null): string;
 export function drawnAllowed(s: Record<string, unknown> | null | undefined, task: { title?: string; detail?: string } | null | undefined): boolean;
 export function svgTooPlain(svg: string): string;
+export const STORE_STAGES: { key: string; title: string }[];
+export const STORE_ORDER: string[];
+export function storeVentures(s: Record<string, unknown>): { id: string; name: string }[];
+export function pickStore(s: Record<string, unknown>, ref?: string): { id: string; name: string };
+export function startStore(s: Record<string, unknown>, ref?: string, at?: string): { run: Record<string, any>; task: Record<string, any> | null; started: boolean };
+export function advanceStores(s: Record<string, unknown>, at?: string): Record<string, any>[];
+export function taskReports(s: Record<string, unknown>, files?: { taskId?: string | null }[], n?: number): Record<string, any>[];
+export function releaseWaiting(s: Record<string, unknown>, at?: string): Record<string, any>[];
 export function cancelTask(s: Record<string, unknown>, task: Record<string, unknown>, at?: string): { cleared: number };
 export function distributeDegen(s: Record<string, unknown>): Promise<{ given: { skill: string; agents: string[]; already: number }[]; errors: string[] }>;

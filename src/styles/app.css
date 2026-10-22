@@ -224,6 +224,24 @@ table.data tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transp
 .task-row .t .task-cancel { display: inline-flex; gap: 4px; white-space: nowrap; }
 .task-row .task-cancel-btn { flex: none; }
 .task-row .small.warn { color: var(--warn); }
+/* agents online, the store run and the finished-task reports on the dashboard */
+.agent-online-list { display: grid; gap: 4px; }
+.agent-online { display: grid; grid-template-columns: 10px minmax(0, 9em) 1fr; gap: 8px; align-items: baseline; font-size: var(--fs-sm); }
+.agent-online i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); opacity: .5; }
+.agent-online.working i { background: var(--accent); opacity: 1; box-shadow: 0 0 6px var(--accent); }
+.agent-online.queued i { background: var(--accent-orange, #f6b26b); opacity: 1; }
+.agent-online.idle i { background: #5fbf7f; opacity: .9; }
+.agent-online b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.agent-online span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.store-order { margin: 6px 0 10px 18px; padding: 0; font-size: var(--fs-sm); display: grid; gap: 2px; }
+.store-order small { color: var(--muted); }
+.store-start { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.store-run { padding: 6px 0; border-top: 1px solid var(--line); font-size: var(--fs-sm); }
+.report-list { display: grid; gap: 6px; }
+.report { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 11px; background: rgba(0,0,0,.18); }
+.report summary { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; cursor: pointer; }
+.report summary b { flex: 1 1 14em; min-width: 0; }
+.report-facts { margin: 8px 0 6px 18px; padding: 0; font-size: var(--fs-sm); }
 .span-2 { grid-column: span 2; } .span-3 { grid-column: span 3; } .span-4 { grid-column: span 4; } .span-5 { grid-column: span 5; } .span-6 { grid-column: span 6; } .span-7 { grid-column: span 7; } .span-8 { grid-column: span 8; } .span-12 { grid-column: span 12; }
 .events { max-height: 320px; overflow: auto; font-size: var(--fs-sm); }
 .ev { display: grid; grid-template-columns: 96px 1fr auto; gap: 8px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.05); }

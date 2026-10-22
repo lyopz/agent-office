@@ -1,7 +1,7 @@
 export const MEMEZ: string;
 export const usableFor: (licence: string) => 'print' | 'reference';
 export interface SourceFolder { id: string; label: string; path: string; builtin?: boolean; addedAt?: string }
-export interface SourceFile { ref: string; folder: string; name: string; bytes: number; kind: 'png' | 'jpg'; usable: 'print' | 'reference' | 'owner'; title: string | null; page: string | null; licence: string; savedBy: string | null; at: string; note: string | null }
+export interface SourceFile { ref: string; folder: string; name: string; bytes: number; kind: 'png' | 'jpg'; usable: 'print' | 'reference' | 'owner'; title: string | null; page: string | null; licence: string; savedBy: string | null; at: string; note: string | null; tags?: string[]; taskId?: string | null }
 export function sourceFolders(s: Record<string, unknown>, dataDir: string): SourceFolder[];
 export function addSourceFolder(s: Record<string, unknown>, f: { path: string; label?: string }): SourceFolder;
 export function removeSourceFolder(s: Record<string, unknown>, id: string): boolean;

@@ -938,3 +938,69 @@ describe('the skill library handed out by role', () => {
     expect(s.skillFiles.filter((f: any) => f.skillKey === 'degen_design')).toHaveLength(1);
   });
 });
+
+describe('origin runner: start store, routing and reports', () => {
+  const agents = [
+    { id: 'v1', name: 'Meme Tees', title: 'Etsy meme shirt store', kind: 'venture' },
+    { id: 'r1', name: 'Trend Researcher', title: 'research', kind: 'skill', ventureId: 'v1' },
+    { id: 's1', name: 'Meme Scout', title: 'finds memes', kind: 'skill', ventureId: 'v1' },
+    { id: 'd1', name: 'Designer', title: 'design', kind: 'skill', ventureId: 'v1' },
+  ];
+  test('the store run goes research, memes, design, then waits for the owner before ads', () => {
+    const s: any = { agents, tasks: [], designs: [], publishRequests: [] };
+    const r = runner.startStore(s, '', '2026-10-22T00:00:00.000Z');
+    expect(r.started).toBe(true);
+    expect(r.task).toMatchObject({ agentId: 'r1', stage: 'research', focus: true });
+    expect(runner.startStore(s).started).toBe(false); // already running
+    r.task!.status = 'done'; r.task!.notes = 'themes: frogs, mondays';
+    const [memes] = runner.advanceStores(s);
+    expect(memes).toMatchObject({ agentId: 's1', stage: 'memes' });
+    expect(memes.detail).toMatch(/frogs, mondays/);
+    memes.status = 'done';
+    const [design] = runner.advanceStores(s);
+    expect(design).toMatchObject({ agentId: 'd1', stage: 'design', count: 5 });
+    design.waitingOnOwner = true;
+    expect(runner.advanceStores(s)).toHaveLength(0);
+    expect(s.storeRuns[0].status).toBe('waiting');
+    s.publishRequests.push({ status: 'published', publishedAt: '2026-10-22T05:00:00.000Z', title: 'frog tee', productId: 'p1' });
+    const [ads] = runner.advanceStores(s);
+    expect(ads).toMatchObject({ stage: 'ads', agentId: 'v1' });
+    expect(ads.detail).toMatch(/frog tee/);
+  });
+
+  test('a cancelled step stops the store run', () => {
+    const s: any = { agents, tasks: [], designs: [], publishRequests: [] };
+    const r = runner.startStore(s);
+    runner.cancelTask(s, r.task!);
+    runner.advanceStores(s);
+    expect(s.storeRuns[0].status).toBe('stopped');
+  });
+
+  test('"start store" in the console starts the run without a model call', async () => {
+    write({ ...base, agents, tasks: [] });
+    const r: any = await runner.ask('start store', { fetch: async () => { throw new Error('no model call'); }, file, key: 'test' } as any);
+    expect(r.ok).toBe(true);
+    expect(r.answer).toMatch(/1\. Research what is selling now/);
+    expect(read().storeRuns).toHaveLength(1);
+  });
+
+  test('one ask is split into routed parts; a part with "after" waits and then gets the notes', () => {
+    const s: any = { agents, tasks: [] };
+    const done = runner.applyConsent(s, { ask: 'research mugs then make designs', tasks: [{ title: 'Research mugs', detail: 'd', agentId: 'r1' }, { title: 'Mug designs', detail: 'd', agentId: 'd1', after: 0 }] });
+    expect(done).toEqual(['Research mugs', 'Mug designs']);
+    const [first, second] = s.tasks;
+    expect(second.waitsFor).toBe(first.id);
+    expect(runner.pickTasks(s).map((t: any) => t.id)).toEqual([first.id]);
+    first.status = 'done'; first.notes = 'mugs with cats sell';
+    expect(runner.releaseWaiting(s)).toHaveLength(1);
+    expect(second.waitsFor).toBeUndefined();
+    expect(second.detail).toMatch(/mugs with cats sell/);
+  });
+
+  test('finished tasks get a report with where to open the result', () => {
+    const s: any = { agents, tasks: [{ id: 't1', title: 'Frog shirts', status: 'done', doneAt: '2026-10-22T01:00:00.000Z', spentUsd: 0.12, runCosts: [0.05, 0.07], notes: 'made 2', agentId: 'd1' }], designs: [{ id: 'design_1', taskId: 't1', status: 'waiting' }, { id: 'design_2', taskId: 't1', status: 'rejected' }], publishRequests: [], ads: [] };
+    const [rep] = runner.taskReports(s, [{ taskId: 't1' }]);
+    expect(rep).toMatchObject({ title: 'Frog shirts', agentName: 'Designer', runs: 2, saved: 1, designs: { made: 2, waiting: 1, no: 1, yes: 0 } });
+    expect(rep.open).toMatchObject({ page: 'approvals', anchor: 'approvals-decided' });
+  });
+});

@@ -36,6 +36,14 @@ export type DesignStatus = 'waiting' | 'approved' | 'rejected' | 'published';
 export interface BranchBudget { id: string; budgetUsd: number | null; spentUsd: number }
 export interface BudgetChange { id: string; at: string; what: string; from: number | null; to: number | null }
 export interface Budgets { capUsd: number; defaultCapUsd: number; imageCapUsd: number; canvaAiLimit: number; voiceCapUsd: number | null; listingFeeUsd: number; branches: BranchBudget[]; log: BudgetChange[] }
+/** An agent at work in the run going on now. */
+export interface WorkingNow { taskId: string; title: string; agentId: string; agentName: string }
+/** One venture's store worked through in order: research, memes, designs, the owner's Yes, ads. */
+export interface StoreRun { id: string; ventureId: string; ventureName: string; stage: number; status: 'running' | 'waiting' | 'done' | 'stopped'; taskIds: string[]; startedAt: string; endedAt?: string; note?: string }
+/** A finished task: what it did, what came of it, what it cost, and where its result is in the app. */
+export interface TaskReport { id: string; title: string; agentName: string; doneAt: string | null; spentUsd: number; runs: number; summary: string; steps: number; stepsDone: number;
+  designs: { made: number; waiting: number; yes: number; no: number }; products: { made: number; listed: number; titles: string[] }; ads: number; saved: number; storeRunId: string | null; stage: string | null;
+  open: { page: 'approvals' | 'ads'; anchor: string | null; label: string } | null }
 export interface DesignEntry { id: string; kind: 'svg' | 'png' | 'jpg'; source?: 'canva' | 'caption'; sourceFile?: string; rights?: 'print' | 'owner' | 'reference'; assets?: { title: string; page: string; licence: string }[]; status?: DesignStatus; productId?: string; decidedAt?: string; publishedAt?: string; printify?: string; fileName: string; title: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string | null; at: string }
 /** One design image an agent made with the owner's OpenAI key, and what it cost. */
 export interface ImageEntry { id: string; at: string; model: string; quality: string; size: string; usd: number; estimated?: boolean; prompt: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; imageId: string }
@@ -51,7 +59,7 @@ export interface RunnerWorker { taskId: string | null; agentId: string; agentNam
 export interface RunnerRun { workers?: RunnerWorker[]; id: string; agentId?: string; taskId?: string | null; skillFileFor?: string; trigger: 'manual' | 'schedule' | 'focus'; startedAt: string; endedAt: string | null; costUsd: number; costKnown: boolean; searches: number; fetches?: number; etsyCalls?: number; printifyCalls?: number; trendCalls?: number; images?: number; imageUsd?: number; status: string; summary: string; notify?: string | null }
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
-  spentUsd: number; spentByAgent?: Record<string, number>; allowanceUsd?: number; spentTodayUsd?: number; parallel?: number; rounds?: number; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
+  spentUsd: number; spentByAgent?: Record<string, number>; allowanceUsd?: number; spentTodayUsd?: number; parallel?: number; rounds?: number; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean; workingNow?: WorkingNow[]; storeRuns?: StoreRun[]; storeOrder?: string[]; storeVentures?: { id: string; name: string }[]; reports?: TaskReport[];
   memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; allowDrawnDesigns?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; budgets?: Budgets; brain?: { id: string | null; others: OtherBrain[] }; ads?: AdEntry[]; sources?: SourceFolderInfo[]; trends?: TrendSources; degen?: { from: 'local' | 'github'; skills: number; given: number } | null; designStyle?: { guide: string; note: string; at: string | null }; canva?: { configured: boolean; connectedAt: string | null; connecting?: { url: string; startedAt: number } | null; month: string; aiCalls: number; exports: number; limit: number; log: CanvaEntry[] }; designs?: DesignEntry[]; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; money?: { byAgent: Record<string, MoneyRow>; entries: MoneyEntry[]; sales: SaleLine[]; salesSync: { at: string; error: string | null; orders: number | null } | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
 }
 
@@ -150,6 +158,11 @@ export async function setAutoAgents(autoAgents: boolean) {
   return !!(await call('/settings', { autoAgents }));
 }
 /** Empire mode: JARVIS approves its own research tasks (a few at a time, each within its budget and the cap). */
+/** The owner's Start store button: the venture's store worked through in order. */
+export async function startStore(ventureId?: string) {
+  return (await call<{ ok: boolean; started: boolean; run: StoreRun; order: string[] }>('/store', { action: 'start', ventureId }))?.data ?? null;
+}
+
 /** Whether agents may draw designs themselves (SVG, Canva, generated art) instead of captioning the images they find. */
 export async function setAllowDrawnDesigns(allowDrawnDesigns: boolean) {
   return !!(await call('/settings', { allowDrawnDesigns }));

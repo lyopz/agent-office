@@ -30,7 +30,7 @@ import { COPYRIGHT_RULES, runTrendTool, trendSources, trendTask, trendTools, tre
 import { instagramMaintain } from './instagram.mjs';
 import { pinterestMaintain } from './pinterest.mjs';
 import { DEGEN_TOOL, degenBankSkill, degenCatalog, degenSkill, degenSkillsForRole } from './degen-skills.mjs';
-import { SOURCE_TOOLS, addSourceFolder, deleteSourceFile, readSourceFile, removeSourceFolder, runSourceTool, saveMemeNote, sourceFolders, sourcesBrief, sourcesPublic } from './sources.mjs';
+import { SOURCE_TOOLS, addSourceFolder, deleteSourceFile, listSourceFiles, readSourceFile, removeSourceFolder, runSourceTool, saveMemeNote, sourceFolders, sourcesBrief, sourcesPublic } from './sources.mjs';
 import { DESIGN_STYLE, cleanStyleNote, styleGuide } from './design-style.mjs';
 
 const PORT = Number(process.env.ORIGIN_PORT || 8788);
@@ -240,6 +240,127 @@ export function addFocusTask(s, { title, detail = '', agentId = null, budgetUsd 
   return task;
 }
 
+// ---------- "Start store": one venture's store worked through in the most productive order ----------
+/** The order: know what sells, gather pictures for it, design from them, the owner decides, then reach buyers. */
+export const STORE_STAGES = [
+  { key: 'research', title: 'Research what is selling now', agent: /research|trend|analy|insight|market research/i,
+    detail: () => 'STORE RUN, STEP 1 OF 4 (research). Find what is selling right now for this store: trends_memes and trends_google (and Pinterest or Instagram if connected) for rising memes and topics, and etsy_search for demand, competition and prices on shirts. Finish with the 5 best meme themes for shirts this week, each with its evidence (source and date), the search terms buyers use, and 3 to 6 tag words the scouts should tag images with. Put the themes in taskNotes. No images and no designs in this step: the next steps do that.' },
+  { key: 'memes', title: 'Find memes and save them to memez', agent: /scout|meme|curat|find|collect/i,
+    detail: (prev) => `STORE RUN, STEP 2 OF 4 (find memes). From the themes below, find 8 to 12 pictures that carry a wearable joke and save each one to the memez folder with source_save: title, page, licence and tags (the theme's tag words, so the designers can search them). Prefer public-domain or CC0 pictures (assets_public_domain) and pictures on a plain background, because those can be sold and cut out cleanly; a meme template or post is saved as reference (draft only). Keep a meme's info without its picture with source_note. No designs in this step. List the saved refs by theme in taskNotes.\n\nTHEMES FROM STEP 1:\n${prev || '(none recorded; pick this week\'s rising meme themes yourself)'}` },
+  { key: 'design', title: 'Design shirts from memez (no AI)', agent: /design|mockup|art|creative|graphic/i, count: 5,
+    detail: (prev) => `STORE RUN, STEP 3 OF 4 (design). Make 5 shirt designs from the memez folder, no AI: search it with files_source (query with the theme and tag words below), pick the strongest pictures (print files first; a reference file gives a flagged draft) and edit each with design_caption_image: crop to what matters, remove_background when the picture sits on a plain background, and a caption a buyer would wear. They go to the owner's Approvals. When the owner says Yes, the product is made and listed on their store; then set "waitingOnOwner": true.\n\nWHAT STEP 2 SAVED:\n${prev || '(nothing recorded; search memez for the newest files)'}` },
+  { key: 'ads', title: 'Ads for the products you approved', agent: /\bads?\b|advert|market|promot|social|growth/i,
+    detail: (prev, products) => `STORE RUN, STEP 4 OF 4 (ads). Make ads for these products the owner approved and listed: ${products.map((r) => `"${r.title}" (product ${r.productId})`).join('; ')}. Find the cheapest way to reach buyers for each (the meme's own audience first) and save each ad with ad_save for the owner's Ads tab; nothing is posted or paid without the owner.` },
+];
+const STORE_WORDS = /store|shop|merch|etsy|shirt|tee|meme|print|apparel/i;
+/** The ventures that could be a store, the likeliest first. */
+export function storeVentures(s) {
+  const v = (s.agents || []).filter((a) => a.kind === 'venture');
+  return [...v.filter((a) => STORE_WORDS.test(`${a.name} ${a.title || ''}`)), ...v.filter((a) => !STORE_WORDS.test(`${a.name} ${a.title || ''}`))];
+}
+/** The store a request means: a venture id, a name in the words, or the likeliest store venture; JARVIS itself when there is none. */
+export function pickStore(s, ref = '') {
+  const all = storeVentures(s);
+  const r = String(ref || '').toLowerCase().trim();
+  return all.find((a) => a.id === ref) || (r && all.find((a) => r.includes(a.name.toLowerCase()) || a.name.toLowerCase().includes(r))) || all[0] || { id: AGENT_ID, name: 'JARVIS' };
+}
+/** The agent in the store's venture best fitted to a stage, or the venture itself. */
+function stageAgent(s, venture, stage) {
+  const team = (s.agents || []).filter((a) => a.ventureId === venture.id || a.id === venture.id);
+  return (team.find((a) => a.id !== venture.id && stage.agent.test(`${a.name} ${a.title || ''}`)) || venture).id;
+}
+function addStage(s, run, i, prev = '', products = []) {
+  const st = STORE_STAGES[i];
+  const task = addFocusTask(s, { title: `${run.ventureName}: ${st.title}`, detail: st.detail(prev, products), agentId: stageAgent(s, { id: run.ventureId, name: run.ventureName }, st), count: st.count ?? null });
+  if (!task) return null;
+  // a fresh stage, even when an older task of the same name was still open
+  Object.assign(task, { storeRunId: run.id, stage: st.key, steps: [], progress: 0 });
+  if (task.agentId == null && run.ventureId !== AGENT_ID) task.agentId = run.ventureId;
+  run.stage = i; run.status = 'running'; run.taskIds = [...run.taskIds, task.id]; delete run.note;
+  return task;
+}
+/** Start (or keep going) the store run of one venture. Returns { run, task, started }. */
+export function startStore(s, ref = '', at = new Date().toISOString()) {
+  const v = pickStore(s, ref);
+  s.storeRuns = s.storeRuns || [];
+  const open = s.storeRuns.find((r) => r.ventureId === v.id && ['running', 'waiting'].includes(r.status));
+  if (open) return { run: open, task: s.tasks.find((t) => t.id === open.taskIds.at(-1)) || null, started: false };
+  const run = { id: newId('store'), ventureId: v.id, ventureName: v.name, stage: 0, status: 'running', taskIds: [], startedAt: at };
+  s.storeRuns = [...s.storeRuns, run].slice(-20);
+  const task = addStage(s, run, 0);
+  return { run, task, started: true };
+}
+/** Move every store run on: the next stage once the last one is done (design: once its designs wait for the owner). */
+export function advanceStores(s, at = new Date().toISOString()) {
+  const added = [];
+  for (const run of s.storeRuns || []) {
+    if (!['running', 'waiting'].includes(run.status)) continue;
+    const cur = s.tasks.find((t) => t.id === run.taskIds.at(-1));
+    const stage = STORE_STAGES[run.stage];
+    if (!cur || ['stopped', 'rejected'].includes(cur.status)) { run.status = 'stopped'; run.endedAt = at; run.note = 'A step was stopped or cancelled, so the run stopped.'; continue; }
+    const finished = cur.status === 'done' || (stage.key === 'design' && cur.waitingOnOwner === true);
+    if (run.status === 'running' && !finished) continue;
+    if (stage.key === 'ads') { run.status = 'done'; run.endedAt = at; continue; }
+    const next = run.stage + 1;
+    if (STORE_STAGES[next].key === 'ads') {
+      // ads only for products the owner approved and that went live since this run started
+      const products = (s.publishRequests || []).filter((r) => r.status === 'published' && (r.publishedAt || '') >= run.startedAt);
+      if (!products.length) { run.status = 'waiting'; run.note = 'Your designs are in Approvals. Say Yes to the ones you want: each is made and listed, and the ads step starts once one is live.'; continue; }
+      const t = addStage(s, run, next, '', products);
+      if (t) added.push(t);
+      continue;
+    }
+    const t = addStage(s, run, next, String(cur.notes || '').slice(0, 3000));
+    if (t) added.push(t);
+  }
+  return added;
+}
+export const STORE_ORDER = STORE_STAGES.map((x) => x.title);
+
+/** A short report on each finished task: what it did, what came of it, what it cost, and where to open the result. */
+export function taskReports(s, files = [], n = 12) {
+  const done = s.tasks.filter((t) => t.status === 'done' && !t.kind && inBrain(s, t)).sort((a, b) => String(b.doneAt || '').localeCompare(String(a.doneAt || ''))).slice(0, n);
+  return done.map((t) => {
+    const designs = (s.designs || []).filter((d) => d.taskId === t.id);
+    const products = (s.publishRequests || []).filter((r) => r.taskId === t.id);
+    const ads = (s.ads || []).filter((a) => a.taskId === t.id);
+    const saved = files.filter((f) => f.taskId === t.id);
+    const a = taskAgent(s, t);
+    const count = (st) => designs.filter((d) => (d.status ?? 'waiting') === st).length;
+    // where the result is: a listing first, then designs waiting, then ads, then the memez files
+    const open = products.some((r) => r.status === 'published') || designs.some((d) => ['approved', 'published', 'rejected'].includes(d.status ?? '')) ? { page: 'approvals', anchor: 'approvals-decided', label: 'Open listings' }
+      : count('waiting') ? { page: 'approvals', anchor: `approvals-task-${t.id}`, label: 'Open designs' }
+      : ads.length ? { page: 'ads', anchor: null, label: 'Open ads' }
+      : saved.length ? { page: 'approvals', anchor: 'approvals-sources', label: 'Open memez' }
+      : null;
+    return {
+      id: t.id, title: t.title, agentName: a?.name ?? 'JARVIS', doneAt: t.doneAt || null, spentUsd: Math.round((t.spentUsd || 0) * 1000) / 1000, runs: (t.runCosts || []).length,
+      summary: String(t.notes || (t.steps || []).filter((x) => x.done).map((x) => x.text).join('; ') || 'No notes were left.').slice(0, 900),
+      steps: (t.steps || []).length, stepsDone: (t.steps || []).filter((x) => x.done).length,
+      designs: { made: designs.length, waiting: count('waiting'), yes: count('approved') + count('published'), no: count('rejected') },
+      products: { made: products.length, listed: products.filter((r) => r.status === 'published').length, titles: products.slice(0, 5).map((r) => r.title) },
+      ads: ads.length, saved: saved.length, storeRunId: t.storeRunId ?? null, stage: t.stage ?? null, open,
+    };
+  });
+}
+
+/** At most this many parts from one routed ask. */
+const ROUTED_MAX = 6;
+/** A routed part whose earlier part is finished starts now, with that part's notes in its brief; one whose earlier part was stopped stops too. */
+export function releaseWaiting(s, at = new Date().toISOString()) {
+  const released = [];
+  for (const t of s.tasks) {
+    if (!t.waitsFor || t.status !== 'approved') continue;
+    const before = s.tasks.find((x) => x.id === t.waitsFor);
+    if (before && before.status === 'approved') continue;
+    if (!before || ['stopped', 'rejected'].includes(before.status)) { stopTask(t, `The step it waited for ("${before?.title ?? 'gone'}") was stopped.`, at); delete t.waitsFor; continue; }
+    if (before.notes) t.detail = `${t.detail}\n\nFROM THE STEP BEFORE ("${before.title}", done by ${before.agentName || taskAgent(s, before)?.name || 'JARVIS'}):\n${String(before.notes).slice(0, 2500)}`.slice(0, 7000);
+    delete t.waitsFor;
+    released.push(t);
+  }
+  return released;
+}
+
 /** Proposals the owner still has to decide. With autoAgents on, agents are created without asking, so only tasks wait. */
 const waitingDesigns = (s, taskId = null) => (s.designs || []).filter((d) => d.status === 'waiting' && (!taskId || d.taskId === taskId)).length;
 const pendingCount = (s) => s.tasks.filter((t) => t.status === 'proposed').length + (s.autoAgents === false ? s.agentProposals.filter((a) => a.status === 'proposed').length : 0) + waitingDesigns(s);
@@ -276,7 +397,7 @@ const cleanSkillFile = (f) => (f && typeof f === 'object' && String(f.body || ''
 export function nextTask(s) {
   // a SKILL.md request for an agent that isn't in the open brain waits until that brain is open again
   const known = (t) => t.kind !== 'skill-file' || !(s.agents || []).length || s.agents.some((a) => a.id === t.agentId);
-  const ready = (t) => t.status === 'approved' && !(t.waitingOnOwner && pendingCount(s)) && known(t) && inBrain(s, t);
+  const ready = (t) => t.status === 'approved' && !t.waitsFor && !(t.waitingOnOwner && pendingCount(s)) && known(t) && inBrain(s, t);
   // the owner's own tasks come before the ones JARVIS set itself
   return s.tasks.find((t) => ready(t) && !isSkillTask(t) && t.by !== 'origin') || s.tasks.find((t) => ready(t) && !isSkillTask(t)) || s.tasks.find((t) => ready(t) && t.kind === 'skill-file') || null;
 }
@@ -861,7 +982,7 @@ export function pickTasks(s, n = PARALLEL, only = null) {
   const known = (t) => !(s.agents || []).length || !t.agentId || s.agents.some((a) => a.id === t.agentId);
   // a branch's own run: only the tasks of the agents in that branch
   const inBranch = (t) => !only || only.includes(t.agentId || AGENT_ID);
-  const ready = (t) => t.status === 'approved' && !isSkillTask(t) && !(t.waitingOnOwner && pendingCount(s)) && known(t) && inBrain(s, t) && inBranch(t) && !branchOverBudget(s, t);
+  const ready = (t) => t.status === 'approved' && !isSkillTask(t) && !t.waitsFor && !(t.waitingOnOwner && pendingCount(s)) && known(t) && inBrain(s, t) && inBranch(t) && !branchOverBudget(s, t);
   // the owner's command-center tasks come before everything else, and while one is open nothing else runs
   const focus = s.tasks.filter((t) => ready(t) && t.focus);
   const work = (focus.length ? focus : s.tasks.filter(ready)).map((t, i) => [t, i]).sort((a, b) => (Number(a[0].by === 'origin') - Number(b[0].by === 'origin')) || a[1] - b[1]).map(([t]) => t);
@@ -1080,6 +1201,7 @@ export async function runOnce(trigger, deps = { fetch: globalThis.fetch, file: F
   const focus = picks.some((t) => t?.focus);
   const runLimit = Math.min(RUN_LIMIT_USD * Math.max(1, picks.length) * (focus ? 2 : 1), remaining(s));
   const record = { id: `run_${start.getTime().toString(36)}`, trigger, model: MODEL, startedAt: start.toISOString(), endedAt: null, costUsd: 0, costKnown: true, calls: 0, searches: 0, fetches: 0, status: 'running', summary: '' };
+  record.working = picks.filter(Boolean).map((t) => { const a = taskAgent(s, t); return { taskId: t.id, title: t.title, agentId: a?.id ?? AGENT_ID, agentName: a?.name ?? 'JARVIS' }; });
   running = record;
   const etsy = 'etsy' in deps ? deps.etsy : await agentTools();
   if (!('etsy' in deps)) await refreshDegen();
@@ -1271,6 +1393,18 @@ export function applyConsent(s, c) {
   // the owner's own words in the command center: it becomes the focus, ahead of everything else
   const task = typeof c.title === 'string' ? addFocusTask(s, { title: c.title, detail: c.detail, agentId: c.agentId, budgetUsd: c.budgetUsd, count: c.count, everyMinutes: c.everyMinutes ?? repeatMinutes(`${c.title} ${c.detail || ''}`) }) : null;
   if (task) done.push(task.title);
+  // one ask split into parts, each routed to its agent; "after" makes a part wait for an earlier one
+  const made = [];
+  for (const p of (Array.isArray(c.tasks) ? c.tasks : []).slice(0, ROUTED_MAX)) {
+    if (!p || typeof p.title !== 'string') { made.push(null); continue; }
+    const t = addFocusTask(s, { title: p.title, detail: p.detail, agentId: p.agentId, budgetUsd: p.budgetUsd, count: p.count, everyMinutes: p.everyMinutes ?? repeatMinutes(`${p.title} ${p.detail || ''}`) });
+    const before = Number.isInteger(p.after) ? made[p.after] : null;
+    if (t && before && before !== t && before.status === 'approved') t.waitsFor = before.id;
+    if (t) { t.routedFrom = String(c.ask || '').slice(0, 300) || null; done.push(t.title); }
+    made.push(t);
+  }
+  // the store's whole job, in order
+  if (c.store) { const r = startStore(s, typeof c.store === 'string' ? c.store : ''); if (r.task) done.push(r.task.title); }
   return done.length ? done : null;
 }
 
@@ -1311,6 +1445,16 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
   if (!KEY && !deps.key) return { ok: false, reason: 'No API key. In the app folder run npm.cmd run set-key once, then restart the runner.' };
   const s = loadState(deps.file);
   rollMonth(s);
+  // "start store" (or "run the store", "start my etsy store") starts the store run without a model call
+  const storeAsk = q.match(/^\s*(?:please\s+)?(?:start|run|open|launch)\s+(?:the\s+|my\s+)?(.*?)\s*store\b/i);
+  if (storeAsk) {
+    const r = startStore(s, storeAsk[1]);
+    saveState(s, deps.file);
+    const answer = r.started
+      ? `Starting ${r.run.ventureName}'s store. The order: ${STORE_ORDER.map((x, i) => `${i + 1}. ${x}`).join(' ')}. Each step starts when the last one is done. Designs wait for your Yes in Approvals; a Yes makes the product and lists it, then the ads step starts. Every step stays inside its task budget and the monthly cap.`
+      : `${r.run.ventureName}'s store is already running: step ${r.run.stage + 1} of ${STORE_STAGES.length} (${STORE_STAGES[r.run.stage].title})${r.run.note ? `. ${r.run.note}` : ''}.`;
+    return { ok: true, answer, costUsd: 0, taskTitle: r.task?.title ?? null, approved: r.started && r.task ? [r.task.title] : null, skills: null, by: 'JARVIS' };
+  }
   if (!s.instructions) return { ok: false, reason: 'Open the app once with the runner on so it can send JARVIS\'s instructions.' };
   if (remaining(s) < ASK_WORST_USD) return { ok: false, reason: `The $${capOf(s)} monthly cap is reached, so JARVIS can't answer until the owner adds funds in the app.` };
   const { agent, cost: routeCost } = await routeQuestion(s, q, deps);
@@ -1322,7 +1466,7 @@ export async function ask(question, deps = { fetch: globalThis.fetch, file: FILE
       ? `You are ${agent.name}${agent.title ? `, ${agent.title}` : ''}, an agent in the owner's brain working under JARVIS. The owner asked you this in the console because you are the agent best suited to it. Answer as ${agent.name}, from your own job and work, directly and briefly; you have no tools here and this is not a work run.`
       : 'The owner is asking you a question in the console, outside your work window. Answer directly and briefly from what you know; you have no tools here and this does not count as a run. Do not propose tasks or agents here.',
     `Recent progress${agent ? ` on your work` : ''}:\n${progress.map((e) => `- ${e.at.slice(0, 16)} ${e.agentName}${e.taskTitle ? ` on "${e.taskTitle}"` : ''}${e.pct != null ? ` (${e.pct}%)` : ''}: ${e.note}`).join('\n') || '(none yet)'}`,
-    `OWNER CONSENT: the owner's plain words are approval, inside the $${capOf(s)} monthly cap and the per-task budget. "allow etsy store to run", "go ahead", "yes do it", "1 dollar approval" all count; never ask them to repeat it in exact wording or to restate a scope. A request to do something ("make 5 items for my etsy store", "find me 3 trending niches") is approval of that work too. When their message approves or asks for work, say in one sentence what you will do, then end your answer with one line exactly like this: APPROVE {"title": "short task title", "detail": "what to do and what a good result looks like, in the owner's words", "agentId": "id from AGENTS IN THE BRAIN NOW of the agent who should do it, or null for you", "count": how many items they asked for or null, "everyMinutes": minutes between repeats when they want it again and again ("every hour" is 60), else null, "budgetUsd": the dollar amount they named or null, "approveIds": ["ids of waiting proposals they approved"]}. It becomes your focus: worked first, right away, before anything else. Write that line only when they approved or asked for work. ${s.autoAgents === true ? 'Ventures create the skill agents they need without asking; that never needs approval.' : 'New agents need the owner\'s approval: JARVIS or a venture proposes one only when it is truly needed for the growth of the business (no existing agent can do the work, it recurs for months, it will earn or save something), and the owner approves it in JARVIS runs. Never tell the owner an agent was created when it was only proposed.'}`,
+    `OWNER CONSENT: the owner's plain words are approval, inside the $${capOf(s)} monthly cap and the per-task budget. "allow etsy store to run", "go ahead", "yes do it", "1 dollar approval" all count; never ask them to repeat it in exact wording or to restate a scope. A request to do something ("make 5 items for my etsy store", "find me 3 trending niches") is approval of that work too. When their message approves or asks for work, say in one sentence what you will do, then end your answer with one line exactly like this: APPROVE {"title": "short task title", "detail": "what to do and what a good result looks like, in the owner's words", "agentId": "id from AGENTS IN THE BRAIN NOW of the agent who should do it, or null for you", "count": how many items they asked for or null, "everyMinutes": minutes between repeats when they want it again and again ("every hour" is 60), else null, "budgetUsd": the dollar amount they named or null, "approveIds": ["ids of waiting proposals they approved"]}. It becomes your focus: worked first, right away, before anything else. ROUTING: when one ask holds several jobs for different agents ("research mugs, find memes and make 3 designs"), split it instead: APPROVE {"ask": "the owner's words", "tasks": [{"title": "...", "detail": "...", "agentId": "the best agent's id or null", "count": null, "after": index of the earlier part it needs, or null}, ...]} with at most ${ROUTED_MAX} parts, each to the agent whose job fits it best (match role and skills; a venture's own skill agents for that venture's work; you yourself when nobody fits), in the order that saves the most work (research before finding, finding before designing, designing before listing, listing before ads); a part with "after" waits until that part is done and gets its notes. When they ask to run, start or work their store (or the whole shop job), add "store": "the venture's name or true" instead of writing the steps yourself: the runner works it in order (research, memes to memez, designs from memez, their Yes, ads). Write that line only when they approved or asked for work. ${s.autoAgents === true ? 'Ventures create the skill agents they need without asking; that never needs approval.' : 'New agents need the owner\'s approval: JARVIS or a venture proposes one only when it is truly needed for the growth of the business (no existing agent can do the work, it recurs for months, it will earn or save something), and the owner approves it in JARVIS runs. Never tell the owner an agent was created when it was only proposed.'}`,
     `CONNECTIONS RIGHT NOW (the only true setup steps; never invent others, never say Canva or an account needs "approval"): Canva ${canvaPublic().configured ? 'is connected: agents use it in tasks the owner gives' : 'is NOT connected: the owner connects it once by running npm.cmd run connect-canva on their PC and pressing Allow in the browser'}. Printify ${printifyPublic().configured ? `is connected (shop "${printifyPublic().shopTitle || 'shop'}")` : 'is NOT connected: the owner runs npm.cmd run set-printify once'}. ChatGPT images ${openaiPublic().configured ? 'are on' : 'are off: the owner runs npm.cmd run set-openai once with an OpenAI API key'}. Designs the agents make go to the owner's Approvals tab with Yes and No; Yes makes the Printify product and lists it on their store ($${LISTING_FEE_USD.toFixed(2)} listing fee), at most ${DESIGNS_PER_ASK} designs waiting per ask. A task the owner wants "every hour" repeats on its own.`,
     `WHAT YOUR AGENTS CAN DO IN THEIR WORK RUNS (not here): web search and reading pages; make meme designs by editing the real images the scouts find (public-domain and CC0 images, and the owner's memez folder): crop, cut a plain background away, add a caption; saved to the owner's design gallery${s.allowDrawnDesigns === true ? `; drawn SVG art (lettering, logos, badges, vector art)${openaiPublic().configured ? "; illustrated or photo-style art with the owner's ChatGPT image model" : ''}${canvaPublic().configured ? "; AI designs in the owner's Canva account (in tasks the owner gives)" : ''}` : '; drawn and AI-made art only on a task that asks for it (the owner turned drawn designs off in Settings)'}${printifyPublic().configured ? `; turn designs into products in the owner's Printify shop "${printifyPublic().shopTitle || 'shop'}" (shirts, mugs, posters and more) that the owner approves one by one before they go live` : ''}. So when the owner asks for designs, products or any other work, never say you or an agent can't, and never refuse because it is outside an agent's usual scope: approve it as a task with the APPROVE line (it becomes the focus and starts right away), give it to the best agent, and say what they will get and where. If what they asked for is unclear (for example a brand or name you don't know), still approve it, put what you know in detail, and ask one short question in your answer. TRENDS: they may check TikTok and Instagram trends from public sources only (this week's trend roundups found by web search, TikTok's own newsroom and Creative Center articles, Google Trends through trends_google, Pinterest through web search for inspiration only) and measure each on Etsy; they never log in to, scrape or use the owner's social accounts beyond reading${(() => { const t = trendsPublic(); const parts = []; if (t.instagram?.configured) parts.push(`Instagram is connected read-only (${t.instagram.hashtags ? 'own account and hashtag search' : 'own account numbers and posts only; no hashtag search on this token'})`); if (t.pinterest?.configured) parts.push(`Pinterest is connected read-only (trends, search, find${t.pinterest.canSave ? ', save to the secret memez board' : ''})`); return parts.length ? `; ${parts.join('; ')}` : "; Instagram's and Pinterest's APIs are not set up"; })()}. Designs follow the owner's style guide (modern, simple, funny: one flat drawing and a short lowercase caption, like a plain fish captioned "fih"), which every agent gets in its brief${s.designStyle ? `, plus the owner's note: ${s.designStyle}` : ''}. Free-to-use images (public domain and CC0 from Wikimedia Commons and Openverse) come through assets_public_domain with source and licence saved on each design; memes, characters, logos and trademarked phrases are never copied, and phrases are trademark-searched first. So when the owner asks for TikTok or Instagram trends, say yes and start.`,
     `SKILLS: you can write skills yourself; never tell the owner you can't, and never ask them for agent ids (the runner finds agents by name). A SKILL.md is an agent's own detailed playbook; a bank skill is a shared skill in the owner's skill bank given to the agents that need it. When the owner asks for SKILL.md files or skills (or names skills an agent is missing), say in one sentence what you will write, then end your answer with one line exactly like this: SKILLS {"files": ["agent names, a venture name + \" team\" for its whole team, or \"all\""], "bank": [{"name": "Web research", "description": "one line on what it covers", "agents": ["agent names, \"<venture> team\", or \"all\""]}]}. Writing starts right away and each file is saved to the bank and attached to its agents automatically. You may write both an APPROVE line and a SKILLS line.`,
@@ -1372,7 +1516,7 @@ function publicState() {
   const s = loadState(); rollMonth(s);
   return {
     configured: Boolean(KEY), model: MODEL, capUsd: capOf(s), budgets: budgetsPublic(s), everyMinutes: EVERY_MIN, maxMinutes: MAX_MIN, schedule: SCHEDULE,
-    spentUsd: s.ledger.spentUsd, spentByAgent: s.ledger.byAgent, ...dailyAllowance(s), parallel: PARALLEL, rounds: MAX_ROUNDS, taskBudgetUsd: TASK_BUDGET_USD, unknownCostRuns: s.ledger.unknownCostRuns, month: s.ledger.month, running: running ? running.startedAt : null,
+    spentUsd: s.ledger.spentUsd, spentByAgent: s.ledger.byAgent, ...dailyAllowance(s), parallel: PARALLEL, rounds: MAX_ROUNDS, taskBudgetUsd: TASK_BUDGET_USD, unknownCostRuns: s.ledger.unknownCostRuns, month: s.ledger.month, running: running ? running.startedAt : null, workingNow: running?.working ?? [], storeRuns: (s.storeRuns || []).slice(-6).reverse(), storeOrder: STORE_ORDER, storeVentures: storeVentures(s).map((a) => ({ id: a.id, name: a.name })), reports: taskReports(s, sourceFolders(s, DIR).flatMap((f) => listSourceFiles(f))),
     synced: Boolean(s.instructions), asks: (s.asks || []).slice(0, 10), memory: s.memory, nextAction: s.nextAction, tasks: s.tasks.filter((t) => inBrain(s, t)), brain: { id: s.brainId || null, others: Object.entries(s.brains || {}).filter(([id]) => id !== s.brainId).map(([id, b]) => ({ id, name: b.name, agents: (b.agents || []).length, openTasks: s.tasks.filter((t) => t.brainId === id && t.status === 'approved').length })) }, agentProposals: s.agentProposals, progressLog: (s.progressLog || []).slice(-150), autoAgents: s.autoAgents !== false, autoTasks: s.autoTasks !== false, allowDrawnDesigns: s.allowDrawnDesigns === true, designStyle: { guide: DESIGN_STYLE, note: s.designStyle || '', at: s.designStyleAt || null }, etsy: etsyPublic(), printify: printifyPublic(), openai: openaiPublic(), canva: { ...canvaPublic(), connecting: connectInProgress(), month: rollCanva(s).month, aiCalls: s.canva.aiCalls, exports: s.canva.exports, limit: canvaLimit(s), log: (s.canvaLog || []).slice(-30).reverse() }, designs: (s.designs || []).slice(-40).reverse(), voice: voicePublic(DIR), money: { byAgent: moneyByAgent({ ...s, totals: s.totals ?? { claude: { ...s.ledger.byAgent }, images: {} } }), entries: (s.moneyEntries || []).slice(-50).reverse(), sales: (s.sales || []).slice(0, 50), salesSync: s.salesSync ?? null }, images: { month: rollImages(s).month, spentUsd: s.images.spentUsd, capUsd: imageCap(s), log: (s.imageLog || []).slice(-30).reverse() }, publishRequests: (s.publishRequests || []).slice(-30), ads: (s.ads || []).slice(-60).reverse(), sources: sourcesPublic(s, DIR), trends: trendsPublic(), degen: degenCat ? { from: degenCat.from, skills: degenCat.skills.length, given: Object.keys(s.degenGiven || {}).length } : null, skillFiles: s.skillFiles.filter((f) => f.status === 'new'), runs: s.runs.slice(0, 10),
     // with no scheduled run yet, the next one starts within a minute
     nextScheduledAt: SCHEDULE ? new Date(s.lastScheduledAt ? Math.max(Date.now(), Date.parse(s.lastScheduledAt) + (pickTasks(s).some((t) => t.focus) ? Math.min(FOCUS_EVERY_MIN, EVERY_MIN) : EVERY_MIN) * 60_000) : Date.now() + 60_000).toISOString() : null,
@@ -1536,6 +1680,15 @@ async function handle(req, res) {
     }
     saveState(s);
     return send(req, res, 200, { ok: true, tasks: s.tasks });
+  }
+  if (url === '/api/origin/store') {
+    // the owner's Start store button: the venture's store worked through in order
+    const s = loadState();
+    if (body.action !== 'start') return send(req, res, 400, { error: 'unknown action' });
+    const r = startStore(s, typeof body.ventureId === 'string' ? body.ventureId : '');
+    saveState(s);
+    if (r.started) setTimeout(startFocus, 500);
+    return send(req, res, 200, { ok: true, started: r.started, run: r.run, order: STORE_ORDER });
   }
   if (url === '/api/origin/ask') {
     const r = await ask(body.question);
@@ -1768,6 +1921,9 @@ function tick() {
   const s0 = loadState();
   const again = reopenRepeats(s0);
   if (again.length) { saveState(s0); console.log(`[origin] repeating: ${again.map((t) => `"${t.title}"`).join(', ')}`); }
+  // a store run goes to its next step as soon as the last one is done
+  const stepped = running ? [] : [...advanceStores(s0), ...releaseWaiting(s0)];
+  if (stepped.length) { saveState(s0); console.log(`[origin] store run: next step ${stepped.map((t) => `"${t.title}"`).join(', ')}`); setTimeout(startFocus, 500); }
   // skills the owner asked for are written right away, between other runs
   if (!running && KEY && requestedSkills(s0).length && remaining(s0) >= CALL_WORST_USD) { startSkills(); return; }
   if (printifyPublic().configured && (!s0.salesSync?.at || Date.now() - Date.parse(s0.salesSync.at) > SALES_EVERY_MIN * 60_000)) void syncSales().catch(() => {});

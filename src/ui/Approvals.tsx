@@ -67,7 +67,7 @@ export function Approvals() {
       {groups.map((taskId) => {
         const t = taskOf(taskId);
         const mine = waiting.filter((d) => (d.taskId ?? '') === taskId);
-        return <section key={taskId || 'loose'} className="card approval-group">
+        return <section key={taskId || 'loose'} id={`approvals-task-${taskId}`} className="card approval-group">
           <h4><Images size={13} /> {t?.title ?? mine[0].taskTitle ?? 'Designs'} <span className="count">{mine.length} waiting{t?.count ? ` · asked for ${t.count}` : ''}{t?.everyMinutes ? ' · repeats' : ''}</span></h4>
           <div className="approval-grid">
             {mine.map((d) => <figure key={d.id} className="approval-card">
@@ -108,7 +108,7 @@ export function Approvals() {
         </div>
       </section>}
 
-      {decided.length > 0 && <section className="card approval-group">
+      {decided.length > 0 && <section id="approvals-decided" className="card approval-group">
         <h4><Repeat size={13} /> Decided lately <span className="count">{decided.length}</span></h4>
         <ul className="approval-log">
           {decided.map((d) => <li key={d.id}><span className={`approval-state ${d.status}`}>{d.status === 'published' ? 'listed' : d.status === 'approved' ? 'making it' : 'no'}</span> <b>{d.title}</b> · {d.agentName} · {when(d.publishedAt ?? d.decidedAt ?? d.at)}{d.printify ? <> · {d.printify}</> : d.status === 'approved' ? <> · {taskOf(st.tasks.find((t) => t.designId === d.id)?.id ?? null)?.status === 'done' ? 'product made; waiting to publish' : 'the agent is making the product now'}</> : null}</li>)}
@@ -165,7 +165,7 @@ function DesignSources({ st, onDone }: { st: RunnerStatus; onDone: () => void })
   const sources = st.sources ?? [];
   const usable = (u: string) => (u === 'print' ? 'can go on a shirt (public domain)' : u === 'owner' ? 'your own file: yours to print' : 'reference: drafts only, not for sale');
   return (
-    <div className="design-sources">
+    <div className="design-sources" id="approvals-sources">
       <h4><FolderOpen size={13} /> Design sources <span className="count">folders on your PC the designers may use</span></h4>
       <p className="small muted">The scouts save images they find online into <b>memez</b> with the source and licence recorded: a public-domain or CC0 image can go on a shirt; anything else (meme templates, Reddit pictures, posts) is reference: the designers can caption and crop it as a draft you see here, flagged, but it is never listed as it is. Link your own folders too: your files are yours to print. Declining a design made from a saved image deletes that one image.</p>
       <ul className="creator-request-log">

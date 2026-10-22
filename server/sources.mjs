@@ -56,7 +56,7 @@ export function listSourceFiles(folder, limit = MAX_FILES) {
     let st; try { st = fs.statSync(file); } catch { continue; }
     if (!st.isFile()) continue;
     const meta = readMeta(file);
-    out.push({ ref: `${folder.id}/${name}`, folder: folder.id, name, bytes: st.size, kind: /\.png$/i.test(name) ? 'png' : 'jpg', usable: meta ? (meta.usable || usableFor(meta.licence)) : 'owner', title: meta?.title ?? null, page: meta?.page ?? null, licence: meta?.licence ?? (meta ? 'unknown' : 'the owner\'s own file'), savedBy: meta?.agentName ?? null, at: meta?.at ?? st.mtime.toISOString(), note: meta?.note ?? null });
+    out.push({ ref: `${folder.id}/${name}`, folder: folder.id, name, bytes: st.size, kind: /\.png$/i.test(name) ? 'png' : 'jpg', usable: meta ? (meta.usable || usableFor(meta.licence)) : 'owner', title: meta?.title ?? null, page: meta?.page ?? null, licence: meta?.licence ?? (meta ? 'unknown' : 'the owner\'s own file'), savedBy: meta?.agentName ?? null, at: meta?.at ?? st.mtime.toISOString(), note: meta?.note ?? null, tags: Array.isArray(meta?.tags) ? meta.tags : [], taskId: meta?.taskId ?? null });
   }
   return out;
 }
@@ -110,7 +110,7 @@ export async function saveSourceImage(folder, input, by, deps = {}) {
   let name = `${safeName(input.file_name || title)}.${ext}`;
   for (let i = 2; fs.existsSync(path.join(folder.path, name)); i++) name = `${safeName(input.file_name || title)}-${i}.${ext}`;
   const usable = usableFor(licence);
-  const meta = { title, page, url, licence, usable, note: String(input.note || '').slice(0, 400), agentId: by?.agentId ?? null, agentName: by?.agentName ?? 'JARVIS', taskId: by?.taskId ?? null, at: new Date().toISOString(), width: size.width, height: size.height };
+  const meta = { title, page, url, licence, usable, note: String(input.note || '').slice(0, 400), tags: Array.isArray(input.tags) ? input.tags.map((t) => String(t).toLowerCase().trim().slice(0, 30)).filter(Boolean).slice(0, 12) : [], agentId: by?.agentId ?? null, agentName: by?.agentName ?? 'JARVIS', taskId: by?.taskId ?? null, at: new Date().toISOString(), width: size.width, height: size.height };
   fs.writeFileSync(path.join(folder.path, name), buf);
   fs.writeFileSync(path.join(folder.path, `${name}.json`), JSON.stringify(meta, null, 2));
   return { ref: `${folder.id}/${name}`, usable, width: size.width, height: size.height, bytes: buf.length };
@@ -146,12 +146,12 @@ export const SOURCE_NOTE_TOOL = {
 export const SOURCE_LIST_TOOL = {
   name: 'files_source',
   description: "The owner's design sources: the memez folder (images the scouts saved, with licence) and any folder the owner linked (their own files). Each file says what it may be used for: print (public domain or CC0, can go on a shirt), owner (the owner's own file, theirs to print), or reference (someone else's work: learn the joke, never print it). Use a print or owner file in design_caption_image with source_file.",
-  input_schema: { type: 'object', properties: { folder: { type: 'string', description: 'one folder id or label, default all' }, query: { type: 'string', description: 'words in the file name, title or note' }, limit: { type: 'integer', minimum: 1, maximum: 100 } } },
+  input_schema: { type: 'object', properties: { folder: { type: 'string', description: 'one folder id or label, default all' }, query: { type: 'string', description: 'search words (any of them) in the file name, title, note or tags; best matches first' }, limit: { type: 'integer', minimum: 1, maximum: 100 } } },
 };
 export const SOURCE_SAVE_TOOL = {
   name: 'source_save',
   description: "Save an image you found online into the owner's memez folder for the design agents, with its title, source page and licence: a meme template from trends_memes (image link), a picture post from Reddit, a free image from assets_public_domain, or any other https image file. A public-domain or CC0 image is saved as print and may go on a shirt; anything else (a meme, a post, a photo someone owns) is saved as reference: the designers may open it and make a draft (caption, crop) so the owner sees the idea, but it is flagged and never listed for sale as it is; to sell it, remake it with a free image or their own drawing. If the owner declines a design made from a saved image, that file is deleted.",
-  input_schema: { type: 'object', properties: { image_url: { type: 'string', description: 'the https URL of the image file itself' }, file_name: { type: 'string' }, title: { type: 'string' }, page: { type: 'string', description: 'the page it was found on' }, licence: { type: 'string', description: 'as stated by the source, e.g. "Public domain", "CC0", "CC BY 4.0", or "unknown (someone\'s post)"' }, note: { type: 'string', description: 'why it matters: the joke, the trend, where it is rising' }, folder: { type: 'string', description: 'folder id, default memez' } }, required: ['image_url', 'title', 'page'] },
+  input_schema: { type: 'object', properties: { image_url: { type: 'string', description: 'the https URL of the image file itself' }, file_name: { type: 'string' }, title: { type: 'string' }, page: { type: 'string', description: 'the page it was found on' }, licence: { type: 'string', description: 'as stated by the source, e.g. "Public domain", "CC0", "CC BY 4.0", or "unknown (someone\'s post)"' }, note: { type: 'string', description: 'why it matters: the joke, the trend, where it is rising' }, tags: { type: 'array', items: { type: 'string' }, description: 'search words for the designers: the theme, the subject, the joke (e.g. ["frog", "monday", "tired"])' }, folder: { type: 'string', description: 'folder id, default memez' } }, required: ['image_url', 'title', 'page'] },
 };
 export const SOURCE_TOOLS = [SOURCE_LIST_TOOL, SOURCE_SAVE_TOOL, SOURCE_NOTE_TOOL];
 
@@ -163,9 +163,12 @@ export async function runSourceTool(name, input, s, dataDir, by, deps = {}) {
       const pick = input.folder ? folders.filter((f) => f.id === input.folder || f.label === input.folder) : folders;
       const q = String(input.query || '').toLowerCase().trim();
       const limit = Math.max(1, Math.min(100, Number(input.limit) || 40));
-      const files = pick.flatMap((f) => listSourceFiles(f)).filter((x) => !q || `${x.name} ${x.title || ''} ${x.note || ''}`.toLowerCase().includes(q)).sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
+      // any of the words may match the name, title, note or tags; files matching more words come first
+      const words = q.split(/[\s,]+/).filter((w) => w.length > 1);
+      const hits = (x) => { const hay = `${x.name} ${x.title || ''} ${x.note || ''} ${(x.tags || []).join(' ')}`.toLowerCase(); return words.filter((w) => hay.includes(w)).length; };
+      const files = pick.flatMap((f) => listSourceFiles(f)).map((x) => ({ ...x, score: words.length ? hits(x) : 0 })).filter((x) => !words.length || x.score > 0).sort((a, b) => b.score - a.score || b.at.localeCompare(a.at)).slice(0, limit);
       const notes = pick.flatMap((f) => listMemeNotes(f, 30)).filter((x) => !q || `${x.title} ${x.caption || ''} ${x.note || ''}`.toLowerCase().includes(q)).slice(0, limit);
-      return { content: JSON.stringify({ folders: folders.map((f) => ({ id: f.id, label: f.label })), files: files.map(({ ref, usable, title, licence, page, note, savedBy, at, kind }) => ({ ref, usable, title, licence, page, note, savedBy, at, kind })), notes: notes.map(({ ref, title, platform, page, caption, stats, licence, pinId, note, savedBy, at }) => ({ ref, title, platform, page, caption, stats, licence, pinId, note, savedBy, at })), note: 'print and owner files may go on a shirt (design_caption_image source_file); a reference file can be drafted on with the same tool but the draft is never sold as it is.' }), isError: false };
+      return { content: JSON.stringify({ folders: folders.map((f) => ({ id: f.id, label: f.label })), files: files.map(({ ref, usable, title, licence, page, note, tags, savedBy, at, kind }) => ({ ref, usable, title, licence, page, note, tags, savedBy, at, kind })), notes: notes.map(({ ref, title, platform, page, caption, stats, licence, pinId, note, savedBy, at }) => ({ ref, title, platform, page, caption, stats, licence, pinId, note, savedBy, at })), note: 'print and owner files may go on a shirt (design_caption_image source_file); a reference file can be drafted on with the same tool but the draft is never sold as it is.' }), isError: false };
     }
     if (name === SOURCE_NOTE_TOOL.name) {
       if (!String(input.title || '').trim() || !String(input.page || '').trim()) return { content: 'Give the title and the page URL.', isError: true };
