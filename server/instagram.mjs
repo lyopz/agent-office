@@ -60,6 +60,8 @@ export async function instagramMaintain(deps = {}) {
   const cfg = deps.config ?? instagramConfig();
   const now = deps.now ?? Date.now();
   if (!cfg?.token || !cfg?.igUserId) return { status: 'not connected' };
+  // a token saved by an older set-instagram has no dates: never call it expired for that; ask Meta instead
+  if (!cfg.savedAt && !cfg.refreshedAt && !cfg.expiresAt) return dateUndated(cfg, now, deps);
   if (!canRenew(cfg)) return { status: 'manual', expiresAt: cfg.expiresAt ?? null };
   const issued = Date.parse(cfg.refreshedAt || cfg.savedAt || 0) || 0;
   const expires = Date.parse(cfg.expiresAt || 0) || issued + TOKEN_DAYS * DAY;
@@ -74,6 +76,23 @@ export async function instagramMaintain(deps = {}) {
     (deps.save ?? saveInstagram)({ ...cfg, refreshError: `${new Date(now).toISOString()} ${e.message}`.slice(0, 300) });
     return { status: 'failed', error: e.message, expiresAt: cfg.expiresAt ?? null };
   }
+}
+
+/** An undated token: renew it when Meta allows (that gives a real expiry); otherwise check it still works and date it from now. */
+async function dateUndated(cfg, now, deps) {
+  const f = deps.fetch ?? globalThis.fetch, save = deps.save ?? saveInstagram;
+  if (canRenew(cfg)) {
+    try { const next = await refreshInstagram(cfg, f); save(next); return { status: 'renewed', expiresAt: next.expiresAt }; } catch { /* too new to renew, or not renewable: check it below */ }
+  }
+  try {
+    await pingInstagram(cfg, f);
+  } catch (e) {
+    return { status: 'expired', error: e.message, expiresAt: null };
+  }
+  const at = new Date(now).toISOString();
+  const next = { ...cfg, savedAt: at, expiresAt: new Date(now + TOKEN_DAYS * DAY).toISOString(), expiryEstimated: true, refreshError: null };
+  save(next);
+  return { status: 'working (dated from now)', expiresAt: next.expiresAt };
 }
 
 // READ ONLY: every call here is a GET. Nothing in this file can post, comment, like, follow or change the owner's account; the scopes used (instagram_business_basic, or instagram_basic + pages_show_list) are read scopes.
