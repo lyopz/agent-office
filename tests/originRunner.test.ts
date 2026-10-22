@@ -20,6 +20,8 @@ beforeAll(async () => {
 const reply = (text: string, usage: object, stop = 'end_turn') => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text }], usage, stop_reason: stop }) });
 const result = (o: object) => '```json\n' + JSON.stringify(o) + '\n```';
 const month = new Date().toISOString().slice(0, 7);
+/** An SVG with enough drawing and a readable caption to pass the runner's quality check. */
+const FULL_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4500 5400">${'<path d="M100 100 C 200 300, 400 300, 500 100 L 600 400 Z"/>'.repeat(4)}<text font-size="400" fill="#fff" stroke="#000">fih</text></svg>`;
 const base = { instructions: 'x'.repeat(200), memory: '', nextAction: '', tasks: [], ledger: { month, spentUsd: 0, unknownCostRuns: 0 }, runs: [], lastScheduledAt: null };
 
 describe('origin runner', () => {
@@ -438,7 +440,7 @@ describe('origin runner: trends and free-to-use images', () => {
   test('a design saved with public-domain assets keeps their title, page and licence', async () => {
     write({ ...base, allowDrawnDesigns: true, tasks: [{ id: 't1', title: 'Art', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
     let n = 0;
-    const fetch = async () => { n++; return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'd1', name: 'design_save', input: { svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>', title: 'Rose tee', assets: [{ title: 'Rosa gallica', page: 'https://commons/Rose', licence: 'Public domain' }] } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
+    const fetch = async () => { n++; return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'd1', name: 'design_save', input: { svg: FULL_SVG, title: 'Rose tee', assets: [{ title: 'Rosa gallica', page: 'https://commons/Rose', licence: 'Public domain' }] } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
     await runner.runOnce('manual', { fetch, file, key: 'test', etsy: { tools: [{ name: 'design_save', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }) } } as any);
     expect(read().designs[0]).toMatchObject({ title: 'Rose tee', assets: [{ title: 'Rosa gallica', page: 'https://commons/Rose', licence: 'Public domain' }] });
   });
@@ -671,7 +673,7 @@ describe('origin runner: designs', () => {
     write({ ...base, allowDrawnDesigns: true, agents: [{ id: 'd1', name: 'Mockup & Design' }], tasks: [{ id: 't1', title: 'Jersey Avenue shirts', detail: '', status: 'approved', by: 'owner', agentId: 'd1', focus: true, createdAt: '' }] });
     const tools = { tools: [{ name: 'design_save', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }) };
     let n = 0;
-    const fetch = async () => { n++; return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'u1', name: 'design_save', input: { file_name: 'jersey-ave', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><text>JA</text></svg>', title: 'Jersey Avenue script' } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
+    const fetch = async () => { n++; return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'u1', name: 'design_save', input: { file_name: 'jersey-ave', svg: FULL_SVG, title: 'Jersey Avenue script' } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
     const r: any = await runner.runOnce('focus', { fetch, file, key: 'test', etsy: tools } as any);
     expect(r.run.designs).toBe(1);
     const d = read().designs[0];
@@ -690,7 +692,31 @@ describe('origin runner: designs', () => {
     const toolResult = seen[1].messages.at(-1).content[0];
     expect(toolResult.is_error).toBe(true);
     expect(toolResult.content).toMatch(/design_caption_image/);
-    expect(seen[0].messages[0].content).toMatch(/THAT IS THE ONLY WAY ON THIS TASK/);
+    expect(seen[0].messages[0].content).toMatch(/NOTHING ELSE ON THIS TASK/);
+  });
+
+  test('a plain shape with a small or dark caption is refused as too plain', () => {
+    const blob = '<path d="M10 10 L 20 10 L 20 20 Z"/>';
+    expect(runner.svgTooPlain(`<svg viewBox="0 0 4500 5400"><rect x="1" y="1" width="10" height="10"/><text font-size="90" fill="#223">snack duty</text></svg>`)).toMatch(/1 basic shape and a caption/);
+    expect(runner.svgTooPlain(`<svg viewBox="0 0 4500 5400">${blob.repeat(6)}<text font-size="90" fill="#223">fih</text></svg>`)).toMatch(/too small/);
+    expect(runner.svgTooPlain(`<svg viewBox="0 0 4500 5400">${blob.repeat(6)}<text font-size="400" fill="#111">fih</text></svg>`)).toMatch(/no outline/);
+    expect(runner.svgTooPlain(`<svg viewBox="0 0 4500 5400">${blob.repeat(6)}<text font-size="400" fill="#fff" stroke="#000">fih</text></svg>`)).toBe('');
+    expect(runner.svgTooPlain('<svg viewBox="0 0 10 10"><circle r="2"/><rect width="1" height="1"/></svg>')).toMatch(/couple of basic shapes/);
+  });
+
+  test('Canva stays open while hand-drawn SVGs are off: the brief names it as the main way', async () => {
+    write({ ...base, agents: [{ id: 'd1', name: 'Mockup & Design' }], tasks: [{ id: 't1', title: 'Fish meme shirts', detail: 'funny fish', status: 'approved', by: 'owner', agentId: 'd1', focus: true, createdAt: '' }] });
+    const calls: any[] = [];
+    const tools = { tools: [{ name: 'canva_export_design', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }), canva: async (name: string, input: any) => { calls.push({ name, input }); return { content: [{ type: 'text', text: '{"url":"https://export-download.canva.com/x.png"}' }] }; }, canvaFiles: async () => [{ ext: 'png', b64: Buffer.from('png-bytes').toString('base64') }] };
+    const seen: any[] = [];
+    let n = 0;
+    const fetch = async (_u: string, init: any) => { n++; seen.push(JSON.parse(init.body)); return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'u1', name: 'canva_export_design', input: { design_id: 'D1', format: 'png' } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
+    await runner.runOnce('focus', { fetch, file, key: 'test', etsy: tools } as any);
+    expect(calls).toHaveLength(1);
+    expect(read().designs).toHaveLength(1);
+    expect(read().designs[0]).toMatchObject({ source: 'canva', kind: 'png', taskId: 't1' });
+    expect(seen[0].messages[0].content).toMatch(/IN CANVA \(the owner's account, the main way\)/);
+    expect(seen[0].messages[0].content).toMatch(/NOTHING ELSE ON THIS TASK/);
   });
 
   test('a task that asks for drawn art may still use design_save', () => {
@@ -748,7 +774,7 @@ describe('origin runner: Canva', () => {
 
 describe('origin runner: approvals, repeats and budgets', () => {
   const agents = [{ id: 'v1', name: 'STORE', kind: 'venture' }, { id: 'd1', name: 'Mockup & Design', kind: 'skill', ventureId: 'v1' }];
-  const saveTool = (file_name: string) => ({ content: [{ type: 'tool_use', id: `u_${file_name}`, name: 'design_save', input: { file_name, svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><text>x</text></svg>', title: file_name } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' });
+  const saveTool = (file_name: string) => ({ content: [{ type: 'tool_use', id: `u_${file_name}`, name: 'design_save', input: { file_name, svg: FULL_SVG, title: file_name } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' });
   const design = (i: number, status = 'waiting', extra: any = {}) => ({ id: `design_${i}`, kind: 'svg', fileName: `d${i}.svg`, title: `Design ${i}`, agentId: 'd1', agentName: 'Mockup & Design', taskId: 't1', taskTitle: 'Mom shirts', imageId: null, status, at: '2026-10-21T08:00:00.000Z', ...extra });
 
   test('"every hour" in the owner\'s words makes a repeating task, which comes back after it finishes', () => {
