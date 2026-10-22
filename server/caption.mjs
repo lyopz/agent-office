@@ -10,11 +10,12 @@ const FONTS = { impact: 'Impact, Haettenschweiler, "Arial Black", sans-serif', b
 
 export const CAPTION_TOOL = {
   name: 'design_caption_image',
-  description: "The default way to make a meme shirt design: take an image you found with assets_public_domain (its file URL), a print or owner file from the owner's source folders (source_file), or an image already in the owner's gallery (its design_id), and lay a short caption over it in meme style. The image is not redrawn or changed; the text makes the joke. Saved to the owner's Approvals like any design. Only public-domain and CC0 images from the asset search, or images you generated, can be used; never a photo from a social post.",
+  description: "The default way to make a meme shirt design: take an image you found with assets_public_domain (its file URL), a file from the owner's source folders (source_file: memez or a linked folder), or an image already in the owner's gallery (its design_id), and lay a short caption over it in meme style, optionally cropped first. The image is not redrawn; the text makes the joke. Saved to the owner's Approvals like any design. A print or owner file can be listed; a reference file (someone's meme or post saved to memez) makes a DRAFT: the owner sees it flagged and it is never listed for sale as it is. Images straight from the web must be public domain or CC0.",
   input_schema: { type: 'object', properties: {
     image_url: { type: 'string', description: 'the file URL from an assets_public_domain result (not the page URL)' },
     design_id: { type: 'string', description: 'or: an image already in the gallery (from design_generate_image or an earlier save)' },
-    source_file: { type: 'string', description: 'or: a file from files_source marked print or owner, e.g. memez/fish.png' },
+    source_file: { type: 'string', description: 'or: a file from files_source, e.g. memez/fish.png (print and owner files can be sold; a reference file gives a flagged draft)' },
+    crop: { type: 'object', description: 'optional: keep only this part of the image, in percent of its width and height, e.g. {"x": 10, "y": 0, "w": 80, "h": 100}', properties: { x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' } } },
     top: { type: 'string', description: 'caption above, 0 to 6 words; leave empty for none' },
     bottom: { type: 'string', description: 'caption below, 0 to 6 words; leave empty for none' },
     font: { type: 'string', enum: Object.keys(FONTS), description: 'impact (classic meme), bold, plain (deadpan), mono, serif (mock-serious), hand' },
@@ -62,7 +63,7 @@ export function wrapCaption(text, width, fontSize, maxLines = 3) {
 }
 
 /** The SVG that lays the captions over (or around) the image. */
-export function captionSvg({ imageB64, mime, width, height, top = '', bottom = '', font = 'impact', uppercase, color = '#ffffff', cutout = false }) {
+export function captionSvg({ imageB64, mime, width, height, top = '', bottom = '', font = 'impact', uppercase, color = '#ffffff', cutout = false, crop = null }) {
   const family = FONTS[font] || FONTS.impact;
   const upper = uppercase ?? font === 'impact';
   const fix = (t) => (upper ? String(t).toUpperCase() : String(t));
@@ -77,7 +78,21 @@ export function captionSvg({ imageB64, mime, width, height, top = '', bottom = '
   const textBlock = (lines, yStart) => lines.map((l, i) => `<text x="${width / 2}" y="${Math.round(yStart + i * lineH)}" font-family='${family}' font-weight="900" font-size="${size}" text-anchor="middle" fill="${esc(color)}" stroke="#000" stroke-width="${stroke}" stroke-linejoin="round" paint-order="stroke fill">${esc(l)}</text>`).join('');
   const topY = cutout ? size * 1.05 : size * 1.15;
   const botY = cutout ? topBand + height + size * 1.05 : height - (botLines.length - 1) * lineH - size * 0.45;
-  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${H}" viewBox="0 0 ${width} ${H}"><image x="0" y="${topBand}" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet" href="data:${mime};base64,${imageB64}"/>${textBlock(topLines, topY)}${textBlock(botLines, botY)}</svg>`;
+  // a crop shows one window of the full image: the window is the sheet, the full image sits behind it
+  const picture = crop
+    ? `<svg x="0" y="${topBand}" width="${width}" height="${height}" viewBox="${crop.x} ${crop.y} ${width} ${height}" preserveAspectRatio="none"><image x="0" y="0" width="${crop.fullWidth}" height="${crop.fullHeight}" preserveAspectRatio="none" href="data:${mime};base64,${imageB64}"/></svg>`
+    : `<image x="0" y="${topBand}" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet" href="data:${mime};base64,${imageB64}"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${H}" viewBox="0 0 ${width} ${H}">${picture}${textBlock(topLines, topY)}${textBlock(botLines, botY)}</svg>`;
+}
+
+/** A crop given in percent of the original, as pixels; null when there is none or it is not sensible. */
+export function cropBox(c, size) {
+  if (!c || typeof c !== 'object') return null;
+  const pct = (v, d) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(100, Number(v))) : d);
+  const x = pct(c.x, 0), y = pct(c.y, 0), w = Math.min(pct(c.w, 100), 100 - x), h = Math.min(pct(c.h, 100), 100 - y);
+  if (w < 5 || h < 5 || (x === 0 && y === 0 && w === 100 && h === 100)) return null;
+  const box = { x: Math.round(size.width * x / 100), y: Math.round(size.height * y / 100), w: Math.round(size.width * w / 100), h: Math.round(size.height * h / 100) };
+  return box.w >= 16 && box.h >= 16 ? box : null;
 }
 
 /**
@@ -91,7 +106,6 @@ export async function captionImage(input, deps) {
   if (input?.source_file) {
     const f = deps.readSource?.(String(input.source_file));
     if (!f) throw new Error('No such file in the owner\'s source folders; use a ref from files_source (e.g. memez/fish.png).');
-    if (f.meta?.usable === 'reference') throw new Error('That image is reference only (not public domain or CC0, and not the owner\'s own): learn the joke from it and remake it with a free image (assets_public_domain) or your own drawing.');
     buf = f.buf; source = `source:${f.ref}`; sourceMeta = f.meta;
   } else if (input?.design_id) {
     const d = deps.readDesign?.(String(input.design_id));
@@ -110,11 +124,15 @@ export async function captionImage(input, deps) {
   if (buf.length > MAX_BYTES) throw new Error('That image is too large (over 25 MB).');
   const size = imageSize(buf);
   if (!size) throw new Error('That file is not a PNG or JPEG image.');
+  // an optional crop window, in percent of the original
+  const crop = cropBox(input?.crop, size);
+  const shown = crop ? { width: crop.w, height: crop.h } : size;
   // scale the sheet so the short side is print-size without blowing up a small image past 4500 px
-  const scale = Math.min(PRINT_WIDTH / size.width, 3);
-  const width = Math.round(size.width * Math.max(1, scale)), height = Math.round(size.height * Math.max(1, scale));
-  const svg = captionSvg({ imageB64: buf.toString('base64'), mime: size.mime, width, height, top, bottom, font: input?.font, uppercase: input?.uppercase, color: typeof input?.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(input.color) ? input.color : undefined, cutout: !!input?.cutout });
+  const scale = Math.max(1, Math.min(PRINT_WIDTH / shown.width, 3));
+  const width = Math.round(shown.width * scale), height = Math.round(shown.height * scale);
+  const svg = captionSvg({ imageB64: buf.toString('base64'), mime: size.mime, width, height, top, bottom, font: input?.font, uppercase: input?.uppercase, color: typeof input?.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(input.color) ? input.color : undefined, cutout: !!input?.cutout, crop: crop ? { x: Math.round(crop.x * scale), y: Math.round(crop.y * scale), fullWidth: Math.round(size.width * scale), fullHeight: Math.round(size.height * scale) } : null });
   const out = await deps.svgToPng(svg);
   if (!out) throw new Error('The image renderer is not installed on this PC (run npm.cmd install once).');
-  return { png: out.png, width: out.width, height: out.height, source, sourceFile: input?.source_file ? String(input.source_file) : null, sourceMeta, caption: [top, bottom].filter(Boolean).join(' / '), original: { width: size.width, height: size.height, mime: size.mime } };
+  const rights = sourceMeta ? (sourceMeta.usable || 'reference') : input?.source_file ? 'owner' : 'print';
+  return { png: out.png, width: out.width, height: out.height, source, sourceFile: input?.source_file ? String(input.source_file) : null, sourceMeta, rights, crop: crop ? { x: crop.x, y: crop.y, w: crop.w, h: crop.h } : null, caption: [top, bottom].filter(Boolean).join(' / '), original: { width: size.width, height: size.height, mime: size.mime } };
 }

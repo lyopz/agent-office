@@ -813,6 +813,16 @@ describe('origin runner: the owner\'s Yes and No reach Printify', () => {
     expect(t.detail).toMatch(/image_id img_new/);
   });
 
+  test('Yes on a draft made from a reference image keeps it and sends nothing to Printify', async () => {
+    const s: any = { ...base, agents, designs: [d({ imageId: null, rights: 'reference', sourceFile: 'memez/drake.jpg' })], tasks: [] };
+    let uploaded = 0;
+    const r = await runner.decideDesign(s, 'design_9', 'approve', { upload: async () => { uploaded++; return { image_id: 'img_new' }; } });
+    expect(r.body).toMatchObject({ ok: true, draft: true });
+    expect(uploaded).toBe(0);
+    expect(s.designs[0]).toMatchObject({ status: 'approved', imageId: null, printify: expect.stringMatching(/not listed/) });
+    expect(s.tasks.some((x: any) => x.designId === 'design_9')).toBe(false);
+  });
+
   test('No on a waiting product deletes it from Printify', async () => {
     const gone: string[] = [];
     const s: any = { ...base, agents, designs: [], tasks: [] };

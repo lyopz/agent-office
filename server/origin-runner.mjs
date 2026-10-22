@@ -316,7 +316,7 @@ function declinedLately(s) {
 }
 const designDir = () => path.join(DIR, 'designs');
 /** Save one design (SVG text or PNG base64) and record it for the gallery. */
-function saveDesign(s, task, { file_name, svg, png, ext, title, imageId, source, assets, sourceFile }, w) {
+function saveDesign(s, task, { file_name, svg, png, ext, title, imageId, source, assets, sourceFile, rights }, w) {
   const credits = Array.isArray(assets) ? assets.filter((a) => a && typeof a === 'object').slice(0, 10).map((a) => ({ title: String(a.title || '').slice(0, 120), page: String(a.page || a.url || '').slice(0, 300), licence: String(a.licence || a.license || '').slice(0, 80) })) : [];
   const kind = png ? (ext === 'jpg' ? 'jpg' : 'png') : 'svg';
   // the owner's approval list for this ask is full: the agent stops and waits for their Yes or No
@@ -329,7 +329,7 @@ function saveDesign(s, task, { file_name, svg, png, ext, title, imageId, source,
   fs.writeFileSync(path.join(designDir(), `${id}.${kind}`), data);
   const agent = task ? taskAgent(s, task) : null;
   const name = String(file_name || title || 'design').replace(/[^\w .-]/g, '_').slice(0, 80);
-  s.designs = [...(s.designs || []), { id, kind, fileName: name.endsWith(`.${kind}`) ? name : `${name}.${kind}`, title: String(title || name).slice(0, 140), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'JARVIS', taskId: task?.id ?? null, taskTitle: task?.title ?? null, imageId: imageId ?? null, ...(credits.length ? { assets: credits } : {}), ...(source ? { source } : {}), ...(sourceFile ? { sourceFile } : {}), status: 'waiting', at: new Date().toISOString() }].slice(-DESIGNS_KEEP);
+  s.designs = [...(s.designs || []), { id, kind, fileName: name.endsWith(`.${kind}`) ? name : `${name}.${kind}`, title: String(title || name).slice(0, 140), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'JARVIS', taskId: task?.id ?? null, taskTitle: task?.title ?? null, imageId: imageId ?? null, ...(credits.length ? { assets: credits } : {}), ...(source ? { source } : {}), ...(sourceFile ? { sourceFile } : {}), ...(rights ? { rights } : {}), status: 'waiting', at: new Date().toISOString() }].slice(-DESIGNS_KEEP);
   if (w) w.designs = (w.designs || 0) + 1;
   return { content: JSON.stringify({ saved: true, design_id: id, waiting_for_owner: waitingDesigns(s, task?.id), of: task ? designLimit(task) : null, note: 'It is in the owner\'s Approvals now. Do not make a Printify product from it: when the owner presses Yes, you get a task to make and publish it.' }), isError: false, id };
 }
@@ -343,7 +343,9 @@ async function captionDesign(s, task, input, w, tools) {
     const from = (s.designs || []).find((x) => x.id === input.design_id);
     const assets = Array.isArray(input.assets) && input.assets.length ? input.assets : from?.assets ?? (r.sourceMeta ? [{ title: r.sourceMeta.title, page: r.sourceMeta.page, licence: r.sourceMeta.licence }] : undefined);
     const title = String(input.title || r.caption || 'captioned image').slice(0, 140);
-    return saveDesign(s, task, { file_name: input.file_name || `${title.replace(/[^\w .-]/g, '_').slice(0, 60)}.png`, png: r.png.toString('base64'), ext: 'png', title, assets, source: 'caption', sourceFile: r.sourceFile }, w);
+    const saved = saveDesign(s, task, { file_name: input.file_name || `${title.replace(/[^\w .-]/g, '_').slice(0, 60)}.png`, png: r.png.toString('base64'), ext: 'png', title, assets, source: 'caption', sourceFile: r.sourceFile, rights: r.rights }, w);
+    if (r.rights === 'reference' && !saved.isError) saved.content = `${saved.content} DRAFT ONLY: this image is someone's work (${r.sourceMeta?.licence || 'licence unknown'}), so the owner sees the draft flagged and it will not be listed for sale as it is. To sell the joke, remake it with a free image (assets_public_domain) or your own drawing.`;
+    return saved;
   } catch (e) { return { content: `design_caption_image: ${e.message}`, isError: true }; }
 }
 
@@ -535,6 +537,13 @@ export async function decideDesign(s, id, action, deps = {}) {
   if (action !== 'approve') return { ok: false, status: 400, body: { error: 'unknown action' } };
   if (d.status === 'approved' || d.status === 'published') return { ok: true, status: 200, body: { ok: true, already: true } };
   Object.assign(d, { status: 'approved', decidedAt: at });
+  // a draft on someone's image is kept for the idea, never sent to Printify or listed
+  if (d.rights === 'reference') {
+    d.printify = 'draft on someone\'s image: kept, not listed';
+    logProgress(s, s.tasks.find((t) => t.id === d.taskId) ?? null, { at, agentId: d.agentId, note: `The owner kept the draft "${d.title}" (made on a reference image; it is not listed. To sell it, remake it with a free image).` });
+    save(s);
+    return { ok: true, status: 200, body: { ok: true, draft: true, note: 'Kept as a draft. It was made on someone\'s image, so it is not sent to Printify; ask the agent to remake it with a free image to sell it.' } };
+  }
   if (!printifyPublic().configured && !deps.upload) { save(s); return { ok: true, status: 200, body: { ok: true, note: 'Approved and kept. Run npm.cmd run set-printify once so agents can make it into a product.' } }; }
   // the design goes to Printify now if it is not there yet
   if (!d.imageId) {

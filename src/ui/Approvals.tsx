@@ -5,7 +5,7 @@
 // owner tops up: the monthly cap, funds added to it, the image and Canva limits, and per-branch
 // budgets. Everything comes from JARVIS's runner (useOrigin); nothing is simulated.
 import { useMemo, useState } from 'react';
-import { BadgeCheck, Check, CircleDollarSign, FolderOpen, Images, Palette, Plus, Repeat, Trash2, X } from 'lucide-react';
+import { BadgeCheck, Check, CircleDollarSign, FolderOpen, Images, Palette, Plus, Repeat, Trash2, X, AlertTriangle } from 'lucide-react';
 import { useStore } from '../store/store';
 import { useOrigin } from '../brain/useOrigin';
 import { designDecision, designUrl, mockupUrl, publishDecision, runnerStatus, setBudgets, setDesignStyle, sourceAction, type DesignEntry, type PublishRequest, type RunnerStatus } from '../brain/originLink';
@@ -76,9 +76,10 @@ export function Approvals() {
                 <b>{d.title}</b>
                 <span>{d.agentName} · {when(d.at)}{d.source === 'canva' ? ' · Canva' : d.source === 'caption' ? ' · captioned image' : d.kind === 'svg' ? ' · SVG' : ' · image'}</span>
                 {d.assets?.length ? <span className="small muted">Uses {d.assets.map((x, i) => <span key={i}>{i ? ', ' : ''}{x.page ? <a href={x.page} target="_blank" rel="noreferrer">{x.title || 'an image'}</a> : (x.title || 'an image')}{x.licence ? ` (${x.licence})` : ''}</span>)}</span> : null}
+                {d.rights === 'reference' && <span className="small warn"><AlertTriangle size={11} /> Draft on someone's image: for the idea only, not for sale. Yes keeps it; ask for a remake with a free image to sell it.</span>}
                 <div className="approval-actions">
                   <button className="btn sm danger" disabled={busy === d.id} onClick={() => void decide(d, 'reject')}><X size={13} /> No</button>
-                  <button className="btn sm primary" disabled={busy === d.id} onClick={() => void decide(d, 'approve')}><Check size={13} /> Yes, make and list it</button>
+                  <button className="btn sm primary" disabled={busy === d.id} onClick={() => void decide(d, 'approve')}><Check size={13} /> {d.rights === 'reference' ? 'Keep the draft' : 'Yes, make and list it'}</button>
                 </div>
               </figcaption>
             </figure>)}
@@ -159,11 +160,11 @@ function DesignSources({ st, onDone }: { st: RunnerStatus; onDone: () => void })
     if (r?.ok) { setPath(''); setLabel(''); onDone(); }
   };
   const sources = st.sources ?? [];
-  const usable = (u: string) => (u === 'print' ? 'can go on a shirt (public domain)' : u === 'owner' ? 'your own file: yours to print' : 'reference only: the joke, not the picture');
+  const usable = (u: string) => (u === 'print' ? 'can go on a shirt (public domain)' : u === 'owner' ? 'your own file: yours to print' : 'reference: drafts only, not for sale');
   return (
     <div className="design-sources">
       <h4><FolderOpen size={13} /> Design sources <span className="count">folders on your PC the designers may use</span></h4>
-      <p className="small muted">The scouts save images they find online into <b>memez</b> with the source and licence recorded: a public-domain or CC0 image can go on a shirt; anything else is reference only (the designers take the joke and remake it). Link your own folders too: your files are yours to print. Declining a design made from a saved image deletes that one image.</p>
+      <p className="small muted">The scouts save images they find online into <b>memez</b> with the source and licence recorded: a public-domain or CC0 image can go on a shirt; anything else (meme templates, Reddit pictures, posts) is reference: the designers can caption and crop it as a draft you see here, flagged, but it is never listed as it is. Link your own folders too: your files are yours to print. Declining a design made from a saved image deletes that one image.</p>
       <ul className="creator-request-log">
         {sources.map((f) => <li key={f.id}>
           <b>{f.label}</b> <span className="small muted">{f.path}{!f.exists ? ' (not there yet)' : ''} · {f.files} image{f.files === 1 ? '' : 's'}{f.files ? `: ${f.printable} printable, ${f.reference} reference` : ''}{f.notes ? ` · ${f.notes} meme note${f.notes === 1 ? '' : 's'}` : ''}</span>

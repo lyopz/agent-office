@@ -50,7 +50,7 @@ describe('captioned images', () => {
 });
 
 describe('captions from the owner\'s source folders', () => {
-  test('a print or owner file is captioned, a reference file is refused', async () => {
+  test('a print or owner file is captioned; a reference file gives a flagged draft; a crop keeps one window', async () => {
     const { captionImage } = await import('../server/caption.mjs');
     const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('0000000d49484452', 'hex'), Buffer.from([0, 0, 0, 40, 0, 0, 0, 30]), Buffer.alloc(16)]);
     const svgToPng = async (svg: string) => ({ png: Buffer.from(svg), width: 1, height: 1 });
@@ -59,7 +59,13 @@ describe('captions from the owner\'s source folders', () => {
     const ok = await captionImage({ source_file: 'memez/fish.png', bottom: 'fih' }, { svgToPng, readSource });
     expect(ok).toMatchObject({ source: 'source:memez/fish.png', sourceFile: 'memez/fish.png', sourceMeta: expect.objectContaining({ licence: 'Public domain' }) });
     expect((await captionImage({ source_file: 'ideas/mine.png', top: 'me' }, { svgToPng, readSource })).sourceMeta).toBeNull();
-    await expect(captionImage({ source_file: 'memez/post.png', top: 'x' }, { svgToPng, readSource })).rejects.toThrow(/reference only/);
+    // a reference file is captioned too, but the result says it is a draft on someone's work
+    const draft: any = await captionImage({ source_file: 'memez/post.png', top: 'x' }, { svgToPng, readSource });
+    expect(draft.rights).toBe('reference');
+    // a crop keeps one window of the image: the sheet is the window, the full picture sits behind it
+    const cropped: any = await captionImage({ source_file: 'memez/fish.png', top: 'x', crop: { x: 25, y: 0, w: 50, h: 100 } }, { svgToPng: async (svg: string) => { expect(svg).toMatch(/<svg x="0" y="0" width="\d+" height="\d+" viewBox="\d+ 0 \d+ \d+" preserveAspectRatio="none"><image/); return { png: Buffer.from('png'), width: 1, height: 1 }; }, readSource });
+    expect(cropped.crop).toEqual({ x: 10, y: 0, w: 20, h: 30 });
+    expect(cropped.rights).toBe('print');
     await expect(captionImage({ source_file: 'memez/none.png', top: 'x' }, { svgToPng, readSource })).rejects.toThrow(/files_source/);
   });
 });

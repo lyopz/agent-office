@@ -59,18 +59,18 @@ describe('trends', () => {
 });
 
 describe('meme databases and connectors', () => {
-  test('Imgflip templates and Reddit top posts come back as names, counts and links; never image URLs', async () => {
+  test('Imgflip templates and Reddit top posts come back as names, counts, links and the image link for saving to memez', async () => {
     const { popularMemes, trendTools, trendSources, MEMES_TOOL } = await import('../server/trends.mjs');
     const fetch = async (u: URL | string) => {
       const url = String(u);
       if (url.includes('imgflip')) return { ok: true, status: 200, json: async () => ({ success: true, data: { memes: [{ id: '1', name: 'Drake Hotline Bling', url: 'https://i.imgflip.com/30b1gx.jpg', box_count: 2, captions: 1250000 }] } }) };
-      if (url.includes('/r/memes/')) return { ok: true, status: 200, json: async () => ({ data: { children: [{ data: { title: 'fih', score: 42000, num_comments: 300, created_utc: 1_760_000_000, permalink: '/r/memes/comments/x/fih/', url: 'https://i.redd.it/x.png' } }, { data: { title: 'nsfw', over_18: true, score: 9 } }] } }) };
+      if (url.includes('/r/memes/')) return { ok: true, status: 200, json: async () => ({ data: { children: [{ data: { title: 'fih', score: 42000, num_comments: 300, created_utc: 1_760_000_000, permalink: '/r/memes/comments/x/fih/', url: 'https://i.redd.it/x.png', post_hint: 'image' } }, { data: { title: 'nsfw', over_18: true, score: 9 } }, { data: { title: 'vid', score: 5, post_hint: 'hosted:video', url: 'https://v.redd.it/y' } }] } }) };
       return { ok: false, status: 429, json: async () => ({}) };
     };
     const r: any = await popularMemes({ subreddit: 'memes' }, { fetch });
-    expect(r.imgflip).toEqual([{ template: 'Drake Hotline Bling', captions: 1250000, text_boxes: 2 }]);
-    expect(r.reddit).toEqual([{ subreddit: 'memes', title: 'fih', score: 42000, comments: 300, at: new Date(1_760_000_000 * 1000).toISOString(), link: 'https://www.reddit.com/r/memes/comments/x/fih/' }]);
-    expect(JSON.stringify(r)).not.toMatch(/i\.redd\.it|i\.imgflip/);
+    expect(r.imgflip).toEqual([{ template: 'Drake Hotline Bling', captions: 1250000, text_boxes: 2, image: 'https://i.imgflip.com/30b1gx.jpg', page: 'https://imgflip.com/memegenerator/1' }]);
+    expect(r.reddit).toEqual([{ subreddit: 'memes', title: 'fih', score: 42000, comments: 300, at: new Date(1_760_000_000 * 1000).toISOString(), link: 'https://www.reddit.com/r/memes/comments/x/fih/', image: 'https://i.redd.it/x.png' }, { subreddit: 'memes', title: 'vid', score: 5, comments: null, at: null, link: null }]);
+    expect(r.note).toMatch(/never sold as it is/);
     const bad: any = await popularMemes({ source: 'reddit', subreddit: 'bad name!' }, { fetch });
     expect(bad.reddit_errors[0]).toMatch(/not a subreddit/);
     expect(trendTools({ google: true, memes: true, instagram: { configured: false, kind: null, hashtags: false, username: null, hashtagsLeft: null, expiresAt: null, renews: false, refreshedAt: null, refreshError: null }, pinterest: { configured: false, username: null, board: null, canSave: false, expiresAt: null, renews: false, refreshedAt: null, refreshError: null } }).map((t) => t.name)).toEqual(['trends_google', 'trends_memes', 'assets_public_domain']);
