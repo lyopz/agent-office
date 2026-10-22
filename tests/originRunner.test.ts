@@ -1006,3 +1006,21 @@ describe('origin runner: start store, routing and reports', () => {
     expect(rep.open).toMatchObject({ page: 'approvals', anchor: 'approvals-decided' });
   });
 });
+
+describe('origin runner: research tools are routed to the trend runner', () => {
+  test('assets_public_domain and trademark_check reach the trend runner, not the shop tools', async () => {
+    write({ ...base, agents: [{ id: 's1', name: 'Trend Scout' }], tasks: [{ id: 't1', title: 'find 5 memes', detail: '', status: 'approved', by: 'owner', agentId: 's1', focus: true, createdAt: '' }] });
+    const trendCalls: string[] = [], shopCalls: string[] = [];
+    const tools = { tools: [{ name: 'assets_public_domain', description: 'd', input_schema: { type: 'object', properties: {} } }, { name: 'trademark_check', description: 'd', input_schema: { type: 'object', properties: {} } }],
+      run: async (n: string) => { shopCalls.push(n); return { content: `unknown tool ${n}`, isError: true }; },
+      trends: async (n: string) => { trendCalls.push(n); return { content: '{"ok":true}', isError: false }; } };
+    const seen: any[] = [];
+    let n = 0;
+    const fetch = async (_u: string, init: any) => { n++; seen.push(JSON.parse(init.body)); return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'a', name: 'assets_public_domain', input: { query: 'frog' } }, { type: 'tool_use', id: 'b', name: 'trademark_check', input: { phrase: 'oh look' } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
+    await runner.runOnce('focus', { fetch, file, key: 'test', etsy: tools } as any);
+    expect(trendCalls).toEqual(['assets_public_domain', 'trademark_check']);
+    expect(shopCalls).toEqual([]);
+    expect(runner.isTrendTool('trends_google')).toBe(true);
+    expect(runner.isTrendTool('printify_create_product')).toBe(false);
+  });
+});

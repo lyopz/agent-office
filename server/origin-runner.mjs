@@ -26,7 +26,7 @@ import { moneyByAgent, salesFromOrders } from './money.mjs';
 import { IMAGE_TOOL, generateImage, imageWorstUsd, openaiPublic } from './openai-images.mjs';
 import { CANVA_AI, callCanva, canvaFiles, canvaName, canvaPublic, canvaText, canvaTools, connectInProgress, forgetCanva, startConnect } from './canva.mjs';
 import { voicePublic, voiceRoute } from './openai-voice.mjs';
-import { COPYRIGHT_RULES, runTrendTool, trendSources, trendTask, trendTools, trendsPublic } from './trends.mjs';
+import { COPYRIGHT_RULES, TREND_TOOLS, runTrendTool, trendSources, trendTask, trendTools, trendsPublic } from './trends.mjs';
 import { instagramMaintain } from './instagram.mjs';
 import { pinterestMaintain } from './pinterest.mjs';
 import { DEGEN_TOOL, degenBankSkill, degenCatalog, degenSkill, degenSkillsForRole } from './degen-skills.mjs';
@@ -344,6 +344,8 @@ export function taskReports(s, files = [], n = 12) {
   });
 }
 
+/** The public research tools (trends_*, assets_public_domain, trademark_check) all run through the trend runner, whatever their name. */
+export const isTrendTool = (name) => name.startsWith('trends_') || TREND_TOOLS.some((t) => t.name === name);
 /** At most this many parts from one routed ask. */
 const ROUTED_MAX = 6;
 /** A routed part whose earlier part is finished starts now, with that part's notes in its brief; one whose earlier part was stopped stops too. */
@@ -1049,7 +1051,7 @@ async function work(s, task, ctx) {
             : tc.name === DEGEN_TOOL.name ? await degenTool(s, task, tc.input || {})
             : SOURCE_TOOLS.some((t) => t.name === tc.name) ? await runSourceTool(tc.name, tc.input || {}, s, DIR, w, { fetch: etsy.webFetch ?? globalThis.fetch })
             : tc.name.startsWith('canva_') ? await useCanva(s, task, tc, w, etsy)
-            : tc.name.startsWith('trends_') ? await (etsy.trends ? etsy.trends(tc.name, tc.input) : runTrendTool(tc.name, tc.input))
+            : isTrendTool(tc.name) ? await (etsy.trends ? etsy.trends(tc.name, tc.input) : runTrendTool(tc.name, tc.input))
             : await etsy.run(tc.name, tc.input);
           // an SVG sent to Printify is kept in the gallery too
           if (tc.name === 'printify_upload_design' && tc.input?.svg && !res.isError) { try { saveDesign(s, task, { file_name: tc.input.file_name, svg: tc.input.svg, imageId: JSON.parse(res.content).image_id }, w); } catch { /* the upload still counts */ } }
@@ -1059,7 +1061,7 @@ async function work(s, task, ctx) {
           else if (tc.name.startsWith('printify_')) record.printifyCalls = (record.printifyCalls || 0) + 1;
           else if (tc.name === DESIGN_TOOL.name || tc.name === CAPTION_TOOL.name) record.designs = (record.designs || 0) + 1;
           else if (tc.name.startsWith('canva_')) record.canvaCalls = (record.canvaCalls || 0) + 1;
-          else if (tc.name.startsWith('trends_')) record.trendCalls = (record.trendCalls || 0) + 1;
+          else if (isTrendTool(tc.name)) record.trendCalls = (record.trendCalls || 0) + 1;
           else if (tc.name === AD_TOOL.name) record.ads = (record.ads || 0) + 1;
           results.push({ type: 'tool_result', tool_use_id: tc.id, content: res.content, ...(res.isError ? { is_error: true } : {}) });
         }
@@ -1878,7 +1880,7 @@ function readInbox() {
       const req = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (req?.type === 'skills') { const s = loadState(); const r = queueSkills(s, req); saveState(s); console.log(`[origin] inbox ${f}: ${r.files.length} SKILL.md, ${r.bank.length} bank skills${r.unknown.length ? `; not found: ${r.unknown.join(', ')}` : ''}`); }
       // a task the owner wrote down for the command center: it becomes the focus, for the named agent when one is given
-      else if (req?.type === 'task' && req.title) { const s = loadState(); const who = req.agent ? resolveAgents(s, [req.agent]) : { ids: [] }; const t = addFocusTask(s, { title: String(req.title), detail: String(req.detail || ''), agentId: who.ids[0] ?? null, count: Number.isFinite(req.count) ? req.count : itemCount(req.title) }); saveState(s); console.log(`[origin] inbox ${f}: focus task ${t ? `"${t.title}"${who.ids[0] ? ` for ${who.ids[0]}` : ''}` : 'not added'}`); if (t) setTimeout(startFocus, 1000); }
+      else if (req?.type === 'task' && req.title) { const s = loadState(); if (req.replaces) for (const x of s.tasks) if (x.status === 'approved' && x.title.toLowerCase() === String(req.replaces).toLowerCase()) stopTask(x, 'Replaced by the owner\'s newer ask.', new Date().toISOString()); const who = req.agent ? resolveAgents(s, [req.agent]) : { ids: [] }; const t = addFocusTask(s, { title: String(req.title), detail: String(req.detail || ''), agentId: who.ids[0] ?? null, count: Number.isFinite(req.count) ? req.count : itemCount(req.title) }); saveState(s); console.log(`[origin] inbox ${f}: focus task ${t ? `"${t.title}"${who.ids[0] ? ` for ${who.ids[0]}` : ''}` : 'not added'}`); if (t) setTimeout(startFocus, 1000); }
     } catch (e) { console.error(`[origin] inbox ${f}: ${e.message}`); }
     try { fs.renameSync(file, `${file}.done`); } catch { /* leave it */ }
   }

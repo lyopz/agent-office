@@ -43,3 +43,4 @@ export function taskReports(s: Record<string, unknown>, files?: { taskId?: strin
 export function releaseWaiting(s: Record<string, unknown>, at?: string): Record<string, any>[];
 export function cancelTask(s: Record<string, unknown>, task: Record<string, unknown>, at?: string): { cleared: number };
 export function distributeDegen(s: Record<string, unknown>): Promise<{ given: { skill: string; agents: string[]; already: number }[]; errors: string[] }>;
+export const isTrendTool: (name: string) => boolean;
