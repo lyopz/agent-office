@@ -73,7 +73,7 @@ describe('meme databases and connectors', () => {
     expect(r.note).toMatch(/never sold as it is/);
     const bad: any = await popularMemes({ source: 'reddit', subreddit: 'bad name!' }, { fetch });
     expect(bad.reddit_errors[0]).toMatch(/not a subreddit/);
-    expect(trendTools({ google: true, memes: true, instagram: { configured: false, kind: null, hashtags: false, username: null, hashtagsLeft: null, expiresAt: null, renews: false, refreshedAt: null, refreshError: null }, pinterest: { configured: false, username: null, board: null, canSave: false, expiresAt: null, renews: false, refreshedAt: null, refreshError: null } }).map((t) => t.name)).toEqual(['trends_google', 'trends_memes', 'assets_public_domain']);
+    expect(trendTools({ google: true, memes: true, instagram: { configured: false, kind: null, hashtags: false, username: null, hashtagsLeft: null, expiresAt: null, renews: false, refreshedAt: null, refreshError: null }, pinterest: { configured: false, username: null, board: null, canSave: false, expiresAt: null, renews: false, refreshedAt: null, refreshError: null } }).map((t) => t.name)).toEqual(['trends_google', 'trends_memes', 'assets_public_domain', 'trademark_check']);
     expect(trendTools({ google: true, memes: true, instagram: { configured: true, kind: 'facebook', hashtags: true, username: 'ed', hashtagsLeft: 30, expiresAt: null, renews: false, refreshedAt: null, refreshError: null }, pinterest: { configured: true, username: 'ed', board: 'memez', canSave: true, expiresAt: null, renews: false, refreshedAt: null, refreshError: null } }).map((t) => t.name)).toContain('trends_instagram');
     expect(trendSources()).not.toMatch(/INSTAGRAM CONNECTED/);
     expect(TREND_SOURCES).toMatch(/MEME DATABASES: trends_memes/);
@@ -228,5 +228,29 @@ describe('meme databases and connectors', () => {
     expect(await pinterestMaintain({ config: first, now: Date.parse(first.refreshedAt) + 22 * DAY, fetch: pinFetch, save: (c: any) => pinSaved.push(c) })).toMatchObject({ status: 'renewed' });
     expect(pinSaved[0]).toMatchObject({ token: 'pina2', refresh: 'pinr2', appId: 'app' });
     expect(await pinterestMaintain({ config: { token: 'pasted-by-hand-token-xyz', username: 'ed' }, now, fetch: pinFetch, save: () => {} })).toMatchObject({ status: 'manual' });
+  });
+});
+
+describe('trademark check', () => {
+  test('live clothing marks are a risk; other live marks a caution; no marks clear', async () => {
+    const { trademarkCheck } = await import('../server/trends.mjs');
+    const answer = (hits: object[]) => async () => ({ ok: true, status: 200, json: async () => ({ hits: { hits: hits.map((h) => ({ _source: h })) } }) });
+    const risk: any = await trademarkCheck({ phrase: 'oh look' }, { fetch: answer([{ wordmark: 'OH LOOK', alive: true, internationalClass: ['IC 025'], goodsAndServices: ['T-shirts'] }]) });
+    expect(risk).toMatchObject({ checked: true, live: 1, clothing: 1 });
+    expect(risk.verdict).toMatch(/RISK/);
+    const caution: any = await trademarkCheck({ phrase: 'oh look' }, { fetch: answer([{ wordmark: 'OH LOOK', alive: true, internationalClass: ['IC 009'], goodsAndServices: ['software'] }]) });
+    expect(caution.verdict).toMatch(/caution/);
+    const clear: any = await trademarkCheck({ phrase: 'oh look' }, { fetch: answer([{ wordmark: 'OH LOOK', alive: false, internationalClass: ['IC 025'] }]) });
+    expect(clear.verdict).toMatch(/clear/);
+  });
+
+  test('a USPTO that will not answer gives a warning, not an error', async () => {
+    const { trademarkCheck, runTrendTool } = await import('../server/trends.mjs');
+    const r: any = await trademarkCheck({ phrase: 'october on repeat' }, { fetch: async () => { throw new Error('connection refused'); } });
+    expect(r.checked).toBe(false);
+    expect(r.warning).toMatch(/TM unchecked/);
+    expect(r.manual).toMatch(/tmsearch\.uspto\.gov/);
+    const viaTool = await runTrendTool('trademark_check', { phrase: 'x y' }, { fetch: async () => ({ ok: false, status: 403 }) } as any);
+    expect(viaTool.isError).toBe(false);
   });
 });

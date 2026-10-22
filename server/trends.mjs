@@ -32,7 +32,33 @@ export const MEMES_TOOL = {
   description: "What is popular in memes right now, from two public databases (free, no login): Imgflip's most-used meme templates (name, how many captions each has had, and the template image link) and the top posts of the week in meme subreddits (title, score, comments, link, and the image link when the post is a picture). A scout may save an image into the owner's memez folder with source_save (it is kept as reference: someone's work, so the designers may make a draft from it that the owner sees, but it is never sold as it is). Learn which formats and jokes are hot, then make your own phrase and your own art; Know Your Meme (knowyourmeme.com/memes/popular) can be read with web_fetch for a meme's history.",
   input_schema: { type: 'object', properties: { source: { type: 'string', enum: ['imgflip', 'reddit', 'both'], description: 'default both' }, subreddit: { type: 'string', description: `one subreddit without r/, default ${MEME_SUBS.join(', ')} together` }, period: { type: 'string', enum: ['day', 'week', 'month'], description: 'for reddit, default week' }, limit: { type: 'integer', minimum: 1, maximum: 50 } } },
 };
-export const TREND_TOOLS = [GOOGLE_TRENDS_TOOL, MEMES_TOOL, ASSETS_TOOL];
+// ---------- trademark check: USPTO's public search, from this PC; a check that cannot run is a warning, never a block ----------
+const TMSEARCH = 'https://tmsearch.uspto.gov/api-v1-0-0/tmsearch';
+export const TRADEMARK_TOOL = {
+  name: 'trademark_check',
+  description: "Check a phrase against US trademarks (USPTO's public trademark search, read from the owner's PC). Returns live marks that match the words, with their classes and goods; class 25 (clothing) matters most for shirts. When USPTO cannot be reached, it says unchecked: then flag the phrase 'TM unchecked' in your notes and carry on; it never blocks the task. Free.",
+  input_schema: { type: 'object', properties: { phrase: { type: 'string', description: 'the exact words to check, e.g. "oh look"' } }, required: ['phrase'] },
+};
+const tmQuery = (phrase) => ({ query: { bool: { must: [{ bool: { should: [{ query_string: { query: `wordmark:"${phrase.replace(/["\\]/g, ' ')}"`, default_operator: 'AND' } }] } }] } }, size: 25, _source: ['wordmark', 'alive', 'statusDescription', 'statusCode', 'internationalClass', 'goodsAndServices', 'serialNumber', 'registrationId', 'ownerName', 'filedDate'] });
+export async function trademarkCheck(input, deps = {}) {
+  const phrase = String(input?.phrase || '').trim().slice(0, 80);
+  if (!phrase) throw new Error('Give the phrase to check.');
+  const manual = `https://tmsearch.uspto.gov/search/search-results?query=${encodeURIComponent(phrase)}`;
+  const f = deps.fetch ?? globalThis.fetch;
+  let data;
+  try {
+    const r = await f(TMSEARCH, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', 'user-agent': UA, referer: 'https://tmsearch.uspto.gov/search/search-results' }, body: JSON.stringify(tmQuery(phrase)), signal: AbortSignal.timeout(20_000) });
+    if (!r.ok) throw new Error(`USPTO answered ${r.status}`);
+    data = await r.json();
+  } catch (e) {
+    return { phrase, checked: false, warning: `TM unchecked: ${String(e.message || e).slice(0, 120)}. Flag it and carry on; the owner can look it up at the link before saying Yes.`, manual };
+  }
+  const hits = (data?.hits?.hits || []).map((h) => h._source || {}).map((m) => ({ mark: String(m.wordmark || '').slice(0, 120), live: m.alive === true || /live|registered|pending/i.test(String(m.statusDescription || '')), status: String(m.statusDescription || m.statusCode || '').slice(0, 60), classes: [].concat(m.internationalClass || []).map(String).slice(0, 8), goods: String([].concat(m.goodsAndServices || []).join('; ')).slice(0, 200), owner: String([].concat(m.ownerName || []).join(', ')).slice(0, 80), serial: m.serialNumber ?? null }));
+  const live = hits.filter((m) => m.live);
+  const clothing = live.filter((m) => m.classes.some((c) => /(^|\D)0?25(\D|$)/.test(c)) || /cloth|shirt|apparel|t-shirt/i.test(m.goods));
+  return { phrase, checked: true, total: hits.length, live: live.length, clothing: clothing.length, verdict: clothing.length ? 'RISK: a live mark covers clothing; do not sell this phrase' : live.length ? 'caution: live marks exist outside clothing; fine for a joke on a shirt unless it copies their brand' : 'clear: no live mark found for these words', marks: live.slice(0, 10), manual };
+}
+export const TREND_TOOLS = [GOOGLE_TRENDS_TOOL, MEMES_TOOL, ASSETS_TOOL, TRADEMARK_TOOL];
 /** The trend tools this PC offers: the public ones always, Instagram and Pinterest once the owner connected them. */
 export function trendTools(conn = trendsPublic()) {
   return [...TREND_TOOLS, ...(conn.instagram?.configured ? [INSTAGRAM_TOOL] : []), ...(conn.pinterest?.configured ? [PINTEREST_TOOL] : [])];
@@ -50,7 +76,7 @@ export function trendSources(conn = trendsPublic()) {
 }
 
 /** What a design may and may not use, so nothing the owner lists is copied or trademarked. */
-export const COPYRIGHT_RULES = `ORIGINAL ONLY: a design the owner lists must be your own work. Never copy a meme image, a character, a logo, a brand, a celebrity's name or likeness, song lyrics or another seller's design; a meme format or a trend may inspire an original phrase and original art, nothing more. Before you build on a phrase, web_search it with the word trademark (and "site:uspto.gov") and drop it if a live registration or a known brand owns it; say in the design's title that you checked. Images you did not draw yourself come only from assets_public_domain (public domain and CC0), with each one's title, source URL and licence saved in design_save's assets.`;
+export const COPYRIGHT_RULES = `ORIGINAL ONLY: a design the owner lists must be your own work. Never copy a meme image, a character, a logo, a brand, a celebrity's name or likeness, song lyrics or another seller's design; a meme format or a trend may inspire an original phrase and original art, nothing more. Before you build on a phrase, run trademark_check on it and drop it if a live mark covers clothing (class 25) or a known brand owns it; say in the design's title that you checked. If trademark_check says unchecked, flag the phrase "TM unchecked" in your notes and the design's title and carry on: the owner sees the flag before saying Yes. Images you did not draw yourself come only from assets_public_domain (public domain and CC0), with each one's title, source URL and licence saved in design_save's assets.`;
 
 /** True when a task (or its agent) is about trends, memes or social video, so the brief explains the sources. */
 export const trendTask = (task, agentName = '') => /\btrend|tiktok|tik tok|instagram|\breels?\b|viral|meme|hashtag|short.?video|what.?s selling|what sells/i.test(`${task?.title || ''} ${task?.detail || ''} ${agentName || ''}`);
@@ -165,6 +191,7 @@ export async function runTrendTool(name, input, deps = {}) {
     if (name === GOOGLE_TRENDS_TOOL.name) return { content: JSON.stringify(await googleTrends(input, deps)), isError: false };
     if (name === ASSETS_TOOL.name) return { content: JSON.stringify(await publicDomainAssets(input, deps)), isError: false };
     if (name === MEMES_TOOL.name) return { content: JSON.stringify(await popularMemes(input, deps)), isError: false };
+    if (name === TRADEMARK_TOOL.name) return { content: JSON.stringify(await trademarkCheck(input, deps)), isError: false };
     if (name === INSTAGRAM_TOOL.name) return { content: JSON.stringify(await instagramTool(input, deps.instagram ?? {})), isError: false };
     if (name === PINTEREST_TOOL.name) return { content: JSON.stringify(await pinterestTool(input, deps.pinterest ?? {})), isError: false };
     return { content: `Unknown trend tool ${name}`, isError: true };

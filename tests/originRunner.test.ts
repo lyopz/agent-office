@@ -716,6 +716,8 @@ describe('origin runner: designs', () => {
     expect(read().designs).toHaveLength(1);
     expect(read().designs[0]).toMatchObject({ source: 'canva', kind: 'png', taskId: 't1' });
     expect(seen[0].messages[0].content).toMatch(/a real picture, edited, no AI art/);
+    expect(seen[0].messages[0].content).toMatch(/CHECKS NEVER BLOCK/);
+    expect(seen[0].messages[0].content).toMatch(/YOUR TOOLS THIS RUN: web_search, web_fetch, canva_export_design/);
     expect(seen[0].messages[0].content).toMatch(/remove_background/);
     expect(seen[0].messages[0].content).toMatch(/NOTHING ELSE ON THIS TASK: hand-drawn SVGs \(design_save\) and Canva AI design or image generation are refused/);
   });
