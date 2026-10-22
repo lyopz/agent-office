@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { Activity, Network, Users } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ChevronDown, ChevronUp, Users } from 'lucide-react';
 import { create } from 'zustand';
 import { useStore } from '../store/store';
 import { teamsOf } from './connectome';
@@ -7,6 +7,7 @@ import { AgentMenu } from './AgentMenu';
 import BrainSwitcher from './BrainSwitcher';
 import CreatorDesk from './CreatorDesk';
 import BrainScene, { brainAgents } from './BrainScene';
+import { JarvisCard, TaskTrack } from './JarvisCard';
 import '../styles/brain.css';
 
 /** Shared focus state for the brain, sector menu, and brain picker. */
@@ -26,22 +27,25 @@ export default function ConnectomeView() {
   const activeTeamId = useBrainFocus((s) => s.selectedTeamId);
   const activeTeam = teams.find((team) => team.id === activeTeamId);
 
+  const dots = useMemo(() => shown.map((a) => teams.find((t) => t.agentIds.includes(a.id))?.color ?? '#5fb8ff'), [shown, teams]);
+  const [menuOpen, setMenuOpen] = useState(() => { try { return localStorage.getItem('brain:menu-open') === '1'; } catch { return false; } });
+  const toggleMenu = () => setMenuOpen((o) => { try { localStorage.setItem('brain:menu-open', o ? '0' : '1'); } catch { /* private window */ } return !o; });
+
   return <div className="brain-workspace">
-    <header className="brain-toolbar">
-      <BrainSwitcher teams={specialists} agents={Object.fromEntries(shown.map((a) => [a.id, a]))} totalAgents={total}/>
-      <div className="brain-title"><span className="brain-title-kicker">THE BRAIN <i/> LIVE SYSTEM</span><strong>{activeTeam ? `${activeTeam.name} Sector` : 'The Brain'}</strong><span>JARVIS at the core. Every branch is one it grew.</span></div>
-      <CreatorDesk />
-    </header>
-    <div className="brain-main">
-      <AgentMenu />
-      <section className="brain-stage-view" aria-label="Agent brain visualization">
-        <div className="brain-stage-glow" aria-hidden="true"/>
-        <div className="brain-hud brain-hud-top"><span><Network size={14}/> BRAIN MODEL <b>{total.toString().padStart(2, '0')} AGENTS</b></span><span>NERVES GROW FROM THE MAIN AGENT · {ideasCount} IDEAS</span></div>
-        <BrainScene/>
-        <div className="brain-hud brain-hud-bottom"><div><span className="brain-hud-icon"><Users size={15}/></span><span><b>{total} connected agent{total === 1 ? '' : 's'}</b><small>Click a glowing bud to grow an idea into a branch</small></span></div><div className="brain-hud-divider"/><div><span className="brain-hud-icon pulse-icon"><Activity size={15}/></span><span><b>{running} active now</b><small>Drag the brain to view it from every angle</small></span></div></div>
-        {!total && <div className="brain-empty"><b>Your network starts here</b><span>Create a specialist to grow the first branch.</span></div>}
-      </section>
+    <section className="brain-stage-view" aria-label="Agent brain visualization">
+      <BrainScene/>
+      {!total && <div className="brain-empty"><b>Your network starts here</b><span>Create a specialist to grow the first branch.</span></div>}
+    </section>
+    <div className="brain-float brain-float-left">
+      <BrainSwitcher teams={specialists} agents={Object.fromEntries(shown.map((a) => [a.id, a]))} totalAgents={total} running={running} dots={dots}/>
+      <button className="brain-menu-toggle" aria-expanded={menuOpen} onClick={toggleMenu}><Users size={14}/> Branches, ideas and tasks {menuOpen ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}</button>
+      {menuOpen && <AgentMenu />}
     </div>
+    <div className="brain-float brain-float-top" title={`${activeTeam ? `${activeTeam.name} Sector` : 'The Brain'}: JARVIS at the core. Every branch is one it grew. ${ideasCount} ideas.`}>
+      <CreatorDesk />
+    </div>
+    <div className="brain-float brain-float-right"><JarvisCard /></div>
+    <div className="brain-float brain-float-bottom"><TaskTrack /></div>
   </div>;
 }
 

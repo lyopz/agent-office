@@ -15,6 +15,7 @@ import { useShortcuts } from './ui/actions';
 import { useApplyTheme } from './ui/ThemeEditor';
 import { useAutosave } from './ui/SaveStatus';
 import { RecoveryDialog } from './ui/RecoveryDialog';
+import { NavDock } from './ui/NavDock';
 
 /** One line at a time. Only real events reach it: what you just did, and JARVIS's runner (see useOrigin). */
 function Toast() {
@@ -36,7 +37,8 @@ export function App() {
   useAutosave();
   const page = useStore((s) => s.page);
   return (
-    <div className="app">
+    <div className="app" data-page={page}>
+      <div className="space-bg" aria-hidden="true"><i className="stars far" /><i className="stars near" /><i className="galaxy g1" /><i className="galaxy g2" /></div>
       <TopBar />
       {page === 'office' && (
         <main className="brain-stage view-fade" key="brain">
@@ -52,6 +54,7 @@ export function App() {
       <div>
         <Console />
       </div>
+      <NavDock />
       <ProfileDrawer />
       <RecoveryDialog />
       <ConfirmDialog />

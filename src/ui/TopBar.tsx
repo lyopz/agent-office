@@ -1,18 +1,17 @@
 import { saveFile } from '../persistence/saveFile';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useOrigin, useOriginPoll } from '../brain/useOrigin';
-import { Download, History, OctagonX, Redo2, Undo2, Upload } from 'lucide-react';
+import { Brain, Cloud, Download, History, OctagonX, Redo2, Undo2, Upload } from 'lucide-react';
 import { useStore } from '../store/store';
 import { repo } from '../store/store';
 import { confirmAction } from './primitives';
 import { SaveStatus } from './SaveStatus';
-import { LogoLockup } from '../brand/Logo';
+import { brainAgents } from '../brain/BrainScene';
 
 export function TopBar() {
   const name = useStore((s) => s.doc.name);
-  const page = useStore((s) => s.page);
-  // designs and products waiting for the owner's Yes or No
-  const waiting = useOrigin((o) => (o.status?.designs ?? []).filter((d) => d.status === 'waiting').length + (o.status?.publishRequests ?? []).filter((r) => r.status === 'waiting').length);
+  const agents = useStore((s) => s.doc.agents);
+  const connected = useMemo(() => brainAgents(agents).length, [agents]);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
   const s = useStore.getState();
@@ -38,23 +37,26 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <span className="brand"><LogoLockup /></span>
+      <span className="brand" role="img" aria-label="The Brain"><Brain size={34} strokeWidth={1.6} /></span>
       <input className="office-name" aria-label="Brain name" defaultValue={name} key={name} onBlur={(e) => e.target.value.trim() && e.target.value !== name && s.commit([{ op: 'office.rename', name: e.target.value.trim() }], 'Rename brain')} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
-      <nav className="seg" aria-label="Pages">
-        {(['office', 'universe', 'dashboard', 'charts', 'approvals', 'ads', 'settings'] as const).map((p) => <button key={p} className="btn sm" aria-pressed={page === p} onClick={() => s.setUi({ page: p })}>{p === 'office' ? 'Brain' : p === 'universe' ? 'Brains' : p[0].toUpperCase() + p.slice(1)}{p === 'approvals' && waiting > 0 && <span className="nav-count" aria-label={`${waiting} waiting`}>{waiting}</span>}</button>)}
-      </nav>
       <span className="spacer" />
-      <EmergencyButton />
-      <span className={`badge ${prov.kind} hide-sm`} title={prov.detail}>{prov.label}</span>
-      <button className="btn icon sm" disabled={!canUndo} aria-label="Undo" title="Undo (Ctrl+Z)" onClick={s.undo}><Undo2 size={14} /></button>
-      <button className="btn icon sm" disabled={!canRedo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)" onClick={s.redo}><Redo2 size={14} /></button>
-      <SaveStatus />
-      <div style={{ position: 'relative' }}>
-        <button className="btn sm" aria-expanded={versionsOpen} onClick={() => setVersionsOpen(!versionsOpen)}><History size={14} /><span className="hide-sm">Versions</span></button>
-        {versionsOpen && <VersionsMenu onClose={() => setVersionsOpen(false)} />}
+      <div className="topbar-tools" role="group" aria-label="Brain tools">
+        <EmergencyButton />
+        <button className="btn icon sm" disabled={!canUndo} aria-label="Undo" title="Undo (Ctrl+Z)" onClick={s.undo}><Undo2 size={14} /></button>
+        <button className="btn icon sm" disabled={!canRedo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)" onClick={s.redo}><Redo2 size={14} /></button>
+        <div style={{ position: 'relative' }}>
+          <button className="btn icon sm" aria-expanded={versionsOpen} aria-label="Versions" title="Saved versions" onClick={() => setVersionsOpen(!versionsOpen)}><History size={14} /></button>
+          {versionsOpen && <VersionsMenu onClose={() => setVersionsOpen(false)} />}
+        </div>
+        <button className="btn icon sm" aria-label="Export brain" title="Export the brain as a file" onClick={exportFile}><Download size={14} /></button>
+        <button className="btn icon sm" aria-label="Import brain" title="Import a brain file" onClick={() => fileRef.current?.click()}><Upload size={14} /></button>
       </div>
-      <button className="btn icon sm" aria-label="Export brain" title="Export the brain as a file" onClick={exportFile}><Download size={14} /></button>
-      <button className="btn icon sm" aria-label="Import brain" title="Import a brain file" onClick={() => fileRef.current?.click()}><Upload size={14} /></button>
+      <div className="status-pill">
+        <span className="status-agents"><i className={`status-dot ${prov.kind}`} />{connected} agent{connected === 1 ? '' : 's'} connected</span>
+        <span className={`status-jarvis ${prov.kind} hide-sm`} title={prov.detail}>{prov.label}</span>
+        <span className="status-save"><Cloud size={15} /><SaveStatus part="text" /></span>
+      </div>
+      <SaveStatus part="button" />
       <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ''; }} />
     </header>
   );

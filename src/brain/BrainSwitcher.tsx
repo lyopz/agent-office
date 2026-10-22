@@ -4,7 +4,7 @@ import { useBrainFocus } from './ConnectomeView';
 import type { Team } from './connectome';
 import type { Agent } from '../model/types';
 
-export default function BrainSwitcher({ teams, agents, totalAgents }: { teams: Team[]; agents: Record<string, Agent>; totalAgents: number }) {
+export default function BrainSwitcher({ teams, agents, totalAgents, running = 0, dots = [] }: { teams: Team[]; agents: Record<string, Agent>; totalAgents: number; running?: number; dots?: string[] }) {
   const selectedTeamId = useBrainFocus((s) => s.selectedTeamId);
   const selectedAgentId = useBrainFocus((s) => s.brainAgentId);
   const [open, setOpen] = useState(false);
@@ -34,9 +34,8 @@ export default function BrainSwitcher({ teams, agents, totalAgents }: { teams: T
     <div className="brain-switcher" ref={root} onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}>
       <button className="brain-switch-trigger" aria-expanded={open} aria-haspopup="dialog" aria-controls="brain-switch-popover" onClick={() => setOpen((value) => !value)}>
         <span className="brain-switch-icon"><Brain size={17} /></span>
-        <span className="brain-switch-copy"><span className="brain-switch-kicker">NEURAL NETWORK</span><b>{activeAgent ? `${activeAgent.identity.name} Brain` : active ? `${active.name} Brain` : 'Main Brain'}</b></span>
-        {(() => { const n = activeAgent ? Object.values(agents).filter((agent) => agent.skills.supervisorId === activeAgent.id).length : active ? active.agentIds.length : totalAgents; return <span className="brain-switch-count">{n}<small> agent{n === 1 ? '' : 's'}</small></span>; })()}
-        <ChevronDown className={open ? 'brain-chevron is-open' : 'brain-chevron'} size={15} />
+        {(() => { const n = activeAgent ? Object.values(agents).filter((agent) => agent.skills.supervisorId === activeAgent.id).length : active ? active.agentIds.length : totalAgents; return <span className="brain-switch-copy"><b>{activeAgent ? `${activeAgent.identity.name} Brain` : active ? `${active.name} Brain` : 'Main Brain'}</b><span className="brain-switch-kicker">{n} connected · {running} running</span>{dots.length > 0 && <span className="brain-switch-dots" aria-hidden="true">{dots.slice(0, 10).map((c, i) => <i key={i} style={{ background: c, color: c }} />)}</span>}</span>; })()}
+        <ChevronDown className={open ? 'brain-chevron is-open' : 'brain-chevron'} size={17} />
       </button>
 
       {open && <section className="brain-switch-popover" id="brain-switch-popover" role="dialog" aria-label="Choose an agent brain" onWheel={(event) => event.stopPropagation()}>

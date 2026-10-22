@@ -21,6 +21,7 @@ import { useStore } from '../store/store';
 import type { Agent } from '../model/types';
 import { teamOfAgent, teamsOf, type Team } from './connectome';
 import { MAIN_BRAIN, REGIONS, brainColor, buildBrainGeometry, holoBrainMaterial } from './brainMesh';
+import { brainRing, type RingBrain } from './brainRing';
 import BrainColorPicker from './BrainColor';
 import { CEREBRUM, buildNerveTree, ideaSprouts, insideCerebrum, pathToRoot, route, subtree, type IdeaSprout, type NerveTree, type Path3 } from './nerveTree';
 import { growIdeaOps, openIdeas, treeIdeas } from './ideas';
@@ -172,7 +173,8 @@ export default function BrainScene() {
     const calm = reduceMotion();
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(34, 1, 0.05, 50);
-    camera.position.set(-2.25, 0.62, 1.72);
+    // far enough back to see the ring of brains around the main one
+    camera.position.set(-4.7, 2.8, 3.65);
     const renderer = new THREE.WebGLRenderer({ alpha: true, premultipliedAlpha: false, antialias: true, powerPreference: 'high-performance' });
     renderer.setClearColor(0x000000, 0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
@@ -190,7 +192,7 @@ export default function BrainScene() {
     const orbit = new OrbitControls(camera, renderer.domElement);
     orbit.target.set(0, -0.08, -0.05);
     orbit.enableDamping = true; orbit.dampingFactor = 0.08; orbit.enablePan = false;
-    orbit.minDistance = 1.6; orbit.maxDistance = 7;
+    orbit.minDistance = 1.6; orbit.maxDistance = 12;
     orbit.autoRotate = !calm; orbit.autoRotateSpeed = 0.45;
     orbit.saveState();
     let idleSince = performance.now();
@@ -213,6 +215,12 @@ export default function BrainScene() {
     dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3)); dustGeo.setAttribute('aSeed', new THREE.BufferAttribute(dustSeed, 1));
     const dustMat = new THREE.ShaderMaterial({ vertexShader: dustVertex, fragmentShader: dustFragment, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uTime: { value: 0 }, uScale: { value: 7 }, uColor: { value: new THREE.Color(HOLO_FALLBACK) } } });
     const dust = new THREE.Points(dustGeo, dustMat); dust.renderOrder = 2; scene.add(dust);
+    // the halo: specialist brains riding a glass ring around the main brain
+    const halo = brainRing({ geo, glow, labelLayer, core: new THREE.Vector3(0, 0.08, 0), onPick: (k) => useBrainFocus.setState({ selectedTeamId: k, brainAgentId: null, teamId: k, agentId: null }) });
+    scene.add(halo.group);
+    const ringBrains = (doc: { agents: Record<string, Agent>; appearance: Parameters<typeof brainColor>[0] }): RingBrain[] =>
+      teamsOf({ agents: Object.fromEntries(brainAgents(doc.agents).filter((a) => a.branch?.kind === 'skill').map((a) => [a.id, a])) })
+        .map((team) => ({ key: team.id, name: team.name, color: brainColor(doc.appearance, team.id, team.color) }));
     const nerves = new THREE.Group(); nerves.renderOrder = 2; scene.add(nerves);
     const nodeGroup = new THREE.Group(); scene.add(nodeGroup);
     const pulseGroup = new THREE.Group(); scene.add(pulseGroup);
@@ -390,6 +398,7 @@ export default function BrainScene() {
         prevDoc = st.doc; prevFocus = focus;
         const pick = selectedBrain(focus, teamsOf(st.doc), st.doc.agents);
         holo.setColor(brainColor(st.doc.appearance, pick.key, pick.fallback));
+        halo.setBrains(ringBrains(st.doc));
       }
       holo.update(time, dt);
       (dustMat.uniforms.uColor.value as THREE.Color).copy(holo.front.uniforms.uColor.value as THREE.Color);
@@ -437,7 +446,7 @@ export default function BrainScene() {
       // synapse rings fade out as they spread
       rings = rings.filter((r) => { r.age += dt * 1.6; const m = r.sprite.material as THREE.SpriteMaterial; r.sprite.scale.multiplyScalar(1 + dt * 2.6); m.opacity = Math.max(0, 1 - r.age); if (r.age >= 1) { m.dispose(); pulseGroup.remove(r.sprite); return false; } return true; });
       dustMat.uniforms.uTime.value = time;
-      { const r = el.getBoundingClientRect(); dustMat.uniforms.uScale.value = renderer.getPixelRatio() * Math.min(r.width, r.height) * 0.012; }
+      { const r = el.getBoundingClientRect(); dustMat.uniforms.uScale.value = renderer.getPixelRatio() * Math.min(r.width, r.height) * 0.012; halo.update(time, dt, camera, r, renderer.getPixelRatio() * Math.min(r.width, r.height) * 0.011, calm); }
       // idea buds grow out, then breathe; now and then the main agent sends a spark into one
       for (const b of buds) {
         b.grow = calm ? 1.25 : Math.min(1.25, b.grow + dt * 0.7);
@@ -492,7 +501,7 @@ export default function BrainScene() {
       disposeNerves(); disposeBuds();
       for (const p of pulses) for (const sp of [p.sprite, ...p.trail]) (sp.material as THREE.Material).dispose();
       for (const r of rings) (r.sprite.material as THREE.Material).dispose();
-      orbit.dispose(); geo.dispose(); holo.dispose(); glow.dispose(); ringTex.dispose(); sky.dispose();
+      halo.dispose(); orbit.dispose(); geo.dispose(); holo.dispose(); glow.dispose(); ringTex.dispose(); sky.dispose();
       dustGeo.dispose(); dustMat.dispose(); composer.dispose();
       renderer.dispose(); renderer.domElement.remove();
       api.current = null; rebuild.current = null; regrowBuds.current = null;

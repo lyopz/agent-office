@@ -17,6 +17,11 @@ type DeskTab = 'ideas' | 'agent' | 'requests' | 'runs' | 'bank';
 const TABS: DeskTab[] = ['ideas', 'agent', 'requests', 'runs', 'bank'];
 const EVERY = [[15, 'every 15 min'], [30, 'every 30 min'], [60, 'every hour'], [120, 'every 2 hours'], [180, 'every 3 hours'], [300, 'every 5 hours'], [480, 'every 8 hours'], [720, 'every 12 hours'], [1440, 'once a day']] as const;
 
+// Add idea in the bottom dock opens the desk from any page: the tab waits here until the desk is mounted.
+let pendingTab: DeskTab | null = null;
+const DESK_EVENT = 'brain:open-desk';
+export function openDesk(tab: DeskTab) { pendingTab = tab; window.dispatchEvent(new Event(DESK_EVENT)); }
+
 export default function CreatorDesk() {
   const doc = useStore((s) => s.doc);
   const library = doc.library;
@@ -24,6 +29,12 @@ export default function CreatorDesk() {
   const leaderId = leader?.id ?? null;
   const leaderName = leader?.identity.name ?? 'JARVIS';
   const [tab, setTab] = useState<DeskTab | null>(null);
+  useEffect(() => {
+    const take = () => { if (pendingTab) { setTab(pendingTab); pendingTab = null; } };
+    take();
+    window.addEventListener(DESK_EVENT, take);
+    return () => window.removeEventListener(DESK_EVENT, take);
+  }, []);
   const [idea, setIdea] = useState('');
   const [fileName, setFileName] = useState('');
   const [fileText, setFileText] = useState('');
@@ -145,10 +156,10 @@ export default function CreatorDesk() {
       <div className="creator-actions" aria-label="Agent Creator actions">
         <span className="creator-live"><i /> {leaderName} · OWNER-LED</span>
         <button className="creator-action" onClick={() => { setTab('ideas'); setNotice(''); }}><Plus size={14} /> Add idea <span className="creator-count">{pending}</span></button>
-        <button className="creator-action" onClick={() => { setTab('agent'); pickParent(null); setNotice(''); }}><GitBranch size={14} /> Start a venture</button>
-        <button className="creator-action" onClick={() => { setTab('runs'); setNotice(''); }}><Sparkles size={14} /> {leaderName} runs {waiting > 0 && <span className="creator-count" title="Waiting for your approval">{waiting}</span>}</button>
-        <button className="creator-action" onClick={() => { setTab('bank'); setNotice(''); }}><Library size={14} /> Skill bank <span className="creator-count">{doc.skillBank.length}</span></button>
-        <button className="creator-action" onClick={() => { setTab('requests'); setRequestFrom(null); setNotice(''); }}><Plus size={14} /> Skill requests <span className="creator-count">{openRequests}</span></button>
+        <button className="creator-action" title="Start a venture" onClick={() => { setTab('agent'); pickParent(null); setNotice(''); }}><GitBranch size={14} /> Start a venture</button>
+        <button className="creator-action" title={`${leaderName} runs`} onClick={() => { setTab('runs'); setNotice(''); }}><Sparkles size={14} /> {leaderName} runs {waiting > 0 && <span className="creator-count" title="Waiting for your approval">{waiting}</span>}</button>
+        <button className="creator-action" title="Skill bank" onClick={() => { setTab('bank'); setNotice(''); }}><Library size={14} /> Skill bank <span className="creator-count">{doc.skillBank.length}</span></button>
+        <button className="creator-action" title="Skill requests" onClick={() => { setTab('requests'); setRequestFrom(null); setNotice(''); }}><Plus size={14} /> Skill requests <span className="creator-count">{openRequests}</span></button>
         {needsSetup && <button className="creator-action" onClick={setupOrigin} title="Give JARVIS your Opportunity Research & Builder prompt and starting memory"><Sparkles size={14} /> {isOpportunityOrigin(doc) ? 'Update Opportunity agent rules' : 'Set up Opportunity agent'}</button>}
         <button className="creator-voice" onClick={speak} title={`Hear ${leaderName}'s low-pitched voice`}><Mic2 size={14} /> Hear {leaderName}</button>
       </div>

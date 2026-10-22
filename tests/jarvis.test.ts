@@ -31,18 +31,22 @@ describe('JARVIS', () => {
 });
 
 import { withBrainTheme, defaultAppearanceSettings, BUILTIN_THEMES } from '../src/model/themes';
-describe('Brain Red theme', () => {
+describe('Holo Space theme', () => {
   test('is the default and the first built-in theme', () => {
-    expect(BUILTIN_THEMES[0].id).toBe('brain-red');
-    expect(defaultAppearanceSettings().themeId).toBe('brain-red');
+    expect(BUILTIN_THEMES[0].id).toBe('holo-space');
+    expect(defaultAppearanceSettings().themeId).toBe('holo-space');
   });
-  test('moves an old save off the old green default but keeps a theme the owner chose', () => {
-    const old = { mode: 'dark' as const, themeId: 'obsidian-green', themes: BUILTIN_THEMES.filter((t) => t.id !== 'brain-red'), brainColors: {} };
+  test('moves an old save off an old default but keeps a theme the owner chose', () => {
+    const old = { mode: 'dark' as const, themeId: 'obsidian-green', themes: BUILTIN_THEMES.filter((t) => t.id !== 'brain-red' && t.id !== 'holo-space'), brainColors: {} };
     const moved = withBrainTheme(old);
-    expect(moved.themeId).toBe('brain-red');
-    expect(moved.themes[0].id).toBe('brain-red');
+    expect(moved.themeId).toBe('holo-space');
+    expect(moved.themes.map((t) => t.id).slice(0, 2)).toEqual(['holo-space', 'brain-red']);
+    const red = withBrainTheme({ ...old, themeId: 'brain-red', themes: BUILTIN_THEMES.filter((t) => t.id !== 'holo-space') });
+    expect(red.themeId).toBe('holo-space');
     const chosen = withBrainTheme({ ...old, themeId: 'arctic-blue' });
     expect(chosen.themeId).toBe('arctic-blue');
     expect(withBrainTheme(moved)).toBe(moved);
+    // picking Brain Red again after the move sticks
+    expect(withBrainTheme({ ...moved, themeId: 'brain-red' }).themeId).toBe('brain-red');
   });
 });
