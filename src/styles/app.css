@@ -221,6 +221,9 @@ table.data tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transp
 .task-row .t { display: flex; gap: 8px; align-items: baseline; }
 .task-row .t b { font-weight: 600; flex: 1; min-width: 0; }
 .task-row .t span { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+.task-row .t .task-cancel { display: inline-flex; gap: 4px; white-space: nowrap; }
+.task-row .task-cancel-btn { flex: none; }
+.task-row .small.warn { color: var(--warn); }
 .span-2 { grid-column: span 2; } .span-3 { grid-column: span 3; } .span-4 { grid-column: span 4; } .span-5 { grid-column: span 5; } .span-6 { grid-column: span 6; } .span-7 { grid-column: span 7; } .span-8 { grid-column: span 8; } .span-12 { grid-column: span 12; }
 .events { max-height: 320px; overflow: auto; font-size: var(--fs-sm); }
 .ev { display: grid; grid-template-columns: 96px 1fr auto; gap: 8px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.05); }

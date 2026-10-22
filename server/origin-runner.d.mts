@@ -31,4 +31,6 @@ export function decideAd(s: Record<string, unknown>, id: string, action: string,
 export const adMarkdown: (ad: Record<string, unknown>) => string;
 export const adTask: (t: { title?: string; detail?: string } | null | undefined, agentName?: string) => boolean;
 export function adsBrief(s: Record<string, unknown>, task: Record<string, unknown> | null): string;
+export function drawnAllowed(s: Record<string, unknown> | null | undefined, task: { title?: string; detail?: string } | null | undefined): boolean;
+export function cancelTask(s: Record<string, unknown>, task: Record<string, unknown>, at?: string): { cleared: number };
 export function distributeDegen(s: Record<string, unknown>): Promise<{ given: { skill: string; agents: string[]; already: number }[]; errors: string[] }>;

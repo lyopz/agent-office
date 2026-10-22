@@ -2,10 +2,10 @@
 // what each branch has spent and earned, who is busy, and what waits for the owner. Everything
 // here is real: it comes from JARVIS's runner (useOrigin) and the brain itself; nothing is simulated.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, BookOpen, CircleDollarSign, Play, ShieldCheck, Sparkles, Sunrise } from 'lucide-react';
+import { Activity, BookOpen, CircleDollarSign, Play, ShieldCheck, Sparkles, Sunrise, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import { useOrigin } from '../brain/useOrigin';
-import { runOrigin, runnerStatus, type RunnerStatus } from '../brain/originLink';
+import { runOrigin, runnerStatus, taskAction, type RunnerStatus, type RunnerTask } from '../brain/originLink';
 import { moneyByBranch } from '../brain/branchMoney';
 import { ProgressBar, ProgressLog } from '../brain/Progress';
 import { STATUS_COLOR } from '../brain/status';
@@ -43,6 +43,19 @@ export function Dashboard() {
   const since = useRef(seenAt()).current;
   useEffect(() => () => { try { localStorage.setItem(SEEN_KEY, String(Date.now())); } catch { /* storage unavailable */ } }, []);
   const [running, setRunning] = useState(false);
+  // cancelling a task takes two clicks: the first shows what it does, the second does it
+  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const cancelTask = async (t: RunnerTask) => {
+    const { notify } = useStore.getState();
+    setCancelling(true);
+    const r = await taskAction({ action: 'cancel', id: t.id });
+    setCancelling(false); setCancelId(null);
+    if (!r) { notify(`${leader}'s runner did not answer, so "${t.title}" was not cancelled.`, 'warn'); return; }
+    const cleared = r.cleared ?? 0;
+    notify(`Cancelled "${t.title}": no more runs or spend on it${cleared ? `, and ${cleared} waiting design${cleared === 1 ? '' : 's'} taken off your approval list` : ''}. Approve it again under ${leader}'s runs if you change your mind.`);
+    useOrigin.setState({ status: await runnerStatus() });
+  };
   const runNow = async () => {
     const { notify } = useStore.getState();
     const status = await runnerStatus();
@@ -158,7 +171,12 @@ export function Dashboard() {
         <div className="task-list">
           {working.slice(0, 8).map((t) => (
             <div key={t.id} className="task-row">
-              <div className="t"><b>{t.focus ? 'Focus: ' : ''}{t.title}</b><span>{name(t.agentId)}{t.by === 'origin' ? ` · set by ${leader}` : ''} · {usd(t.spentUsd ?? 0)} of {usd(t.budgetUsd ?? st?.taskBudgetUsd ?? 1.5)}</span></div>
+              <div className="t"><b>{t.focus ? 'Focus: ' : ''}{t.title}</b><span>{name(t.agentId)}{t.by === 'origin' ? ` · set by ${leader}` : ''} · {usd(t.spentUsd ?? 0)} of {usd(t.budgetUsd ?? st?.taskBudgetUsd ?? 1.5)}</span>
+                {cancelId === t.id
+                  ? <span className="task-cancel"><button className="btn sm danger" disabled={cancelling} onClick={() => void cancelTask(t)}>{cancelling ? 'Cancelling…' : 'Yes, cancel it'}</button><button className="btn sm" disabled={cancelling} onClick={() => setCancelId(null)}>Keep</button></span>
+                  : <button className="btn sm ghost task-cancel-btn" title="Stop this task: no more runs or spend, and its waiting designs leave your approval list" onClick={() => setCancelId(t.id)}><X size={12} /> Cancel</button>}
+              </div>
+              {cancelId === t.id && <span className="small warn">Stops the task for good (no more runs or spend) and clears its designs still waiting for your Yes or No. The files stay in the gallery.</span>}
               <ProgressBar pct={t.count ? Math.round(((st?.publishRequests ?? []).filter((r) => r.taskId === t.id).length / t.count) * 100) : t.progress} label={`${t.title} progress`} />
               {t.steps?.length ? <span className="small muted">{t.steps.filter((x) => x.done).length} of {t.steps.length} steps · next: {t.steps.find((x) => !x.done)?.text ?? 'finishing'}</span> : null}
             </div>

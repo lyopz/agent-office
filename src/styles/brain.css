@@ -488,8 +488,13 @@
 .approvals .approval-group { grid-column: span 12; }
 .approval-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-3); }
 .approval-card { margin: 0; display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: rgba(0,0,0,.18); }
-.approval-img { width: 100%; aspect-ratio: 5 / 6; object-fit: contain; border-radius: 8px; background: repeating-conic-gradient(rgba(255,255,255,.05) 0 25%, transparent 0 50%) 0 0 / 20px 20px; }
+/* a mid-grey behind every preview, so light and dark lettering and transparent areas all show */
+.approval-img { width: 100%; aspect-ratio: 5 / 6; object-fit: contain; border-radius: 8px; background: #6b6f76; }
 .approval-img.is-empty { background: rgba(255,255,255,.04); }
+.approval-source { display: flex; gap: 8px; align-items: center; }
+.approval-source code { font: 10px/1.4 var(--font-mono); color: var(--muted); word-break: break-all; }
+.approval-source-img { flex: none; width: 44px; height: 44px; object-fit: cover; border-radius: 6px; background: #6b6f76; }
+.approval-source-img.is-empty { background: rgba(255,255,255,.04); }
 .approval-card figcaption { display: grid; gap: 4px; font-size: var(--fs-sm); }
 .approval-card figcaption b { font-size: 13px; }
 .approval-card figcaption span, .approval-card figcaption small { color: var(--muted); }

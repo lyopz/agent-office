@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Play, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useStore } from '../store/store';
-import { agentProposalAction, designUrl, mockupUrl, publishDecision, runnerStatus, setAutoAgents, connectCanva, setAutoTasks, setCanvaLimit, setImageCap, syncOrigin, taskAction, type AgentProposal, type DesignEntry, type PublishRequest, type RunnerStatus, type RunnerTask, type TokenLife } from './originLink';
+import { agentProposalAction, designUrl, mockupUrl, publishDecision, runnerStatus, setAllowDrawnDesigns, setAutoAgents, connectCanva, setAutoTasks, setCanvaLimit, setImageCap, syncOrigin, taskAction, type AgentProposal, type DesignEntry, type PublishRequest, type RunnerStatus, type RunnerTask, type TokenLife } from './originLink';
 import { branchKind, describeWindow } from './opportunity';
 import { createProposedAgent } from './skillFiles';
 import { ProgressBar, ProgressLog } from './Progress';
@@ -159,6 +159,10 @@ export default function OriginRuns({ onNotice }: { onNotice: (text: string) => v
       <label className="creator-privacy" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <input type="checkbox" checked={st.autoTasks !== false} onChange={(e) => void act(() => setAutoTasks(e.target.checked), e.target.checked ? 'Empire mode on: JARVIS picks ventures and sets its own research tasks, inside the cap.' : 'JARVIS will ask you before working on tasks it thinks of.')} />
         Empire mode: JARVIS picks the ventures and sets its own research tasks (3 open at most, each within its budget and the {money(st.capUsd)} cap). It still asks before using your accounts, publishing, or spending money.
+      </label>
+      <label className="creator-privacy" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input type="checkbox" checked={st.allowDrawnDesigns === true} onChange={(e) => void act(() => setAllowDrawnDesigns(e.target.checked), e.target.checked ? 'Agents may now draw designs (SVG, Canva, generated art) when no found image fits.' : 'Agents only caption the images they find; drawing is refused unless a task asks for drawn art.')} />
+        Allow drawn designs: let agents draw SVG art, use Canva or generate images. Off, every design is a caption on a real image the scouts found (public domain, CC0 or your memez folder), and drawing is refused unless a task asks for a logo, lettering or drawn art.
       </label>
       <p className="creator-privacy"><b>Printify:</b> {st.printify?.configured ? <>agents make products in <b>{st.printify.shopTitle ?? 'your shop'}</b>{st.printify.channel ? ` (${st.printify.channel})` : ''}. They stay unpublished until you press Publish below.</> : <>not set up. Connect your Etsy shop in Printify, then run <code>npm.cmd run set-printify</code> once with a Printify personal access token.</>}</p>
       <p className="creator-privacy"><b>Design images (ChatGPT):</b> {st.openai?.configured

@@ -52,7 +52,7 @@ export interface RunnerRun { workers?: RunnerWorker[]; id: string; agentId?: str
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
   spentUsd: number; spentByAgent?: Record<string, number>; allowanceUsd?: number; spentTodayUsd?: number; parallel?: number; rounds?: number; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean;
-  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; budgets?: Budgets; brain?: { id: string | null; others: OtherBrain[] }; ads?: AdEntry[]; sources?: SourceFolderInfo[]; trends?: TrendSources; degen?: { from: 'local' | 'github'; skills: number; given: number } | null; designStyle?: { guide: string; note: string; at: string | null }; canva?: { configured: boolean; connectedAt: string | null; connecting?: { url: string; startedAt: number } | null; month: string; aiCalls: number; exports: number; limit: number; log: CanvaEntry[] }; designs?: DesignEntry[]; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; money?: { byAgent: Record<string, MoneyRow>; entries: MoneyEntry[]; sales: SaleLine[]; salesSync: { at: string; error: string | null; orders: number | null } | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
+  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; allowDrawnDesigns?: boolean; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; budgets?: Budgets; brain?: { id: string | null; others: OtherBrain[] }; ads?: AdEntry[]; sources?: SourceFolderInfo[]; trends?: TrendSources; degen?: { from: 'local' | 'github'; skills: number; given: number } | null; designStyle?: { guide: string; note: string; at: string | null }; canva?: { configured: boolean; connectedAt: string | null; connecting?: { url: string; startedAt: number } | null; month: string; aiCalls: number; exports: number; limit: number; log: CanvaEntry[] }; designs?: DesignEntry[]; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; money?: { byAgent: Record<string, MoneyRow>; entries: MoneyEntry[]; sales: SaleLine[]; salesSync: { at: string; error: string | null; orders: number | null } | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
 }
 
 // in the browser the dev server forwards /api/origin; the desktop app talks to the runner directly
@@ -123,6 +123,15 @@ export async function designUrl(id: string) {
   } catch { return null; }
 }
 
+/** The image a design was made from (a memez or linked-folder file), as a local blob. */
+export async function sourceUrl(ref: string) {
+  try {
+    const r = await fetch(`${BASE}/source?ref=${encodeURIComponent(ref)}`, { signal: AbortSignal.timeout(25_000) });
+    if (!r.ok || !(r.headers.get('content-type') || '').startsWith('image/')) return null;
+    return URL.createObjectURL(await r.blob());
+  } catch { return null; }
+}
+
 /** A product mockup, fetched through the runner and shown as a local blob (the app loads no outside images). */
 export async function mockupUrl(id: string) {
   try {
@@ -141,6 +150,11 @@ export async function setAutoAgents(autoAgents: boolean) {
   return !!(await call('/settings', { autoAgents }));
 }
 /** Empire mode: JARVIS approves its own research tasks (a few at a time, each within its budget and the cap). */
+/** Whether agents may draw designs themselves (SVG, Canva, generated art) instead of captioning the images they find. */
+export async function setAllowDrawnDesigns(allowDrawnDesigns: boolean) {
+  return !!(await call('/settings', { allowDrawnDesigns }));
+}
+
 export async function setAutoTasks(autoTasks: boolean) {
   return !!(await call('/settings', { autoTasks }));
 }
@@ -165,8 +179,8 @@ export async function skillFileImported(id: string) {
   return !!(await call('/skillfiles', { action: 'imported', id }));
 }
 
-export async function taskAction(body: { action: 'add'; title: string; detail?: string; kind?: 'skill-file'; version?: number; requested?: boolean; agentId?: string; agentName?: string } | { action: 'approve' | 'reject' | 'done' | 'stop'; id: string } | { action: 'repeat'; id: string; everyMinutes: number | null }) {
-  return (await call<{ ok: boolean; tasks: RunnerTask[] }>('/tasks', body))?.data ?? null;
+export async function taskAction(body: { action: 'add'; title: string; detail?: string; kind?: 'skill-file'; version?: number; requested?: boolean; agentId?: string; agentName?: string } | { action: 'approve' | 'reject' | 'done' | 'stop' | 'cancel'; id: string } | { action: 'repeat'; id: string; everyMinutes: number | null }) {
+  return (await call<{ ok: boolean; tasks: RunnerTask[]; cleared?: number }>('/tasks', body))?.data ?? null;
 }
 
 /** Connect (or disconnect) the owner's Canva from the app: the runner opens Canva's sign-in in their browser and keeps the answer. */

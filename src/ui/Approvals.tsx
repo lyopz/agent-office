@@ -8,17 +8,17 @@ import { useMemo, useState } from 'react';
 import { BadgeCheck, Check, CircleDollarSign, FolderOpen, Images, Palette, Plus, Repeat, Trash2, X, AlertTriangle } from 'lucide-react';
 import { useStore } from '../store/store';
 import { useOrigin } from '../brain/useOrigin';
-import { designDecision, designUrl, mockupUrl, publishDecision, runnerStatus, setBudgets, setDesignStyle, sourceAction, type DesignEntry, type PublishRequest, type RunnerStatus } from '../brain/originLink';
+import { designDecision, designUrl, mockupUrl, publishDecision, runnerStatus, setBudgets, setDesignStyle, sourceAction, sourceUrl, type DesignEntry, type PublishRequest, type RunnerStatus } from '../brain/originLink';
 import { ORIGIN_ID } from '../brain/opportunity';
 import { usd } from './Dashboard';
 
 const when = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 /** An image the runner holds (a design file or a Printify mockup), shown as a local blob. */
-function RunnerImage({ load, id, alt }: { load: (id: string) => Promise<string | null>; id: string; alt: string }) {
+function RunnerImage({ load, id, alt, cls = 'approval-img' }: { load: (id: string) => Promise<string | null>; id: string; alt: string; cls?: string }) {
   const [src, setSrc] = useState<string | null>(null);
   useMemo(() => { void load(id).then(setSrc); }, [load, id]);
-  return src ? <img className="approval-img" src={src} alt={alt} /> : <div className="approval-img is-empty" aria-hidden />;
+  return src ? <img className={cls} src={src} alt={alt} /> : <div className={`${cls} is-empty`} aria-hidden />;
 }
 
 export function Approvals() {
@@ -75,7 +75,10 @@ export function Approvals() {
               <figcaption>
                 <b>{d.title}</b>
                 <span>{d.agentName} · {when(d.at)}{d.source === 'canva' ? ' · Canva' : d.source === 'caption' ? ' · captioned image' : d.kind === 'svg' ? ' · SVG' : ' · image'}</span>
-                {d.assets?.length ? <span className="small muted">Uses {d.assets.map((x, i) => <span key={i}>{i ? ', ' : ''}{x.page ? <a href={x.page} target="_blank" rel="noreferrer">{x.title || 'an image'}</a> : (x.title || 'an image')}{x.licence ? ` (${x.licence})` : ''}</span>)}</span> : null}
+                {d.sourceFile || d.assets?.length ? <div className="approval-source">
+                  {d.sourceFile ? <RunnerImage load={sourceUrl} id={d.sourceFile} alt={`The image ${d.title} was made from`} cls="approval-source-img" /> : null}
+                  <span className="small muted">Made from {d.assets?.length ? d.assets.map((x, i) => <span key={i}>{i ? ', ' : ''}{x.page ? <a href={x.page} target="_blank" rel="noreferrer">{x.title || 'an image'}</a> : (x.title || 'an image')}{x.licence ? ` (${x.licence})` : ''}</span>) : <>a saved image{d.rights === 'owner' ? ' of yours' : ''}</>}{d.sourceFile ? <> · <code>{d.sourceFile}</code></> : null}</span>
+                </div> : <span className="small muted">Drawn by {d.agentName}, no source image</span>}
                 {d.rights === 'reference' && <span className="small warn"><AlertTriangle size={11} /> Draft on someone's image: for the idea only, not for sale. Yes keeps it; ask for a remake with a free image to sell it.</span>}
                 <div className="approval-actions">
                   <button className="btn sm danger" disabled={busy === d.id} onClick={() => void decide(d, 'reject')}><X size={13} /> No</button>

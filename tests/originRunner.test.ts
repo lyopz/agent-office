@@ -436,7 +436,7 @@ describe('origin runner: trends and free-to-use images', () => {
   });
 
   test('a design saved with public-domain assets keeps their title, page and licence', async () => {
-    write({ ...base, tasks: [{ id: 't1', title: 'Art', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
+    write({ ...base, allowDrawnDesigns: true, tasks: [{ id: 't1', title: 'Art', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
     let n = 0;
     const fetch = async () => { n++; return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'd1', name: 'design_save', input: { svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>', title: 'Rose tee', assets: [{ title: 'Rosa gallica', page: 'https://commons/Rose', licence: 'Public domain' }] } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
     await runner.runOnce('manual', { fetch, file, key: 'test', etsy: { tools: [{ name: 'design_save', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }) } } as any);
@@ -577,7 +577,7 @@ describe('origin runner: design images and branch runs', () => {
   const callsTool = (inputs: object[]) => { let n = 0; return async () => { n++; return n <= inputs.length ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: `u${n}`, name: 'design_generate_image', input: inputs[n - 1] }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); }; };
 
   test('each image is logged with its cost on the image cap, not the Anthropic cap', async () => {
-    write({ ...base, agents: [{ id: 'd1', name: 'Designer' }], tasks: [{ id: 't1', title: 'Art', detail: '', status: 'approved', by: 'owner', agentId: 'd1', createdAt: '' }] });
+    write({ ...base, allowDrawnDesigns: true, agents: [{ id: 'd1', name: 'Designer' }], tasks: [{ id: 't1', title: 'Art', detail: '', status: 'approved', by: 'owner', agentId: 'd1', createdAt: '' }] });
     const made: any[] = [];
     const r: any = await runner.runOnce('manual', { fetch: callsTool([{ prompt: 'cat', quality: 'medium' }, { prompt: 'dog' }]), file, key: 'test', etsy: imageTools(made) } as any);
     const s = read();
@@ -589,7 +589,7 @@ describe('origin runner: design images and branch runs', () => {
   });
 
   test('past the image cap the agent is told to use SVG, and nothing is made', async () => {
-    write({ ...base, imageCapUsd: 0.05, images: { month, spentUsd: 0.04 }, tasks: [{ id: 't1', title: 'Art', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
+    write({ ...base, allowDrawnDesigns: true, imageCapUsd: 0.05, images: { month, spentUsd: 0.04 }, tasks: [{ id: 't1', title: 'Art', detail: '', status: 'approved', by: 'owner', createdAt: '' }] });
     const made: any[] = [];
     const bodies: any[] = [];
     const inner = callsTool([{ prompt: 'cat' }]);
@@ -667,8 +667,8 @@ describe('origin runner: skills from the command center', () => {
 });
 
 describe('origin runner: designs', () => {
-  test('an agent saves an SVG design; it is kept on disk and listed for the gallery', async () => {
-    write({ ...base, agents: [{ id: 'd1', name: 'Mockup & Design' }], tasks: [{ id: 't1', title: 'Jersey Avenue shirts', detail: '', status: 'approved', by: 'owner', agentId: 'd1', focus: true, createdAt: '' }] });
+  test('an agent saves an SVG design when the owner allows drawn designs; it is kept on disk and listed for the gallery', async () => {
+    write({ ...base, allowDrawnDesigns: true, agents: [{ id: 'd1', name: 'Mockup & Design' }], tasks: [{ id: 't1', title: 'Jersey Avenue shirts', detail: '', status: 'approved', by: 'owner', agentId: 'd1', focus: true, createdAt: '' }] });
     const tools = { tools: [{ name: 'design_save', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }) };
     let n = 0;
     const fetch = async () => { n++; return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'u1', name: 'design_save', input: { file_name: 'jersey-ave', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><text>JA</text></svg>', title: 'Jersey Avenue script' } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
@@ -677,6 +677,37 @@ describe('origin runner: designs', () => {
     const d = read().designs[0];
     expect(d).toMatchObject({ kind: 'svg', fileName: 'jersey-ave.svg', title: 'Jersey Avenue script', agentName: 'Mockup & Design', taskId: 't1' });
     expect(fs.readFileSync(path.join(path.dirname(file), 'designs', `${d.id}.svg`), 'utf8')).toMatch(/<svg/);
+  });
+
+  test('drawn designs are off by default: an SVG is refused and the agent is sent to caption a found image', async () => {
+    write({ ...base, agents: [{ id: 'd1', name: 'Mockup & Design' }], tasks: [{ id: 't1', title: 'Fish meme shirts', detail: 'funny fish', status: 'approved', by: 'owner', agentId: 'd1', focus: true, createdAt: '' }] });
+    const tools = { tools: [{ name: 'design_save', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }) };
+    const seen: any[] = [];
+    let n = 0;
+    const fetch = async (_u: string, init: any) => { n++; seen.push(JSON.parse(init.body)); return n === 1 ? { ok: true, status: 200, json: async () => ({ content: [{ type: 'tool_use', id: 'u1', name: 'design_save', input: { svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><text>fih</text></svg>', title: 'fih' } }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'tool_use' }) } : reply(result({ memory: 'm', summary: 's' }), { input_tokens: 10, output_tokens: 5 }); };
+    await runner.runOnce('focus', { fetch, file, key: 'test', etsy: tools } as any);
+    expect(read().designs ?? []).toHaveLength(0);
+    const toolResult = seen[1].messages.at(-1).content[0];
+    expect(toolResult.is_error).toBe(true);
+    expect(toolResult.content).toMatch(/design_caption_image/);
+    expect(seen[0].messages[0].content).toMatch(/THAT IS THE ONLY WAY ON THIS TASK/);
+  });
+
+  test('a task that asks for drawn art may still use design_save', () => {
+    expect(runner.drawnAllowed({}, { title: 'Jersey Avenue logo and lettering', detail: '' })).toBe(true);
+    expect(runner.drawnAllowed({}, { title: 'Fish meme shirts', detail: 'caption the funniest fish' })).toBe(false);
+    expect(runner.drawnAllowed({ allowDrawnDesigns: true }, { title: 'Fish meme shirts', detail: '' })).toBe(true);
+  });
+
+  test('cancelling a task stops it and clears its waiting designs, keeping decided ones', () => {
+    const s: any = { tasks: [{ id: 't1', title: 'Fish', status: 'approved', by: 'owner', focus: true, waitingOnOwner: true }], designs: [{ id: 'design_a', taskId: 't1', status: 'waiting' }, { id: 'design_b', taskId: 't1', status: 'approved' }, { id: 'design_c', taskId: 't2', status: 'waiting' }] };
+    const r = runner.cancelTask(s, s.tasks[0], '2026-10-22T00:00:00.000Z');
+    expect(r.cleared).toBe(1);
+    expect(s.tasks[0]).toMatchObject({ status: 'stopped', stopReason: 'You cancelled it.' });
+    expect(s.tasks[0].focus).toBeUndefined();
+    expect(s.tasks[0].waitingOnOwner).toBeUndefined();
+    expect(s.designs.map((d: any) => d.status)).toEqual(['rejected', 'approved', 'waiting']);
+    expect(s.designs[0].printify).toBe('task cancelled');
   });
 });
 
@@ -735,7 +766,7 @@ describe('origin runner: approvals, repeats and budgets', () => {
   });
 
   test('an ask may have five designs waiting at most; the sixth is refused and the task waits for the owner', async () => {
-    write({ ...base, agents, designs: [1, 2, 3, 4, 5].map((i) => design(i)), tasks: [{ id: 't1', title: 'Mom shirts', detail: '', status: 'approved', by: 'owner', agentId: 'd1', focus: true, createdAt: '' }] });
+    write({ ...base, allowDrawnDesigns: true, agents, designs: [1, 2, 3, 4, 5].map((i) => design(i)), tasks: [{ id: 't1', title: 'Mom shirts', detail: '', status: 'approved', by: 'owner', agentId: 'd1', focus: true, createdAt: '' }] });
     const tools = { tools: [{ name: 'design_save', description: 'd', input_schema: { type: 'object', properties: {} } }], run: async () => ({ content: 'x', isError: false }) };
     const sent: any[] = [];
     let n = 0;
