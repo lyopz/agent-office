@@ -63,8 +63,8 @@ export async function instagramMaintain(deps = {}) {
   // a token saved by an older set-instagram has no dates: never call it expired for that; ask Meta instead
   if (!cfg.savedAt && !cfg.refreshedAt && !cfg.expiresAt) return dateUndated(cfg, now, deps);
   if (!canRenew(cfg)) return { status: 'manual', expiresAt: cfg.expiresAt ?? null };
-  const issued = Date.parse(cfg.refreshedAt || cfg.savedAt || 0) || 0;
-  const expires = Date.parse(cfg.expiresAt || 0) || issued + TOKEN_DAYS * DAY;
+  const issued = ((cfg.refreshedAt || cfg.savedAt) ? Date.parse(cfg.refreshedAt || cfg.savedAt) || 0 : 0);
+  const expires = (cfg.expiresAt ? Date.parse(cfg.expiresAt) || 0 : 0) || issued + TOKEN_DAYS * DAY;
   if (expires <= now) return { status: 'expired', error: `by its dates: expiry ${cfg.expiresAt ? String(cfg.expiresAt).slice(0, 16) : 'not recorded'}, saved ${cfg.savedAt ? String(cfg.savedAt).slice(0, 16) : 'not recorded'}, renewed ${cfg.refreshedAt ? String(cfg.refreshedAt).slice(0, 16) : 'never'}`, expiresAt: cfg.expiresAt ?? null };
   if (now - issued < DAY) return { status: 'too new', expiresAt: cfg.expiresAt ?? null };
   if (now - issued < 7 * DAY && expires - now > 10 * DAY) return { status: 'not due', expiresAt: cfg.expiresAt ?? null };

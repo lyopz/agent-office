@@ -65,9 +65,9 @@ export async function pinterestMaintain(deps = {}) {
   const now = deps.now ?? Date.now();
   if (!cfg?.token) return { status: 'not connected' };
   if (!cfg.refresh || !cfg.appId || !cfg.appSecret) return { status: 'manual', expiresAt: cfg.expiresAt ?? null };
-  const refreshed = Date.parse(cfg.refreshedAt || cfg.savedAt || 0) || 0;
-  const expires = Date.parse(cfg.expiresAt || 0) || refreshed + 30 * DAY;
-  const refreshExpires = Date.parse(cfg.refreshExpiresAt || 0) || refreshed + 60 * DAY;
+  const refreshed = ((cfg.refreshedAt || cfg.savedAt) ? Date.parse(cfg.refreshedAt || cfg.savedAt) || 0 : 0);
+  const expires = (cfg.expiresAt ? Date.parse(cfg.expiresAt) || 0 : 0) || refreshed + 30 * DAY;
+  const refreshExpires = (cfg.refreshExpiresAt ? Date.parse(cfg.refreshExpiresAt) || 0 : 0) || refreshed + 60 * DAY;
   if (refreshExpires <= now) return { status: 'expired', expiresAt: cfg.expiresAt ?? null };
   if (expires - now > 10 * DAY && refreshExpires - now > 20 * DAY && now - refreshed < 21 * DAY) return { status: 'not due', expiresAt: cfg.expiresAt ?? null };
   try {

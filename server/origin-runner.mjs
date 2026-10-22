@@ -498,7 +498,7 @@ function saveDesign(s, task, { file_name, svg, png, ext, title, imageId, source,
   if (task && !task.designId && waitingDesigns(s, task.id) >= designLimit(task)) return { content: `The owner already has ${designLimit(task)} designs from this task waiting for their Yes or No. Make no more now: set "waitingOnOwner": true and finish this run; you go on once they decide.`, isError: true };
   const data = png ? Buffer.from(String(png), 'base64') : Buffer.from(String(svg || ''), 'utf8');
   if (kind === 'svg' && !/<svg[\s>]/i.test(String(svg || ''))) return { content: 'Give the full SVG markup in svg.', isError: true };
-  if (data.length > 8_000_000) return { content: 'That design is too large (over 8 MB).', isError: true };
+  if (data.length > 40_000_000) return { content: 'That design is too large (over 40 MB): crop it or use a smaller picture.', isError: true };
   const id = newId('design');
   fs.mkdirSync(designDir(), { recursive: true });
   fs.writeFileSync(path.join(designDir(), `${id}.${kind}`), data);

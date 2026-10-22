@@ -200,6 +200,8 @@ describe('meme databases and connectors', () => {
     };
     const ig: any = { kind: 'instagram', token: 'IGAAold', igUserId: '7', savedAt: new Date(now - 8 * DAY).toISOString(), expiresAt: new Date(now + 52 * DAY).toISOString() };
     expect(await instagramMaintain({ config: { ...ig, savedAt: new Date(now - 3600_000).toISOString() }, now, fetch: igFetch, save: (c: any) => saved.push(c) })).toMatchObject({ status: 'too new' });
+    // saved with a date but no recorded expiry (an older set-instagram): it lasts 60 days from saving, it is not expired
+    expect(await instagramMaintain({ config: { ...ig, savedAt: new Date(now - 2 * 3600_000).toISOString(), expiresAt: undefined }, now, fetch: igFetch, save: (c: any) => saved.push(c) })).toMatchObject({ status: 'too new' });
     // a token saved without dates (an older set-instagram) is checked with Meta, never called expired for that
     const undated = { ...ig, savedAt: undefined, expiresAt: undefined, refreshedAt: undefined };
     const ok = await instagramMaintain({ config: undated, now, fetch: igFetch, save: (c: any) => saved.push(c) });
