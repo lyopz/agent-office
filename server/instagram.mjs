@@ -65,7 +65,7 @@ export async function instagramMaintain(deps = {}) {
   if (!canRenew(cfg)) return { status: 'manual', expiresAt: cfg.expiresAt ?? null };
   const issued = Date.parse(cfg.refreshedAt || cfg.savedAt || 0) || 0;
   const expires = Date.parse(cfg.expiresAt || 0) || issued + TOKEN_DAYS * DAY;
-  if (expires <= now) return { status: 'expired', expiresAt: cfg.expiresAt ?? null };
+  if (expires <= now) return { status: 'expired', error: `by its dates: expiry ${cfg.expiresAt ? String(cfg.expiresAt).slice(0, 16) : 'not recorded'}, saved ${cfg.savedAt ? String(cfg.savedAt).slice(0, 16) : 'not recorded'}, renewed ${cfg.refreshedAt ? String(cfg.refreshedAt).slice(0, 16) : 'never'}`, expiresAt: cfg.expiresAt ?? null };
   if (now - issued < DAY) return { status: 'too new', expiresAt: cfg.expiresAt ?? null };
   if (now - issued < 7 * DAY && expires - now > 10 * DAY) return { status: 'not due', expiresAt: cfg.expiresAt ?? null };
   try {
@@ -87,7 +87,7 @@ async function dateUndated(cfg, now, deps) {
   try {
     await pingInstagram(cfg, f);
   } catch (e) {
-    return { status: 'expired', error: e.message, expiresAt: null };
+    return { status: 'expired', error: `Meta refused it: ${e.message || 'no message'}`, expiresAt: null };
   }
   const at = new Date(now).toISOString();
   const next = { ...cfg, savedAt: at, expiresAt: new Date(now + TOKEN_DAYS * DAY).toISOString(), expiryEstimated: true, refreshError: null };
