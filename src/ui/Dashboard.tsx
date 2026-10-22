@@ -243,7 +243,7 @@ export function Dashboard() {
         <ol className="store-order">{(st?.storeOrder ?? ['Research what is selling now', 'Find memes and save them to memez', 'Design shirts from memez (no AI)', 'Ads for the products you approved']).map((x, i) => <li key={i}>{x}{i === 2 ? <small> · then your Yes in Approvals makes and lists each product</small> : null}</li>)}</ol>
         <label className="look-for">
           <b>What to look for</b>
-          <span className="small muted">Tell the scouts what memes to find on Pinterest: subjects, the kind of humour, accounts or boards, and what to avoid. They follow it before their own ideas.</span>
+          <span className="small muted">Paste Pinterest pin links of memes you like: each one is saved to memez as it is (already a Yes), and the scouts look for more like them. Add words too: subjects, the kind of humour, what to avoid. Every picture a scout finds is checked before it is saved.</span>
           <textarea rows={3} maxLength={1500} value={lookFor ?? st?.memeLookFor ?? ''} placeholder='e.g. "cats acting like people, deadpan captions, reaction faces; search Pinterest for: cursed cat meme, silly animal meme; no politics, no old drawings"' onChange={(e) => setLookFor(e.target.value)} />
           {lookFor != null && lookFor !== (st?.memeLookFor ?? '') && <button className="btn sm primary" disabled={!live} onClick={() => void saveLookFor()}>Save what to look for</button>}
         </label>

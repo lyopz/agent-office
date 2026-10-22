@@ -1070,3 +1070,34 @@ describe('origin runner: memes come from Pinterest, steered by the owner', () =>
     expect(runner.memeBrief({}, { title: 'Write the shop policy', detail: '' })).toBe('');
   });
 });
+
+describe('origin runner: the picture check and the owner\'s example pins', () => {
+  test('the check sends the picture, keeps only a clear yes, and charges the run', async () => {
+    const bodies: any[] = [];
+    const answer = (text: string) => async (_u: string, init: any) => { bodies.push(JSON.parse(init.body)); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text }], usage: { input_tokens: 1200, output_tokens: 20 } }) }; };
+    const w: any = { costUsd: 0, costKnown: true };
+    const yes = await runner.memeJudge({ memeLookFor: 'casino memes' }, w, { fetch: answer('{"keep": true, "why": "reaction meme"}'), key: 'k' })(Buffer.from('img'), 'image/png', { title: 'bet', joke: 'always bet on nothing' });
+    expect(yes).toEqual({ keep: true, why: 'reaction meme' });
+    expect(bodies[0].messages[0].content[0]).toMatchObject({ type: 'image', source: { type: 'base64', media_type: 'image/png' } });
+    expect(bodies[0].messages[0].content[1].text).toMatch(/always bet on nothing[\s\S]*casino memes[\s\S]*When unsure, refuse/);
+    expect(w.costUsd).toBeGreaterThan(0);
+    expect((await runner.memeJudge({}, w, { fetch: answer('maybe?'), key: 'k' })(Buffer.from('img'), 'image/png', { title: 't' })).keep).toBe(false);
+    expect((await runner.memeJudge({}, w, { fetch: async () => ({ ok: false, status: 529 }), key: 'k' })(Buffer.from('img'), 'image/png', { title: 't' })).why).toMatch(/could not run \(529\)/);
+  });
+
+  test('pins in "What to look for" are saved first, picked Yes, each link tried once', async () => {
+    const look = 'like this https://i.pinimg.com/1200x/75/27/a.jpg and https://www.pinterest.com/pin/123/, not https://example.com/x.jpg';
+    expect(runner.ownerExampleLinks(look)).toEqual(['https://i.pinimg.com/1200x/75/27/a.jpg', 'https://www.pinterest.com/pin/123/']);
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('0000000d49484452', 'hex'), Buffer.from([0, 0, 0, 40, 0, 0, 0, 30]), Buffer.alloc(16)]);
+    const urls: string[] = [];
+    const fetch = async (u: string) => { urls.push(u); return u.includes('/pin/') ? { ok: true, status: 200, url: u, text: async () => '<meta property="og:image" content="https://i.pinimg.com/736x/b.png">' } : { ok: true, status: 200, arrayBuffer: async () => png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) }; };
+    const s: any = { memeLookFor: look };
+    const saved = await runner.saveOwnerExamples(s, { fetch });
+    expect(saved).toHaveLength(2);
+    expect(urls).toEqual(['https://i.pinimg.com/1200x/75/27/a.jpg', 'https://www.pinterest.com/pin/123/', 'https://i.pinimg.com/736x/b.png']);
+    const meta = JSON.parse(fs.readFileSync(path.join(process.env.ORIGIN_DATA_DIR!, saved[0].replace(/^memez\//, 'memez/') + '.json'), 'utf8'));
+    expect(meta).toMatchObject({ pick: 'yes', ownerExample: true, title: 'Your example' });
+    expect(await runner.saveOwnerExamples(s, { fetch })).toEqual([]); // already done
+    expect(urls).toHaveLength(3);
+  });
+});

@@ -47,3 +47,6 @@ export function memeBrief(s: Record<string, unknown>, task: Record<string, unkno
 export function cancelTask(s: Record<string, unknown>, task: Record<string, unknown>, at?: string): { cleared: number };
 export function distributeDegen(s: Record<string, unknown>): Promise<{ given: { skill: string; agents: string[]; already: number }[]; errors: string[] }>;
 export const isTrendTool: (name: string) => boolean;
+export function memeJudge(s: Record<string, unknown>, w: Record<string, unknown> | null, deps?: { fetch?: unknown; key?: string }): (buf: Buffer, mime: string, info: { title: string; joke?: string; page?: string }) => Promise<{ keep: boolean; why: string }>;
+export function ownerExampleLinks(text: string): string[];
+export function saveOwnerExamples(s: Record<string, unknown>, deps?: { fetch?: unknown }): Promise<string[]>;

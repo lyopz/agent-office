@@ -34,13 +34,13 @@ describe('design sources', () => {
   test('a scout saves an image with its sidecar; public domain is print, a post is reference; declining deletes only that file', async () => {
     const dir = tmp(); const s: Record<string, unknown> = {};
     const [memez] = sourceFolders(s, dir);
-    const a = await saveSourceImage(memez, { image_url: 'https://upload.wikimedia.org/x/fish.png', title: 'A fish', page: 'https://commons.wikimedia.org/wiki/File:Fish.png', licence: 'Public domain' }, { agentName: 'Trend Scout' }, { fetch: fetchPng });
-    const b = await saveSourceImage(memez, { image_url: 'https://example.com/meme.png', title: 'Fih meme', page: 'https://example.com/post', licence: 'unknown (someone\'s post)', note: 'the fih joke' }, { agentName: 'Trend Scout' }, { fetch: fetchPng });
+    const a = await saveSourceImage(memez, { image_url: 'https://i.pinimg.com/x/fish.png', title: 'A fish', page: 'https://www.pinterest.com/pin/1/', licence: 'Public domain' }, { agentName: 'You' }, { fetch: fetchPng, owner: true });
+    const b = await saveSourceImage(memez, { image_url: 'https://example.com/meme.png', title: 'Fih meme', page: 'https://example.com/post', licence: 'unknown (someone\'s post)', note: 'the fih joke', joke: 'a fish misspelled as fih' }, { agentName: 'Trend Scout' }, { fetch: fetchPng });
     expect(a).toMatchObject({ ref: 'memez/A fish.png', usable: 'print', width: 40, height: 30 });
     expect(b.usable).toBe('reference');
     fs.writeFileSync(path.join(memez.path, 'mine.png'), PNG); // the owner's own file, no sidecar
     const files = listSourceFiles(memez);
-    expect(files.map((f) => [f.name, f.usable])).toEqual([['A fish.png', 'print'], ['Fih meme.png', 'reference'], ['mine.png', 'owner']]);
+    expect(files.map((f) => [f.name, f.usable, f.pick])).toEqual([['A fish.png', 'print', 'yes'], ['Fih meme.png', 'reference', 'waiting'], ['mine.png', 'owner', 'owner']]);
     expect(readSourceFile([memez], 'memez/mine.png')).toMatchObject({ owner: true, meta: null, kind: 'png' });
     expect(readSourceFile([memez], 'memez/../secret.png')).toBeNull();
     expect(readSourceFile([memez], 'memez/Fih meme.png')?.meta).toMatchObject({ usable: 'reference', title: 'Fih meme' });
@@ -50,17 +50,44 @@ describe('design sources', () => {
     expect(listSourceFiles(memez).map((f) => f.name)).toEqual(['A fish.png', 'mine.png']);
     const pub = sourcesPublic(s, dir);
     expect(pub[0]).toMatchObject({ id: 'memez', files: 2, printable: 2, reference: 0 });
-    expect(sourcesBrief(s, dir)).toMatch(/memez: 2 files \(1 the owner picked or owns, 1 waiting for their pick\)/);
+    expect(sourcesBrief(s, dir)).toMatch(/memez: 2 files \(2 the owner picked or owns, 0 waiting for their pick\)/);
     expect(await saveSourceImage(memez, { image_url: 'http://insecure/x.png', title: 't', page: 'p' }, null, { fetch: fetchPng }).catch((e) => e.message)).toMatch(/https/);
     expect(await saveSourceImage(memez, { image_url: 'https://x/y.png', title: '', page: 'p' }, null, { fetch: fetchPng }).catch((e) => e.message)).toMatch(/title and the page/);
   });
 
-  test('the agent tools list and save', async () => {
+  test('the agent tools list and save; a find that is not a meme is refused before and after it is fetched', async () => {
     const dir = tmp(); const s: Record<string, unknown> = {};
-    const saved = await runSourceTool('source_save', { image_url: 'https://x/y.png', title: 'Old map', page: 'https://loc.gov/x', licence: 'Public domain' }, s, dir, { agentName: 'Trend Scout' }, { fetch: fetchPng });
-    expect(JSON.parse(saved.content)).toMatchObject({ saved: true, usable: 'print', ref: 'memez/Old map.png' });
-    const list = await runSourceTool('files_source', { query: 'map' }, s, dir, null);
-    expect(JSON.parse(list.content).files).toEqual([expect.objectContaining({ ref: 'memez/Old map.png', usable: 'print', savedBy: 'Trend Scout' })]);
+    const save = (input: Record<string, unknown>, judge?: unknown) => runSourceTool('source_save', input, s, dir, { agentName: 'Trend Scout' }, { fetch: fetchPng, judge } as any);
+    expect((await save({ image_url: 'https://upload.wikimedia.org/x.png', title: 'Old map', page: 'https://commons.wikimedia.org/x', licence: 'unknown', joke: 'old map lol' })).content).toMatch(/not memes/);
+    expect((await save({ image_url: 'https://x/y.png', title: 'Old map', page: 'https://x/p', licence: 'Public domain', joke: 'old map lol' })).content).toMatch(/public-domain or CC0 picture is old art/);
+    expect((await save({ image_url: 'https://x/y.png', title: 'Cat', page: 'https://x/p', licence: 'unknown' })).content).toMatch(/say the joke/);
+    const seen: any[] = [];
+    const refuse = async (_b: Buffer, mime: string, info: any) => { seen.push([mime, info.joke]); return { keep: false, why: 'a plain cat photo, no joke' }; };
+    expect((await save({ image_url: 'https://x/y.png', title: 'Cat', page: 'https://x/p', licence: 'unknown', joke: 'it is a cat' }, refuse)).content).toMatch(/not a meme for the store \(a plain cat photo/);
+    expect(seen).toEqual([['image/png', 'it is a cat']]);
+    expect(fs.existsSync(path.join(dir, 'memez'))).toBe(false);
+    const saved = await save({ image_url: 'https://i.redd.it/y.png', title: 'Monday frog', page: 'https://reddit.com/r/memes/1', licence: 'unknown', joke: 'frog dreading monday' }, async () => ({ keep: true, why: 'classic reaction meme' }));
+    expect(JSON.parse(saved.content)).toMatchObject({ saved: true, usable: 'reference', ref: 'memez/Monday frog.png' });
+    const list = await runSourceTool('files_source', { query: 'frog' }, s, dir, null);
+    expect(JSON.parse(list.content).files).toEqual([expect.objectContaining({ ref: 'memez/Monday frog.png', pick: 'waiting', savedBy: 'Trend Scout' })]);
+  });
+
+  test('what was never a meme is moved to memez/removed, not deleted', async () => {
+    const { purgeNotMemes, removeSourceFile } = await import('../server/sources.mjs');
+    const dir = tmp(); const s: Record<string, unknown> = {};
+    const [memez] = sourceFolders(s, dir);
+    fs.mkdirSync(memez.path, { recursive: true });
+    const put = (name: string, meta: object) => { fs.writeFileSync(path.join(memez.path, name), PNG); fs.writeFileSync(path.join(memez.path, `${name}.json`), JSON.stringify(meta)); };
+    put('ear.png', { title: 'ear', url: 'https://upload.wikimedia.org/ear.png', page: 'https://commons.wikimedia.org/ear', licence: 'Public domain' });
+    put('cat.png', { title: 'cat', url: 'https://x/cat.png', page: 'https://x', licence: 'CC0' });
+    put('meme.png', { title: 'meme', url: 'https://i.imgflip.com/m.png', page: 'https://imgflip.com/m', licence: 'unknown' });
+    put('doodle.png', { title: 'doodle', url: 'https://i.imgflip.com/d.png', page: 'https://imgflip.com/d', licence: 'unknown' });
+    fs.writeFileSync(path.join(memez.path, 'mine.png'), PNG);
+    expect(purgeNotMemes(s, dir).sort()).toEqual(['memez/cat.png', 'memez/ear.png']);
+    expect(removeSourceFile(sourceFolders(s, dir), 'memez/doodle.png')).toBe(true);
+    expect(removeSourceFile(sourceFolders(s, dir), 'memez/mine.png')).toBe(false); // never the owner's own files
+    expect(listSourceFiles(memez).map((f) => f.name)).toEqual(['meme.png', 'mine.png']);
+    expect(fs.readdirSync(path.join(memez.path, 'removed')).sort()).toEqual(['cat.png', 'cat.png.json', 'doodle.png', 'doodle.png.json', 'ear.png', 'ear.png.json']);
   });
 
   test("a meme's info is kept as a note in memez/notes without its picture, listed newest first and counted", async () => {
@@ -93,8 +120,8 @@ describe('the owner picks the memes', () => {
     const { memesToPick, setSourcePick } = await import('../server/sources.mjs');
     const dir = tmp(); const s: Record<string, unknown> = {};
     const memez = sourceFolders(s, dir)[0];
-    await saveSourceImage(memez, { image_url: 'https://i.pinimg.com/a.png', title: 'Doodle cat', page: 'https://pin/1', licence: 'unknown' }, null, { fetch: fetchPng });
-    await saveSourceImage(memez, { image_url: 'https://i.pinimg.com/b.png', title: 'Doodle dog', page: 'https://pin/2', licence: 'unknown' }, null, { fetch: fetchPng });
+    await saveSourceImage(memez, { image_url: 'https://i.pinimg.com/a.png', title: 'Doodle cat', page: 'https://pin/1', licence: 'unknown', joke: 'cat judging you' }, null, { fetch: fetchPng });
+    await saveSourceImage(memez, { image_url: 'https://i.pinimg.com/b.png', title: 'Doodle dog', page: 'https://pin/2', licence: 'unknown', joke: 'dog on fire, this is fine' }, null, { fetch: fetchPng });
     fs.writeFileSync(path.join(memez.path, 'mine.png'), PNG);
     expect(memesToPick(s, dir).map((x) => x.title).sort()).toEqual(['Doodle cat', 'Doodle dog']);
     expect(setSourcePick(sourceFolders(s, dir), 'memez/Doodle cat.png', 'yes')).toEqual({ ref: 'memez/Doodle cat.png', pick: 'yes' });

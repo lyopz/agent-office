@@ -17,6 +17,16 @@ const IMAGE = /\.(png|jpe?g)$/i;
 const PUBLIC_DOMAIN = /public domain|\bcc0\b|\bpdm\b|no known copyright/i;
 const UA = 'the-brain/1.0 (one image saved to the owner\'s design sources)';
 
+/** Where memes never come from: archives of old art, museum plates and stock (the owner: "has nothing to do with memes"). */
+export const NOT_MEME_HOSTS = /(^|\.)(wikimedia\.org|wikipedia\.org|openverse\.org|archive\.org|loc\.gov|metmuseum\.org|si\.edu|nypl\.org|europeana\.eu|rawpixel\.com|staticflickr\.com|flickr\.com|unsplash\.com|pexels\.com|pixabay\.com|biodiversitylibrary\.org)$/i;
+const hostOf = (u) => { try { return new URL(String(u)).hostname; } catch { return ''; } };
+/** Why a scout's find is not a meme before it is even fetched, or null. */
+export function notMemeReason(input) {
+  if (NOT_MEME_HOSTS.test(hostOf(input.image_url)) || NOT_MEME_HOSTS.test(hostOf(input.page))) return 'that site holds old art, museum plates or stock photos, not memes';
+  if (PUBLIC_DOMAIN.test(String(input.licence || ''))) return 'a public-domain or CC0 picture is old art or stock, not a meme';
+  return null;
+}
+
 /** print when the licence allows a product, else reference (learn the joke only). */
 export const usableFor = (licence) => (PUBLIC_DOMAIN.test(String(licence || '')) ? 'print' : 'reference');
 const safeName = (n) => String(n || 'image').replace(/\.[^.]+$/, '').replace(/[^\w .-]/g, '_').replace(/^\.+/, '').slice(0, 80) || 'image';
@@ -114,6 +124,13 @@ export async function saveSourceImage(folder, input, by, deps = {}) {
   const page = String(input.page || '').trim().slice(0, 300);
   const licence = String(input.licence || 'unknown').trim().slice(0, 80);
   if (!title || !page) throw new Error('Record the title and the page it came from, so the owner knows what this is.');
+  // the owner's own examples skip the meme checks; a scout's find must be a meme with a joke
+  const joke = String(input.joke || '').trim().slice(0, 300);
+  if (!deps.owner) {
+    const why = notMemeReason(input);
+    if (why) throw new Error(`Not saved: ${why}. Save only memes and funny meme-style pictures (Pinterest, Reddit, Imgflip).`);
+    if (joke.length < 6) throw new Error('Not saved: say the joke in joke (one line: what makes it funny on a shirt). If you cannot say it, it is not a meme for the store.');
+  }
   const f = deps.fetch ?? globalThis.fetch;
   const r = await f(url, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(25_000) });
   if (!r.ok) throw new Error(`The image could not be fetched (${r.status}).`);
@@ -122,14 +139,42 @@ export async function saveSourceImage(folder, input, by, deps = {}) {
   const size = imageSize(buf);
   if (!size) throw new Error('That file is not a PNG or JPEG image.');
   const ext = size.mime === 'image/png' ? 'png' : 'jpg';
+  // a look at the picture itself: only a real meme or a shirt-worthy funny picture is kept
+  let check = null;
+  if (!deps.owner && deps.judge) {
+    check = await deps.judge(buf, size.mime, { title, joke, page });
+    if (!check?.keep) throw new Error(`Not saved: the picture check said it is not a meme for the store (${String(check?.why || 'no reason given').slice(0, 200)}). Find a real meme instead.`);
+  }
   fs.mkdirSync(folder.path, { recursive: true });
   let name = `${safeName(input.file_name || title)}.${ext}`;
   for (let i = 2; fs.existsSync(path.join(folder.path, name)); i++) name = `${safeName(input.file_name || title)}-${i}.${ext}`;
   const usable = usableFor(licence);
-  const meta = { title, page, url, licence, usable, note: String(input.note || '').slice(0, 400), tags: Array.isArray(input.tags) ? input.tags.map((t) => String(t).toLowerCase().trim().slice(0, 30)).filter(Boolean).slice(0, 12) : [], agentId: by?.agentId ?? null, agentName: by?.agentName ?? 'JARVIS', taskId: by?.taskId ?? null, at: new Date().toISOString(), width: size.width, height: size.height };
+  const meta = { title, page, url, licence, usable, note: String(input.note || '').slice(0, 400), ...(joke ? { joke } : {}), ...(check?.why ? { checked: String(check.why).slice(0, 200) } : {}), ...(deps.owner ? { ownerExample: true, pick: 'yes', pickedAt: new Date().toISOString() } : {}), tags: Array.isArray(input.tags) ? input.tags.map((t) => String(t).toLowerCase().trim().slice(0, 30)).filter(Boolean).slice(0, 12) : [], agentId: by?.agentId ?? null, agentName: by?.agentName ?? 'JARVIS', taskId: by?.taskId ?? null, at: new Date().toISOString(), width: size.width, height: size.height };
   fs.writeFileSync(path.join(folder.path, name), buf);
   fs.writeFileSync(path.join(folder.path, `${name}.json`), JSON.stringify(meta, null, 2));
   return { ref: `${folder.id}/${name}`, usable, width: size.width, height: size.height, bytes: buf.length };
+}
+
+/** Move a saved meme out of the way (memez/removed), so nobody sees or designs it; the file is kept, not deleted. */
+export function removeSourceFile(folders, ref) {
+  const r = resolveRef(folders, ref);
+  if (!r || !readMeta(r.file)) return false;
+  const dir = path.join(r.folder.path, 'removed');
+  fs.mkdirSync(dir, { recursive: true });
+  try { fs.renameSync(r.file, path.join(dir, r.name)); fs.renameSync(`${r.file}.json`, path.join(dir, `${r.name}.json`)); } catch { return false; }
+  return true;
+}
+/** Clear what was never a meme: scout saves from art archives or with a public-domain licence. Returns the refs moved. */
+export function purgeNotMemes(s, dataDir) {
+  const folders = sourceFolders(s, dataDir);
+  const moved = [];
+  for (const x of listSourceFiles(folders[0])) {
+    if (x.pick === 'owner') continue;
+    const meta = readMeta(path.join(folders[0].path, x.name));
+    if (meta?.ownerExample) continue;
+    if (notMemeReason({ image_url: meta?.url, page: meta?.page, licence: meta?.licence }) && removeSourceFile(folders, x.ref)) moved.push(x.ref);
+  }
+  return moved;
 }
 
 // ---------- meme notes: the info of a meme (source, caption, stats, licence), kept even when no image is saved ----------
@@ -166,8 +211,8 @@ export const SOURCE_LIST_TOOL = {
 };
 export const SOURCE_SAVE_TOOL = {
   name: 'source_save',
-  description: "Save an image you found online into the owner's memez folder for the design agents, with its title, source page and licence: a meme template from trends_memes (image link), a picture post from Reddit, a pin's picture (i.pinimg.com), or any other https image file. A public-domain or CC0 image is saved as print and may go on a shirt; anything else (a meme, a post, a photo someone owns) is saved as reference: the designers may open it and make a draft (caption, crop) so the owner sees the idea, but it is flagged and never listed for sale as it is; to sell it, remake it with a free image or their own drawing. If the owner declines a design made from a saved image, that file is deleted.",
-  input_schema: { type: 'object', properties: { image_url: { type: 'string', description: 'the https URL of the image file itself' }, file_name: { type: 'string' }, title: { type: 'string' }, page: { type: 'string', description: 'the page it was found on' }, licence: { type: 'string', description: 'as stated by the source, e.g. "Public domain", "CC0", "CC BY 4.0", or "unknown (someone\'s post)"' }, note: { type: 'string', description: 'why it matters: the joke, the trend, where it is rising' }, tags: { type: 'array', items: { type: 'string' }, description: 'search words for the designers: the theme, the subject, the joke (e.g. ["frog", "monday", "tired"])' }, folder: { type: 'string', description: 'folder id, default memez' } }, required: ['image_url', 'title', 'page'] },
+  description: "Save a meme you found online into the owner's memez folder, with its title, source page, licence and the joke: a meme from Pinterest (the i.pinimg.com picture), a Reddit post's picture, or an Imgflip meme. Before it is kept the runner looks at the picture: only a recognisable meme or a funny meme-style picture with a clear joke that reads at shirt size passes. Plain photos, school sketches, anime and fan art, old illustrations, anatomy or museum plates, stock and public-domain pictures are refused. Each saved meme waits in the owner's Approvals for Yes or No; a meme is someone's work, so a design on it is a flagged draft, never listed for sale as it is. If the owner declines a design made from a saved image, that file is deleted.",
+  input_schema: { type: 'object', properties: { image_url: { type: 'string', description: 'the https URL of the image file itself' }, file_name: { type: 'string' }, title: { type: 'string' }, page: { type: 'string', description: 'the page it was found on' }, licence: { type: 'string', description: 'as stated by the source, e.g. "Public domain", "CC0", "CC BY 4.0", or "unknown (someone\'s post)"' }, note: { type: 'string', description: 'why it matters: the joke, the trend, where it is rising' }, joke: { type: 'string', description: 'required: the joke in one line, why a buyer would laugh at it on a shirt' }, tags: { type: 'array', items: { type: 'string' }, description: 'search words for the designers: the theme, the subject, the joke (e.g. ["frog", "monday", "tired"])' }, folder: { type: 'string', description: 'folder id, default memez' } }, required: ['image_url', 'title', 'page', 'joke'] },
 };
 export const SOURCE_TOOLS = [SOURCE_LIST_TOOL, SOURCE_SAVE_TOOL, SOURCE_NOTE_TOOL];
 

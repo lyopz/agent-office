@@ -9,7 +9,7 @@ export function listSourceFiles(folder: SourceFolder, limit?: number): SourceFil
 export function sourcesPublic(s: Record<string, unknown>, dataDir: string): { id: string; label: string; path: string; builtin: boolean; exists: boolean; files: number; printable: number; reference: number; notes: number; recent: SourceFile[] }[];
 export function readSourceFile(folders: SourceFolder[], ref: string): { buf: Buffer; kind: 'png' | 'jpg'; meta: Record<string, unknown> | null; ref: string; owner: boolean } | null;
 export function deleteSourceFile(folders: SourceFolder[], ref: string): boolean;
-export function saveSourceImage(folder: SourceFolder, input: Record<string, unknown>, by?: Record<string, unknown> | null, deps?: { fetch?: unknown }): Promise<{ ref: string; usable: 'print' | 'reference'; width: number; height: number; bytes: number }>;
+export function saveSourceImage(folder: SourceFolder, input: Record<string, unknown>, by?: Record<string, unknown> | null, deps?: { fetch?: unknown; owner?: boolean; judge?: (buf: Buffer, mime: string, info: { title: string; joke: string; page: string }) => Promise<{ keep: boolean; why: string }> }): Promise<{ ref: string; usable: 'print' | 'reference'; width: number; height: number; bytes: number }>;
 export const SOURCE_LIST_TOOL: { name: string; description: string; input_schema: Record<string, unknown> };
 export const SOURCE_SAVE_TOOL: { name: string; description: string; input_schema: Record<string, unknown> };
 export const SOURCE_TOOLS: { name: string }[];
@@ -21,3 +21,7 @@ export const SOURCE_NOTE_TOOL: { name: string; description: string; input_schema
 export function pickOf(meta: Record<string, unknown> | null): 'yes' | 'no' | 'waiting' | 'owner';
 export function setSourcePick(folders: SourceFolder[], ref: string, pick: string): { ref: string; pick: 'yes' | 'no' | 'waiting' | 'owner' } | null;
 export function memesToPick(s: Record<string, unknown>, dataDir: string, limit?: number): SourceFile[];
+export const NOT_MEME_HOSTS: RegExp;
+export function notMemeReason(input: Record<string, unknown>): string | null;
+export function removeSourceFile(folders: SourceFolder[], ref: string): boolean;
+export function purgeNotMemes(s: Record<string, unknown>, dataDir: string): string[];

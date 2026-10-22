@@ -30,7 +30,7 @@ import { COPYRIGHT_RULES, TREND_TOOLS, runTrendTool, trendSources, trendTask, tr
 import { instagramMaintain } from './instagram.mjs';
 import { pinterestMaintain } from './pinterest.mjs';
 import { DEGEN_TOOL, degenBankSkill, degenCatalog, degenSkill, degenSkillsForRole } from './degen-skills.mjs';
-import { SOURCE_TOOLS, addSourceFolder, deleteSourceFile, listSourceFiles, memesToPick, pickOf, readSourceFile, removeSourceFolder, runSourceTool, saveMemeNote, setSourcePick, sourceFolders, sourcesBrief, sourcesPublic } from './sources.mjs';
+import { SOURCE_TOOLS, addSourceFolder, deleteSourceFile, listSourceFiles, memesToPick, pickOf, purgeNotMemes, readSourceFile, removeSourceFile, removeSourceFolder, saveSourceImage, runSourceTool, saveMemeNote, setSourcePick, sourceFolders, sourcesBrief, sourcesPublic } from './sources.mjs';
 import { DESIGN_STYLE, cleanStyleNote, styleGuide } from './design-style.mjs';
 
 const PORT = Number(process.env.ORIGIN_PORT || 8788);
@@ -389,13 +389,64 @@ export function taskReports(s, files = [], n = 12) {
   });
 }
 
+/** The look at a scout's find before it is kept: one small call with the picture, charged to the run like any call. */
+export function memeJudge(s, w, deps = {}) {
+  return async (buf, mime, info) => {
+    if (buf.length > 3_700_000) return { keep: false, why: 'the file is too large to check (memes are small pictures)' };
+    const look = String(s.memeLookFor || '').trim().slice(0, 600);
+    const r = await (deps.fetch ?? globalThis.fetch)('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': deps.key || KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: 200, messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: mime, data: buf.toString('base64') } },
+        { type: 'text', text: `You check pictures for a meme t-shirt store. The scout says this is "${info.title}" and the joke is: ${info.joke || '(none given)'}.${look ? ` The owner wants: ${look}` : ''}\nKeep it only if it is a recognisable meme or a funny meme-style picture: a clear joke a stranger gets in two seconds, simple enough to read on a shirt. Refuse: a plain photo with no joke (a cat, a landscape), a school sketch or random doodles, anime or fan art, an old illustration, engraving, anatomy or museum plate, stock, a screenshot full of text, or a picture whose joke needs the post around it. When unsure, refuse.\nAnswer with JSON only: {"keep": true or false, "why": "one short line"}` },
+      ] }] }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!r.ok) return { keep: false, why: `the picture check could not run (${r.status}); try again later` };
+    const data = await r.json();
+    const c = costOf(MODEL, data.usage || {});
+    if (w) { if (c == null) w.costKnown = false; else w.costUsd += c; }
+    const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    try { const j = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); return { keep: j.keep === true, why: String(j.why || '') }; } catch { return { keep: false, why: 'the picture check gave no clear answer' }; }
+  };
+}
+/** Links the owner put in "What to look for": a pin's picture (i.pinimg.com) or a pin page (pinterest.com/pin, pin.it). */
+export function ownerExampleLinks(text) {
+  return [...new Set(String(text || '').match(/https:\/\/[^\s"'<>)]+/g) || [])].map((u) => u.replace(/[.,;]+$/, '')).filter((u) => /^https:\/\/(i\.pinimg\.com\/|([a-z]{2,3}\.)?(www\.)?pinterest\.[a-z.]+\/pin\/|pin\.it\/)/i.test(u)).slice(0, 12);
+}
+/** Save the owner's example pins to memez first, exactly as given and already picked Yes; each link is tried once. */
+export async function saveOwnerExamples(s, deps = {}) {
+  const f = deps.fetch ?? globalThis.fetch;
+  const done = (s.ownerExamples ||= {});
+  const saved = [];
+  for (const link of ownerExampleLinks(s.memeLookFor)) {
+    if (done[link]) continue;
+    try {
+      let image = link, page = link;
+      if (!/i\.pinimg\.com\//i.test(link)) {
+        // a pin page: its picture is in the og:image tag
+        const r = await f(link, { headers: { 'user-agent': 'Mozilla/5.0 (the-brain; one pin the owner shared)' }, signal: AbortSignal.timeout(20_000) });
+        if (!r.ok) throw new Error(`the pin page answered ${r.status}`);
+        const html = await r.text();
+        const m = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) || html.match(/https:\/\/i\.pinimg\.com\/(?:originals|736x|1200x)\/[^"'\s]+\.(?:jpg|jpeg|png)/i);
+        image = m ? (m[1] || m[0]) : null; page = r.url || link;
+        if (!image) throw new Error('no picture found on the pin page');
+      }
+      const out = await saveSourceImage(sourceFolders(s, DIR)[0], { image_url: image, title: 'Your example', page, licence: "unknown (someone's post)", note: 'An example the owner shared in "What to look for".', tags: ['owner example'] }, { agentName: 'You' }, { fetch: f, owner: true });
+      done[link] = { ref: out.ref, at: new Date().toISOString() };
+      saved.push(out.ref);
+    } catch (e) { done[link] = { error: String(e.message || e).slice(0, 160), at: new Date().toISOString() }; }
+  }
+  return saved;
+}
 /** The public research tools (trends_*, trademark_check) all run through the trend runner, whatever their name. */
 export const isTrendTool = (name) => name.startsWith('trends_') || TREND_TOOLS.some((t) => t.name === name);
 /** Where memes come from, and what the owner told the scouts to look for. */
 export function memeBrief(s, task) {
   const look = String(s.memeLookFor || '').trim();
   const pin = trendsPublic().pinterest?.configured;
-  const sources = `MEME SOURCES: Pinterest first. ${pin ? 'trends_pinterest search and find pins by words; save the good ones to the secret memez board too.' : 'Pinterest\'s API is not connected yet, so use web_search with "site:pinterest.com" plus the words (e.g. "site:pinterest.com funny cat meme"), web_fetch the pin pages, and take the picture from the i.pinimg.com image link.'} Then Reddit and Imgflip (trends_memes). Save every find to memez with source_save: the image link, title, the page it was on, licence as stated (usually "unknown (someone's post)") and tags. Each saved meme waits in the owner's Approvals for their Yes or No, and only the Yes ones get designed, so save the funniest, not the most. No Wikipedia, Wikimedia, museum or engraving images: they have nothing to do with memes. EXAMPLES: when the owner's words below hold links or examples, web_fetch each one first (an i.pinimg.com link is the picture itself; a pin page shows it), say in one line what they have in common (drawing style, subject, kind of joke), then search for more like them and save those.`;
+  const sources = `MEME SOURCES: Pinterest first. ${pin ? 'trends_pinterest search and find pins by words; save the good ones to the secret memez board too.' : 'Pinterest\'s API is not connected yet, so use web_search with "site:pinterest.com" plus the words (e.g. "site:pinterest.com funny cat meme"), web_fetch the pin pages, and take the picture from the i.pinimg.com image link.'} Then Reddit and Imgflip (trends_memes). Save every find to memez with source_save: the image link, title, the page it was on, licence as stated (usually "unknown (someone's post)") and tags. Each saved meme waits in the owner's Approvals for their Yes or No, and only the Yes ones get designed, so save the funniest, not the most. THE BAR: a recognisable meme or a funny meme-style picture with a clear joke a stranger gets in two seconds, simple enough to read on a shirt. Not plain photos (a cat, a landscape), school sketches or random doodles, anime or fan art, old illustrations, anatomy or museum plates, stock, or screenshots full of text. source_save needs the joke in one line, and the runner looks at each picture before keeping it: a refused picture is not saved, so find another. Links the owner put in their words are saved for you already as "Your example"; look at those and find more like them. No Wikipedia, Wikimedia, museum or engraving images: they have nothing to do with memes. EXAMPLES: when the owner's words below hold links or examples, web_fetch each one first (an i.pinimg.com link is the picture itself; a pin page shows it), say in one line what they have in common (drawing style, subject, kind of joke), then search for more like them and save those.`;
   const want = look ? ` WHAT THE OWNER WANTS YOU TO LOOK FOR (follow this first; it beats your own idea of what is trending; open any links in it as examples): ${look}` : ' The owner has not said what to look for yet: pick memes a 20-something would send a friend this week, and say in notifyOwner that they can steer you in the "What to look for" box.';
   return /meme|trend|scout|store run, step [123]/i.test(`${task?.title || ''} ${task?.detail || ''} ${task?.stage || ''} ${task?.agentName || ''}`) || ['research', 'memes', 'design'].includes(task?.stage) ? `\n${sources}${want}` : '';
 }
@@ -1109,7 +1160,7 @@ async function work(s, task, ctx) {
             : tc.name === CAPTION_TOOL.name ? await captionDesign(s, task, tc.input || {}, w, etsy)
             : tc.name === AD_TOOL.name ? saveAd(s, task, tc.input || {}, w)
             : tc.name === DEGEN_TOOL.name ? await degenTool(s, task, tc.input || {})
-            : SOURCE_TOOLS.some((t) => t.name === tc.name) ? await runSourceTool(tc.name, tc.input || {}, s, DIR, w, { fetch: etsy.webFetch ?? globalThis.fetch })
+            : SOURCE_TOOLS.some((t) => t.name === tc.name) ? await runSourceTool(tc.name, tc.input || {}, s, DIR, w, { fetch: etsy.webFetch ?? globalThis.fetch, judge: deps.judge ?? memeJudge(s, w, deps) })
             : tc.name.startsWith('canva_') ? await useCanva(s, task, tc, w, etsy)
             : isTrendTool(tc.name) ? await (etsy.trends ? etsy.trends(tc.name, tc.input) : runTrendTool(tc.name, tc.input))
             : await etsy.run(tc.name, tc.input);
@@ -1954,6 +2005,8 @@ function readInbox() {
     try {
       const req = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (req?.type === 'skills') { const s = loadState(); const r = queueSkills(s, req); saveState(s); console.log(`[origin] inbox ${f}: ${r.files.length} SKILL.md, ${r.bank.length} bank skills${r.unknown.length ? `; not found: ${r.unknown.join(', ')}` : ''}`); }
+      // pictures the owner wants out of memez (moved to memez/removed)
+      else if (req?.type === 'memez_remove' && Array.isArray(req.files)) { const s = loadState(); const folders = sourceFolders(s, DIR); const n = req.files.filter((x) => removeSourceFile(folders, `memez/${String(x)}`)).length; console.log(`[origin] inbox ${f}: moved ${n} of ${req.files.length} pictures out of memez`); }
       // what the owner wants the scouts to look for (the Dashboard's "What to look for" box)
       else if (req?.type === 'look_for' && typeof req.text === 'string') { const s = loadState(); s.memeLookFor = req.text.replace(/\s+/g, ' ').trim().slice(0, 1500); s.memeLookForAt = new Date().toISOString(); saveState(s); console.log(`[origin] inbox ${f}: what to look for set`); }
       // a task the owner wrote down for the command center: it becomes the focus, for the named agent when one is given
@@ -1998,6 +2051,11 @@ function tick() {
   maintainTokens();
   readInbox();
   const s0 = loadState();
+  // what was never a meme leaves memez (moved to memez/removed, not deleted)
+  const purged = purgeNotMemes(s0, DIR);
+  if (purged.length) console.log(`[origin] memez: moved ${purged.length} non-meme picture${purged.length === 1 ? '' : 's'} to memez/removed`);
+  // the owner's example pins are saved first, exactly as given
+  if (ownerExampleLinks(s0.memeLookFor).some((u) => !s0.ownerExamples?.[u])) void saveOwnerExamples(s0).then((saved) => { const s = loadState(); s.ownerExamples = { ...(s.ownerExamples || {}), ...s0.ownerExamples }; saveState(s); if (saved.length) console.log(`[origin] memez: saved ${saved.length} of your example pin${saved.length === 1 ? '' : 's'}`); }).catch((e) => console.error(`[origin] example pins: ${e.message}`));
   const again = reopenRepeats(s0);
   if (again.length) { saveState(s0); console.log(`[origin] repeating: ${again.map((t) => `"${t.title}"`).join(', ')}`); }
   // a store run goes to its next step as soon as the last one is done
