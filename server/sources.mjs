@@ -66,7 +66,7 @@ export function listSourceFiles(folder, limit = MAX_FILES) {
     let st; try { st = fs.statSync(file); } catch { continue; }
     if (!st.isFile()) continue;
     const meta = readMeta(file);
-    out.push({ ref: `${folder.id}/${name}`, folder: folder.id, name, bytes: st.size, kind: /\.png$/i.test(name) ? 'png' : 'jpg', usable: meta ? (meta.usable || usableFor(meta.licence)) : 'owner', title: meta?.title ?? null, page: meta?.page ?? null, licence: meta?.licence ?? (meta ? 'unknown' : 'the owner\'s own file'), savedBy: meta?.agentName ?? null, at: meta?.at ?? st.mtime.toISOString(), note: meta?.note ?? null, tags: Array.isArray(meta?.tags) ? meta.tags : [], taskId: meta?.taskId ?? null, pick: pickOf(meta), pickedAt: meta?.pickedAt ?? null });
+    out.push({ ref: `${folder.id}/${name}`, folder: folder.id, name, bytes: st.size, kind: /\.png$/i.test(name) ? 'png' : 'jpg', usable: meta ? (meta.usable || usableFor(meta.licence)) : 'owner', title: meta?.title ?? null, page: meta?.page ?? null, licence: meta?.licence ?? (meta ? 'unknown' : 'the owner\'s own file'), savedBy: meta?.agentName ?? null, at: meta?.at ?? st.mtime.toISOString(), note: meta?.note ?? null, tags: Array.isArray(meta?.tags) ? meta.tags : [], taskId: meta?.taskId ?? null, pick: pickOf(meta), pickedAt: meta?.pickedAt ?? null, joke: meta?.joke ?? null });
   }
   return out;
 }

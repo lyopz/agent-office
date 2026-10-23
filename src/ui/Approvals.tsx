@@ -116,11 +116,12 @@ export function Approvals() {
               <RunnerImage load={designUrl} id={d.id} alt={d.title} />
               <figcaption>
                 <b>{d.title}</b>
-                <span>{d.agentName} · {when(d.at)}{d.source === 'canva' ? ' · Canva' : d.source === 'caption' ? ' · captioned image' : d.kind === 'svg' ? ' · SVG' : ' · image'}{d.placement ? ` · prints ${placeName[d.placement]}` : ''}</span>
+                <span>{d.agentName} · {when(d.at)}{d.source === 'canva' ? ' · Canva' : d.source === 'caption' ? ' · captioned image' : d.kind === 'svg' ? ' · SVG' : ' · image'}{d.placement ? ` · prints ${placeName[d.placement]}` : ''}{d.memeType ? ` · ${d.memeType.replace(/_/g, ' ')}` : ''}</span>
                 {d.sourceFile || d.assets?.length ? <div className="approval-source">
                   {d.sourceFile ? <RunnerImage load={sourceUrl} id={d.sourceFile} alt={`The image ${d.title} was made from`} cls="approval-source-img" /> : null}
                   <span className="small muted">Made from {d.assets?.length ? d.assets.map((x, i) => <span key={i}>{i ? ', ' : ''}{x.page ? <a href={x.page} target="_blank" rel="noreferrer">{x.title || 'an image'}</a> : (x.title || 'an image')}{x.licence ? ` (${x.licence})` : ''}</span>) : <>a saved image{d.rights === 'owner' ? ' of yours' : ''}</>}{d.sourceFile ? <> · <code>{d.sourceFile}</code></> : null}</span>
                 </div> : <span className="small muted">{d.source === 'canva' ? `Made in Canva by ${d.agentName}` : `Drawn by ${d.agentName}, no source image`}</span>}
+                {d.checkNote && <span className="small warn"><AlertTriangle size={11} /> Failed the shirt check twice: {d.checkNote.replace(/^shirt check: /, '')}</span>}
                 {d.rights === 'reference' && <span className="small warn"><AlertTriangle size={11} /> Draft on someone's image: for the idea only, not for sale. Yes keeps it; it is not listed for sale as it is.</span>}
                 <div className="approval-actions">
                   <button className="btn sm danger" disabled={busy === d.id} onClick={() => void decide(d, 'reject')}><X size={13} /> No</button>

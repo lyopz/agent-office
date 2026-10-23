@@ -22,7 +22,7 @@ describe('degen skill library', () => {
   });
 
   test('roles: designers get the design skills first, store agents never get developer tooling', () => {
-    expect(degenSkillsForRole('Mockup & Design shirt graphics and mockups')).toEqual(['design', 'brand', 'banner-design', 'design-system']);
+    expect(degenSkillsForRole('Mockup & Design shirt graphics and mockups')).toEqual([]); // the owner's rule: no AI art, found memes only
     expect(degenSkillsForRole('Ads & Reach inexpensive-reach ads')).toEqual(['brand', 'banner-design']);
     expect(degenSkillsForRole('Trend Scout rising meme phrases research')).toEqual(['idea-refine', 'llm-council']);
     expect(degenSkillsForRole('Pricing unit economics')).toEqual([]);
@@ -33,11 +33,11 @@ describe('degen skill library', () => {
     const dir = lib();
     const cat = await degenCatalog({ dir, fresh: true });
     expect(cat.from).toBe('local');
-    expect(cat.skills.map((k) => [k.name, k.roles])).toEqual([['brand', ['design', 'ads']], ['cli-keys', []], ['design', ['design']]]);
+    expect(cat.skills.map((k) => [k.name, k.roles])).toEqual([['brand', ['ads']], ['cli-keys', []], ['design', []]]);
     expect(cat.skills[0].description).toBe('Brand voice, visual identity, messaging frameworks');
     const k = await degenSkill('design', { dir });
-    expect(k).toMatchObject({ name: 'design', title: 'design', body: '# Design\n\nDo design well.', roles: ['design'], from: 'local' });
-    expect(degenBankSkill(k)).toMatchObject({ skillKey: 'degen_design', skillName: 'Design (degen)', tags: ['degen-skill', 'degen:design', 'design'] });
+    expect(k).toMatchObject({ name: 'design', title: 'design', body: '# Design\n\nDo design well.', roles: [], from: 'local' });
+    expect(degenBankSkill(k)).toMatchObject({ skillKey: 'degen_design', skillName: 'Design (degen)', tags: ['degen-skill', 'degen:design'] });
     await expect(degenSkill('../etc', { dir })).rejects.toThrow(/skill name/);
     await expect(degenSkill('missing', { dir })).rejects.toThrow(/No skill named missing/);
     expect(DEGEN_TOOL.input_schema).toMatchObject({ required: ['action'] });

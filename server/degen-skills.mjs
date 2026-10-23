@@ -20,7 +20,8 @@ const NAME = /^[a-z0-9][a-z0-9-]{0,60}$/;
  * the owner said so; the engineering and tooling skills go only to agents that build software.
  */
 export const DEGEN_ROLES = [
-  { role: 'design', test: /design|mockup|mock-up|graphic|artwork|illustrat|art director|canva|brand|logo|visual/i, skills: ['design', 'brand', 'banner-design', 'design-system'] },
+  // designers get none: the library's design skills generate AI art and web layouts, and the owner wants found memes lightly edited
+  { role: 'design', test: /design|mockup|mock-up|graphic|artwork|illustrat|art director|canva|brand|logo|visual/i, skills: [] },
   { role: 'ads', test: /\bads?\b|advertis|marketing|promot|campaign|social media|content/i, skills: ['brand', 'banner-design'] },
   { role: 'research', test: /research|scout|trend|strateg|idea|opportunit|analys/i, skills: ['idea-refine', 'llm-council'] },
   { role: 'product', test: /\bproduct\b|\bapp\b|game|prototype|\bux\b|\bui\b/i, skills: ['idea-refine', 'prototype', 'ui-ux-pro-max'] },

@@ -922,22 +922,22 @@ describe('ads for approved products', () => {
 });
 
 describe('the skill library handed out by role', () => {
-  test('every agent gets the library skills its role fits, once; designers first', async () => {
+  test('every agent gets the library skills its role fits, once; designers get none', async () => {
     process.env.DEGEN_SKILLS_DIR = '/home/claude/degen-skill';
     if (!fs.existsSync('/home/claude/degen-skill/skills')) return;
     const s: any = { ...base, agents: [{ id: 'agent_d', name: 'Mockup & Design', title: 'shirt graphics' }, { id: 'agent_p', name: 'Pricing', title: 'unit economics' }, { id: 'agent_t', name: 'Trend Scout', title: 'rising meme phrases' }], skillFiles: [], tasks: [] };
     const r = await runner.distributeDegen(s);
     expect(r.errors).toEqual([]);
-    expect(r.given.map((g) => g.skill)).toEqual(['design', 'brand', 'banner-design', 'design-system', 'idea-refine', 'llm-council']);
-    expect(r.given[0].agents).toEqual(['Mockup & Design']);
-    const file = s.skillFiles.find((f: any) => f.skillKey === 'degen_design');
-    expect(file).toMatchObject({ bank: true, from: 'degen', skillName: 'Design (degen)', agentIds: ['agent_d'], status: 'new' });
+    expect(r.given.map((g) => g.skill)).toEqual(['idea-refine', 'llm-council']);
+    expect(r.given[0].agents).toEqual(['Trend Scout']);
+    const file = s.skillFiles.find((f: any) => f.skillKey === 'degen_idea_refine');
+    expect(file).toMatchObject({ bank: true, from: 'degen', skillName: 'Idea refine (degen)', agentIds: ['agent_t'], status: 'new' });
     expect(file.body.length).toBeGreaterThan(1000);
-    expect(s.degenGiven.degen_design).toEqual(['agent_d']);
+    expect(s.degenGiven.degen_idea_refine).toEqual(['agent_t']);
     // a second pass gives nothing new
     const again = await runner.distributeDegen(s);
     expect(again.given).toEqual([]);
-    expect(s.skillFiles.filter((f: any) => f.skillKey === 'degen_design')).toHaveLength(1);
+    expect(s.skillFiles.filter((f: any) => f.skillKey === 'degen_idea_refine')).toHaveLength(1);
   });
 });
 
@@ -1099,5 +1099,31 @@ describe('origin runner: the picture check and the owner\'s example pins', () =>
     expect(meta).toMatchObject({ pick: 'yes', ownerExample: true, title: 'Your example' });
     expect(await runner.saveOwnerExamples(s, { fetch })).toEqual([]); // already done
     expect(urls).toHaveLength(3);
+  });
+});
+
+describe('origin runner: the shirt check and the owner\'s taste', () => {
+  test('the shirt check sees the preview and the caption; a failed check names the fix; a dead check lets the design through', async () => {
+    const bodies: any[] = [];
+    const answer = (text: string) => async (_u: string, init: any) => { bodies.push(JSON.parse(init.body)); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text }], usage: { input_tokens: 900, output_tokens: 20 } }) }; };
+    const w: any = { costUsd: 0, costKnown: true };
+    const fail = await runner.shirtCheck({}, w, { fetch: answer('{"pass": false, "why": "caption repeats the words already in the meme"}'), key: 'k' })(Buffer.from('png'), { caption: 'bet', memeType: 'edited_photo', placement: 'full_front', font: 'impact' });
+    expect(fail).toEqual({ pass: false, why: 'caption repeats the words already in the meme' });
+    expect(bodies[0].messages[0].content[1].text).toMatch(/Meme type: edited_photo[\s\S]*"bet" in impact[\s\S]*full front/);
+    expect(w.costUsd).toBeGreaterThan(0);
+    expect(await runner.shirtCheck({}, w, { fetch: async () => ({ ok: false, status: 500 }), key: 'k' })(Buffer.from('png'), {})).toBeNull();
+  });
+
+  test('the taste brief lists the owner\'s picks and design decisions, newest first, and is empty with none', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taste-'));
+    expect(runner.tasteBrief({ designs: [] }, dir)).toBe('');
+    const memez = path.join(dir, 'memez'); fs.mkdirSync(memez);
+    fs.writeFileSync(path.join(memez, 'bet.png'), 'png'); fs.writeFileSync(path.join(memez, 'bet.png.json'), JSON.stringify({ title: 'Always bet on nothing', joke: 'betting on nothing', pick: 'yes', pickedAt: '2026-10-23T01:00:00Z' }));
+    fs.writeFileSync(path.join(memez, 'cat.png'), 'png'); fs.writeFileSync(path.join(memez, 'cat.png.json'), JSON.stringify({ title: 'plain cat', pick: 'no', pickedAt: '2026-10-23T02:00:00Z' }));
+    const brief = runner.tasteBrief({ designs: [{ status: 'approved', caption: 'locked in', memeType: 'animal_or_object', font: 'plain', placement: 'left_chest' }, { status: 'rejected', caption: 'LOL SO RANDOM', memeType: 'reaction', font: 'impact' }, { status: 'waiting', caption: 'not yet' }] }, dir);
+    expect(brief).toMatch(/THE OWNER'S TASTE SO FAR/);
+    expect(brief).toMatch(/No: plain cat\nYes: Always bet on nothing \(joke: betting on nothing\)/);
+    expect(brief).toMatch(/No: "LOL SO RANDOM", reaction, impact font\nYes: "locked in", animal or object, plain font, left chest/);
+    expect(brief).not.toMatch(/not yet/);
   });
 });

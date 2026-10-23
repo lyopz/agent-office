@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readKey } from './key-file.mjs';
 import { ETSY_TOOLS, authUrl, etsyPublic, finishAuth, runEtsyTool } from './etsy.mjs';
-import { PRINTIFY_TOOLS, archiveUpload, deleteProduct, printifyConfig, printifyPublic, listOrders, productPreview, publishProduct, runPrintifyTool, svgToPng, uploadImage } from './printify.mjs';
+import { PRINTIFY_TOOLS, archiveUpload, deleteProduct, printifyConfig, printifyPublic, listOrders, productPreview, publishProduct, runPrintifyTool, svgPreview, svgToPng, uploadImage } from './printify.mjs';
 import { CAPTION_TOOL, captionImage } from './caption.mjs';
 import { cutoutImage } from './cutout.mjs';
 import { moneyByAgent, salesFromOrders } from './money.mjs';
@@ -411,6 +411,35 @@ export function memeJudge(s, w, deps = {}) {
     try { const j = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); return { keep: j.keep === true, why: String(j.why || '') }; } catch { return { keep: false, why: 'the picture check gave no clear answer' }; }
   };
 }
+/** A look at a finished design, on a grey shirt-sized preview: does it read and keep the joke? One small call, charged to the run. */
+export function shirtCheck(s, w, deps = {}) {
+  return async (png, info) => {
+    const r = await (deps.fetch ?? globalThis.fetch)('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': deps.key || KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: 200, messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: png.toString('base64') } },
+        { type: 'text', text: `This is a meme t-shirt print, shown small on a grey shirt colour. Meme type: ${info.memeType || 'not given'}. Caption added: ${info.caption ? `"${info.caption}" in ${info.font}` : 'none (the meme keeps its own words)'}. It prints at ${String(info.placement || 'front_center').replace(/_/g, ' ')}.\nPass it unless one of these is clearly wrong: the words cannot be read at this size (as if from three metres); the added caption fights with or repeats words already in the meme; the caption explains the joke or is a full sentence; something was added that buries the meme; the picture is cut off or a watermark, border or app screenshot frame shows.\nAnswer with JSON only: {"pass": true or false, "why": "the one thing to fix, or what works"}` },
+      ] }] }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!r.ok) return null; // the check could not run: the design goes on without it
+    const data = await r.json();
+    const c = costOf(MODEL, data.usage || {});
+    if (w) { if (c == null) w.costKnown = false; else w.costUsd += c; }
+    const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    try { const j = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); return { pass: j.pass !== false, why: String(j.why || '') }; } catch { return null; }
+  };
+}
+/** The owner's taste so far, from their decisions: memes picked and turned down, designs said Yes and No to. */
+export function tasteBrief(s, dataDir = DIR) {
+  const files = sourceFolders(s, dataDir).flatMap((f) => listSourceFiles(f)).filter((x) => x.pick === 'yes' || x.pick === 'no').sort((a, b) => String(b.pickedAt || '').localeCompare(String(a.pickedAt || ''))).slice(0, 16);
+  const designs = (s.designs || []).filter((d) => ['approved', 'published', 'rejected'].includes(d.status)).slice(-16).reverse();
+  if (!files.length && !designs.length) return '';
+  const meme = (x) => `${x.pick === 'yes' ? 'Yes' : 'No'}: ${x.title || x.name}${x.joke ? ` (joke: ${x.joke})` : ''}`;
+  const design = (d) => `${d.status === 'rejected' ? 'No' : 'Yes'}: "${d.caption || d.title}"${d.memeType ? `, ${d.memeType.replace(/_/g, ' ')}` : ''}${d.font ? `, ${d.font} font` : ''}${d.placement ? `, ${d.placement.replace(/_/g, ' ')}` : ''}`;
+  return `\nTHE OWNER'S TASTE SO FAR (their own decisions; read it as the store's voice chart and follow it over your own idea of funny):${files.length ? `\nMemes they picked or turned down:\n${files.map(meme).join('\n')}` : ''}${designs.length ? `\nDesigns they said Yes or No to:\n${designs.map(design).join('\n')}` : ''}`;
+}
 /** Links the owner put in "What to look for": a pin's picture (i.pinimg.com) or a pin page (pinterest.com/pin, pin.it). */
 export function ownerExampleLinks(text) {
   return [...new Set(String(text || '').match(/https:\/\/[^\s"'<>)]+/g) || [])].map((u) => u.replace(/[.,;]+$/, '')).filter((u) => /^https:\/\/(i\.pinimg\.com\/|([a-z]{2,3}\.)?(www\.)?pinterest\.[a-z.]+\/pin\/|pin\.it\/)/i.test(u)).slice(0, 12);
@@ -448,7 +477,7 @@ export function memeBrief(s, task) {
   const pin = trendsPublic().pinterest?.configured;
   const sources = `MEME SOURCES: Pinterest first. ${pin ? 'trends_pinterest search and find pins by words; save the good ones to the secret memez board too.' : 'Pinterest\'s API is not connected yet, so use web_search with "site:pinterest.com" plus the words (e.g. "site:pinterest.com funny cat meme"), web_fetch the pin pages, and take the picture from the i.pinimg.com image link.'} Then Reddit and Imgflip (trends_memes). Save every find to memez with source_save: the image link, title, the page it was on, licence as stated (usually "unknown (someone's post)") and tags. Each saved meme waits in the owner's Approvals for their Yes or No, and only the Yes ones get designed, so save the funniest, not the most. THE BAR: a recognisable meme or a funny meme-style picture with a clear joke a stranger gets in two seconds, simple enough to read on a shirt. Not plain photos (a cat, a landscape), school sketches or random doodles, anime or fan art, old illustrations, anatomy or museum plates, stock, or screenshots full of text. source_save needs the joke in one line, and the runner looks at each picture before keeping it: a refused picture is not saved, so find another. Links the owner put in their words are saved for you already as "Your example"; look at those and find more like them. No Wikipedia, Wikimedia, museum or engraving images: they have nothing to do with memes. EXAMPLES: when the owner's words below hold links or examples, web_fetch each one first (an i.pinimg.com link is the picture itself; a pin page shows it), say in one line what they have in common (drawing style, subject, kind of joke), then search for more like them and save those.`;
   const want = look ? ` WHAT THE OWNER WANTS YOU TO LOOK FOR (follow this first; it beats your own idea of what is trending; open any links in it as examples): ${look}` : ' The owner has not said what to look for yet: pick memes a 20-something would send a friend this week, and say in notifyOwner that they can steer you in the "What to look for" box.';
-  return /meme|trend|scout|store run, step [123]/i.test(`${task?.title || ''} ${task?.detail || ''} ${task?.stage || ''} ${task?.agentName || ''}`) || ['research', 'memes', 'design'].includes(task?.stage) ? `\n${sources}${want}` : '';
+  return /meme|trend|scout|store run, step [123]/i.test(`${task?.title || ''} ${task?.detail || ''} ${task?.stage || ''} ${task?.agentName || ''}`) || ['research', 'memes', 'design'].includes(task?.stage) ? `\n${sources}${want}${task?.stage === 'design' ? '' : tasteBrief(s)}` : '';
 }
 /** At most this many parts from one routed ask. */
 const ROUTED_MAX = 6;
@@ -575,7 +604,7 @@ function declinedLately(s) {
 }
 const designDir = () => path.join(DIR, 'designs');
 /** Save one design (SVG text or PNG base64) and record it for the gallery. */
-function saveDesign(s, task, { file_name, svg, png, ext, title, imageId, source, assets, sourceFile, rights, placement }, w) {
+function saveDesign(s, task, { file_name, svg, png, ext, title, imageId, source, assets, sourceFile, rights, placement, memeType, caption, font, checkNote }, w) {
   const credits = Array.isArray(assets) ? assets.filter((a) => a && typeof a === 'object').slice(0, 10).map((a) => ({ title: String(a.title || '').slice(0, 120), page: String(a.page || a.url || '').slice(0, 300), licence: String(a.licence || a.license || '').slice(0, 80) })) : [];
   const kind = png ? (ext === 'jpg' ? 'jpg' : 'png') : 'svg';
   // a drawn SVG is only taken when the owner allows drawn designs or the task asks for drawn art
@@ -591,13 +620,13 @@ function saveDesign(s, task, { file_name, svg, png, ext, title, imageId, source,
   fs.writeFileSync(path.join(designDir(), `${id}.${kind}`), data);
   const agent = task ? taskAgent(s, task) : null;
   const name = String(file_name || title || 'design').replace(/[^\w .-]/g, '_').slice(0, 80);
-  s.designs = [...(s.designs || []), { id, kind, fileName: name.endsWith(`.${kind}`) ? name : `${name}.${kind}`, title: String(title || name).slice(0, 140), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'JARVIS', taskId: task?.id ?? null, taskTitle: task?.title ?? null, imageId: imageId ?? null, ...(credits.length ? { assets: credits } : {}), ...(source ? { source } : {}), ...(sourceFile ? { sourceFile } : {}), ...(rights ? { rights } : {}), ...(placement ? { placement } : {}), status: 'waiting', at: new Date().toISOString() }].slice(-DESIGNS_KEEP);
+  s.designs = [...(s.designs || []), { id, kind, fileName: name.endsWith(`.${kind}`) ? name : `${name}.${kind}`, title: String(title || name).slice(0, 140), agentId: agent?.id ?? AGENT_ID, agentName: agent?.name ?? 'JARVIS', taskId: task?.id ?? null, taskTitle: task?.title ?? null, imageId: imageId ?? null, ...(credits.length ? { assets: credits } : {}), ...(source ? { source } : {}), ...(sourceFile ? { sourceFile } : {}), ...(rights ? { rights } : {}), ...(placement ? { placement } : {}), ...(memeType ? { memeType } : {}), ...(caption != null && source === 'caption' ? { caption: String(caption).slice(0, 120), font } : {}), ...(checkNote ? { checkNote } : {}), status: 'waiting', at: new Date().toISOString() }].slice(-DESIGNS_KEEP);
   if (w) w.designs = (w.designs || 0) + 1;
   return { content: JSON.stringify({ saved: true, design_id: id, waiting_for_owner: waitingDesigns(s, task?.id), of: task ? designLimit(task) : null, note: 'It is in the owner\'s Approvals now. Do not make a Printify product from it: when the owner presses Yes, you get a task to make and publish it.' }), isError: false, id };
 }
 
 /** A found or generated image with the caption laid over it, saved to the owner's Approvals like any design. */
-async function captionDesign(s, task, input, w, tools) {
+async function captionDesign(s, task, input, w, tools, deps = {}) {
   if (task && !task.designId && waitingDesigns(s, task.id) >= designLimit(task)) return { content: `The owner already has ${designLimit(task)} designs from this task waiting for their Yes or No. Make no more now: set "waitingOnOwner": true and finish this run.`, isError: true };
   // only memes the owner said Yes to (or their own files) become designs
   if (input.source_file) {
@@ -612,7 +641,21 @@ async function captionDesign(s, task, input, w, tools) {
     const from = (s.designs || []).find((x) => x.id === input.design_id);
     const assets = Array.isArray(input.assets) && input.assets.length ? input.assets : from?.assets ?? (r.sourceMeta ? [{ title: r.sourceMeta.title, page: r.sourceMeta.page, licence: r.sourceMeta.licence }] : undefined);
     const title = String(input.title || r.caption || 'captioned image').slice(0, 140);
-    const saved = saveDesign(s, task, { file_name: input.file_name || `${title.replace(/[^\w .-]/g, '_').slice(0, 60)}.png`, png: r.png.toString('base64'), ext: 'png', title, assets, source: 'caption', sourceFile: r.sourceFile, rights: r.rights, placement: r.placement }, w);
+    // a look at the finished shirt before the owner sees it; two fails on the same meme and it goes through flagged
+    let checkNote = null;
+    const check = deps.shirtCheck ?? (deps.key || KEY ? shirtCheck(s, w, deps) : null);
+    if (check && r.svg) {
+      const prev = await svgPreview(r.svg).catch(() => null);
+      const verdict = prev ? await check(prev.png, { caption: r.caption, memeType: r.memeType, placement: r.placement, font: r.font, title }) : null;
+      if (verdict && !verdict.pass) {
+        const key = r.sourceFile || input.design_id || 'image';
+        const fails = (task ? (task.shirtFails ||= {}) : {});
+        fails[key] = (fails[key] || 0) + 1;
+        if (fails[key] < 2) return { content: `design_caption_image: not saved. The shirt check looked at the finished design and says: ${verdict.why}. Fix that one thing (shorter caption, another font, a crop, or no caption) and save again; after a second fail on this meme, it goes to the owner flagged.`, isError: true };
+        checkNote = `shirt check: ${String(verdict.why).slice(0, 160)}`;
+      }
+    }
+    const saved = saveDesign(s, task, { file_name: input.file_name || `${title.replace(/[^\w .-]/g, '_').slice(0, 60)}.png`, png: r.png.toString('base64'), ext: 'png', title, assets, source: 'caption', sourceFile: r.sourceFile, rights: r.rights, placement: r.placement, memeType: r.memeType, caption: r.caption, font: r.font, checkNote }, w);
     if (r.background && !saved.isError) saved.content = `${saved.content} BACKGROUND: ${r.background.note || `${r.background.removed}% of the picture cut away${r.background.trimmed ? ', trimmed to the subject' : ''}`}.`;
     if (r.rights === 'reference' && !saved.isError) saved.content = `${saved.content} DRAFT ONLY: this image is someone's work (${r.sourceMeta?.licence || 'licence unknown'}), so the owner sees the draft flagged and it will not be listed for sale as it is.`;
     return saved;
@@ -1011,7 +1054,7 @@ function skillFileBrief(s, task) {
 /** How a design gets made on this task: a caption on a found image, and drawing only when the owner allows it. */
 function designWay(s, task, etsy) {
   const canva = etsy?.tools.some((t) => t.name.startsWith('canva_')) && canvaOk(task);
-  const how = `HOW A DESIGN IS MADE (the owner's way: a real picture, edited, no AI art): (1) pick a meme the owner said Yes to in memez (files_source with picks "yes"; memes the scouts found on Pinterest, Reddit and Imgflip; a saved meme or post is reference, so it becomes a flagged draft the owner reviews). A meme still waiting for their pick, or one they said No to, is refused. No Wikipedia or public-domain image search.${sourcesBrief(s, DIR)} (2) design_caption_image, with a light touch: keep the meme as it is; add words in a font that fits the picture (hand for doodles and hand-drawn memes, plain lowercase for deadpan, impact for a classic macro), or no_caption true when it already has its words. Crop or remove_background only when it clearly prints better (a doodle on white paper prints cleaner with the white cut away; a photo with a real background is left whole). (3) placement: where it sits on the shirt (front_center for most, full_front for a big picture, left_chest for a small doodle or one-liner, back for a big piece). (4) It lands in the owner's Approvals. CAPTION RULES: 0 to 6 words a buyer would wear in public: lowercase deadpan or classic impact, the joke in the mismatch between picture and words, an understatement or a misspelling, funny with the sound off and from across the room; never explain the meme, never a sentence, never "when you..." text walls or inspirational lines. If the picture does not carry a wearable joke, pick another picture.`;
+  const how = `HOW A DESIGN IS MADE (the owner's way: a real picture, edited, no AI art): (1) pick a meme the owner said Yes to in memez (files_source with picks "yes"; memes the scouts found on Pinterest, Reddit and Imgflip; a saved meme or post is reference, so it becomes a flagged draft the owner reviews). A meme still waiting for their pick, or one they said No to, is refused. No Wikipedia or public-domain image search.${sourcesBrief(s, DIR)} (2) name the meme's type (meme_type: image_macro, reaction, edited_photo, doodle, format_template, animal_or_object) and follow that type's recipe in your Meme shirt design skill; write five caption options through its lenses and keep one. design_caption_image, with a light touch: keep the meme as it is; add words in a font that fits the picture (hand for doodles and hand-drawn memes, plain lowercase for deadpan, impact for a classic macro), or no_caption true when it already has its words. Crop or remove_background only when it clearly prints better (a doodle on white paper prints cleaner with the white cut away; a photo with a real background is left whole). (3) placement: where it sits on the shirt (front_center for most, full_front for a big picture, left_chest for a small doodle or one-liner, back for a big piece). (4) The runner shows the finished shirt to a check before the owner sees it; if it fails, fix the one thing it names and save again. (5) It lands in the owner's Approvals.${tasteBrief(s)} CAPTION RULES: 0 to 6 words a buyer would wear in public: lowercase deadpan or classic impact, the joke in the mismatch between picture and words, an understatement or a misspelling, funny with the sound off and from across the room; never explain the meme, never a sentence, never "when you..." text walls or inspirational lines. If the picture does not carry a wearable joke, pick another picture.`;
   if (!drawnAllowed(s, task)) return `${how} NOTHING ELSE ON THIS TASK: hand-drawn SVGs (design_save)${etsy?.tools.some((t) => t.name === IMAGE_TOOL.name) ? ', design_generate_image' : ''}${canva ? ' and Canva AI design or image generation' : ''} are refused here. If no fitting image exists, say so in notifyOwner and stop; the owner can allow drawn designs in Settings.${etsy?.tools.some((t) => t.name === 'printify_create_product') ? ' Each design the owner approves becomes a Printify product as above.' : ''}`;
   return `${how}${canva ? ` CANVA (the owner's account, allowed on this task): canva_generate_design or canva_create_design from one full prompt (subject, flat style, exact lowercase caption, vertical shirt print 4500 by 5400 px), then canva_export_design as png with transparent_background true and width at least 3000; each uses a Canva AI credit (${Math.max(0, canvaLimit(s) - rollCanva(s).aiCalls)} of ${canvaLimit(s)} left this month). Never sell a single Canva library photo or illustration as it is.` : ''} Draw a design yourself only when no fitting image exists or the task asks for drawn art: write it as complete SVG (a real subject with features, not one icon-like shape; lettering, badges, patterns) sized for the product, with every caption large and in a light fill with a dark outline (or the reverse) so it reads on any background, and save it with design_save so the owner sees it in the app; a plain shape with a small caption is refused${etsy?.tools.some((t) => t.name === IMAGE_TOOL.name) ? '; for illustrated or photo-style art use design_generate_image' : ''}${etsy?.tools.some((t) => t.name === 'printify_create_product') ? '; then turn each finished design into a Printify product as above' : ''}.`;
 }
@@ -1157,7 +1200,7 @@ async function work(s, task, ctx) {
           const res = tc.name === 'printify_request_publish' ? await requestPublish(s, task, tc.input, w, etsy)
             : tc.name === IMAGE_TOOL.name ? (task && !drawnAllowed(s, task) ? { content: DRAWN_OFF, isError: true } : await makeImage(s, task, tc.input, w, etsy))
             : tc.name === DESIGN_TOOL.name ? saveDesign(s, task, tc.input || {}, w)
-            : tc.name === CAPTION_TOOL.name ? await captionDesign(s, task, tc.input || {}, w, etsy)
+            : tc.name === CAPTION_TOOL.name ? await captionDesign(s, task, tc.input || {}, w, etsy, deps)
             : tc.name === AD_TOOL.name ? saveAd(s, task, tc.input || {}, w)
             : tc.name === DEGEN_TOOL.name ? await degenTool(s, task, tc.input || {})
             : SOURCE_TOOLS.some((t) => t.name === tc.name) ? await runSourceTool(tc.name, tc.input || {}, s, DIR, w, { fetch: etsy.webFetch ?? globalThis.fetch, judge: deps.judge ?? memeJudge(s, w, deps) })
