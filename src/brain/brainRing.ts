@@ -8,9 +8,9 @@ import { holoBrainMaterial, type HoloBrain } from './brainMesh';
 export interface RingBrain { key: string; name: string; color: string }
 
 const RING_PALETTE = ['#38d6ff', '#a46bff', '#ff4fb0', '#19e3c3', '#ffb347', '#5f8cff', '#c3f36b', '#ff6f6f'];
-/** The brains on the ring: every brain in the library (never the open one), in its own colour or the ring's palette. */
-export function ringBrainsOf(brains: { id: string; name: string; color: string | null; open?: boolean }[]): RingBrain[] {
-  return brains.filter((b) => !b.open).map((b, i) => ({ key: b.id, name: b.name, color: b.color ?? RING_PALETTE[i % RING_PALETTE.length] }));
+/** The brains on the ring: every brain in the library except JARVIS's head brain (only ever in the middle) and the open one, in its own colour or the ring's palette. */
+export function ringBrainsOf(brains: { id: string; name: string; color: string | null; open?: boolean; head?: boolean }[]): RingBrain[] {
+  return brains.filter((b) => !b.open && !b.head).map((b, i) => ({ key: b.id, name: b.name, color: b.color ?? RING_PALETTE[i % RING_PALETTE.length] }));
 }
 
 const ringVertex = `varying vec3 vN; varying vec3 vV; varying float vA; varying float vY;

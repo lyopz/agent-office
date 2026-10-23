@@ -33,3 +33,9 @@ describe('Blender brain model', () => {
     expect(min.z).toBeGreaterThan(-1.0); expect(max.z).toBeLessThan(0.9);
   });
 });
+
+describe('head brain on the ring', () => {
+  test("JARVIS's head brain is never on the ring, only in the middle", () => {
+    expect(ringBrainsOf([{ id: 'h', name: 'JARVIS', color: null, head: true }, { id: 'etsy', name: 'Etsy store', color: null }]).map((b) => b.key)).toEqual(['etsy']);
+  });
+});

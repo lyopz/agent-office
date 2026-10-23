@@ -80,6 +80,7 @@ function backdrop() {
   return t;
 }
 
+/** A wide, soft glow with no hot centre, for the head brain's aura. */
 function glowTexture() {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const g = c.getContext('2d')!, grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
@@ -229,6 +230,11 @@ export default function BrainScene() {
     });
 
     const glow = glowTexture();
+    // JARVIS's head brain glows: a soft breathing light behind it, drawn by the page (a glow on the
+    // transparent canvas would come out faint), following the brain on screen
+    const aura = document.createElement('div'); aura.className = 'brain-aura'; aura.setAttribute('aria-hidden', 'true');
+    labelLayer.parentElement?.insertBefore(aura, labelLayer.parentElement.firstChild);
+    const auraAt = new THREE.Vector3(), auraEdge = new THREE.Vector3(), auraColor = new THREE.Color();
     // neural dust inside the cerebrum
     const DUST = 650, dustPos = new Float32Array(DUST * 3), dustSeed = new Float32Array(DUST);
     { let i = 0, r = Math.random; while (i < DUST) { const p: [number, number, number] = [(r() * 2 - 1) * CEREBRUM[0], (r() * 2 - 1) * CEREBRUM[1] + 0.08, (r() * 2 - 1) * CEREBRUM[2]]; if (insideCerebrum(p) > 0.95) continue; dustPos.set(p, i * 3); dustSeed[i] = r(); i++; } }
@@ -493,6 +499,14 @@ export default function BrainScene() {
       }
       // nodes and labels
       const { width, height } = el.getBoundingClientRect();
+      // the head brain's glow, centred on it and sized to it
+      auraAt.set(0, -0.12, -0.05).project(camera);
+      auraEdge.setFromMatrixColumn(camera.matrixWorld, 0).multiplyScalar(1.5).add(new THREE.Vector3(0, -0.12, -0.05)).project(camera);
+      const ar = Math.abs(auraEdge.x - auraAt.x) * 0.5 * width;
+      aura.style.transform = `translate(${((auraAt.x * 0.5 + 0.5) * width).toFixed(1)}px, ${((-auraAt.y * 0.5 + 0.5) * height).toFixed(1)}px) translate(-50%, -50%)`;
+      aura.style.width = aura.style.height = `${(ar * 2).toFixed(0)}px`;
+      aura.style.setProperty('--aura', `#${auraColor.copy(holo.front.uniforms.uColor.value as THREE.Color).getHexString()}`);
+      aura.style.opacity = st.doc.head ? (calm ? '0.9' : (0.82 + 0.18 * Math.sin(time * 1.6)).toFixed(3)) : '0';
       const many = nodes.length > 22;
       void width;
       let best: { id: string; d: number; x: number; y: number } | null = null;
@@ -534,7 +548,7 @@ export default function BrainScene() {
       disposeNerves(); disposeBuds();
       for (const p of pulses) for (const sp of [p.sprite, ...p.trail]) (sp.material as THREE.Material).dispose();
       for (const r of rings) (r.sprite.material as THREE.Material).dispose();
-      gone = true; wire?.dispose(); model?.facets.dispose(); model?.mesh.dispose(); halo.dispose(); orbit.dispose(); geo.dispose(); holo.dispose(); glow.dispose(); ringTex.dispose(); sky.dispose();
+      gone = true; wire?.dispose(); model?.facets.dispose(); model?.mesh.dispose(); aura.remove(); halo.dispose(); orbit.dispose(); geo.dispose(); holo.dispose(); glow.dispose(); ringTex.dispose(); sky.dispose();
       dustGeo.dispose(); dustMat.dispose(); composer.dispose();
       renderer.dispose(); renderer.domElement.remove();
       api.current = null; rebuild.current = null; regrowBuds.current = null;
