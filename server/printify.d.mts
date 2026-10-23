@@ -6,3 +6,4 @@ export function deleteProduct(shop: number | string | null, productId: string, d
 export function archiveUpload(imageId: string, deps?: unknown): Promise<boolean>;
 export const PLACEMENT_SPOTS: Record<string, { position: string; x: number; y: number; scale: number }>;
 export function placeholder(input: Record<string, unknown>): { position: string; images: { id: string; x: number; y: number; scale: number; angle: number }[] };
+export function svgPreview(svg: string, width?: number, deps?: { resvg?: unknown }): Promise<{ png: Buffer; width: number; height: number } | null>;

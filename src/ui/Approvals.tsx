@@ -12,6 +12,7 @@ import { designDecision, designUrl, mockupUrl, publishDecision, runnerStatus, se
 import { ORIGIN_ID } from '../brain/opportunity';
 import { usd } from './Dashboard';
 import { PageTabs, TabPanel, usePageTab } from './PageTabs';
+import { BrainLayouts } from './BrainsTab';
 
 const when = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
@@ -67,7 +68,7 @@ export function Approvals() {
   const taskOf = (id: string | null) => st.tasks.find((t) => t.id === id);
   const groups = [...new Map(waiting.map((d) => [d.taskId ?? '', d])).keys()];
   const memes = st.memePicks ?? [];
-  const toDecide = waiting.length + products.length + memes.length;
+  const toDecide = waiting.length + products.length + memes.length + (st.brainProposals ?? []).filter((p) => p.status === 'proposed').length;
   const placeName = { front_center: 'front, centred', full_front: 'full front', left_chest: 'left chest', back: 'back' } as const;
 
   return (
@@ -87,7 +88,8 @@ export function Approvals() {
       ]} />
 
       {tab === 'decide' && <TabPanel id="decide">
-      {!toDecide && <div className="card span-12 empty-state"><Check size={22} /><b>All caught up</b><span>Memes, designs and products that wait for your Yes or No show up here.</span></div>}
+      {!toDecide && <div className="card span-12 empty-state"><Check size={22} /><b>All caught up</b><span>Memes, designs, products and brain layouts that wait for your Yes or No show up here.</span></div>}
+      <BrainLayouts />
       {memes.length > 0 && <section id="approvals-memes" className="card approval-group">
         <h4><Images size={13} /> Memes to pick <span className="count">{memes.length} found by the scouts · only your Yes picks get designed</span></h4>
         <div className="approval-grid">
@@ -116,11 +118,12 @@ export function Approvals() {
               <RunnerImage load={designUrl} id={d.id} alt={d.title} />
               <figcaption>
                 <b>{d.title}</b>
-                <span>{d.agentName} · {when(d.at)}{d.source === 'canva' ? ' · Canva' : d.source === 'caption' ? ' · captioned image' : d.kind === 'svg' ? ' · SVG' : ' · image'}{d.placement ? ` · prints ${placeName[d.placement]}` : ''}</span>
+                <span>{d.agentName} · {when(d.at)}{d.source === 'canva' ? ' · Canva' : d.source === 'caption' ? ' · captioned image' : d.kind === 'svg' ? ' · SVG' : ' · image'}{d.placement ? ` · prints ${placeName[d.placement]}` : ''}{d.memeType ? ` · ${d.memeType.replace(/_/g, ' ')}` : ''}</span>
                 {d.sourceFile || d.assets?.length ? <div className="approval-source">
                   {d.sourceFile ? <RunnerImage load={sourceUrl} id={d.sourceFile} alt={`The image ${d.title} was made from`} cls="approval-source-img" /> : null}
                   <span className="small muted">Made from {d.assets?.length ? d.assets.map((x, i) => <span key={i}>{i ? ', ' : ''}{x.page ? <a href={x.page} target="_blank" rel="noreferrer">{x.title || 'an image'}</a> : (x.title || 'an image')}{x.licence ? ` (${x.licence})` : ''}</span>) : <>a saved image{d.rights === 'owner' ? ' of yours' : ''}</>}{d.sourceFile ? <> · <code>{d.sourceFile}</code></> : null}</span>
                 </div> : <span className="small muted">{d.source === 'canva' ? `Made in Canva by ${d.agentName}` : `Drawn by ${d.agentName}, no source image`}</span>}
+                {d.checkNote && <span className="small warn"><AlertTriangle size={11} /> Failed the shirt check twice: {d.checkNote.replace(/^shirt check: /, '')}</span>}
                 {d.rights === 'reference' && <span className="small warn"><AlertTriangle size={11} /> Draft on someone's image: for the idea only, not for sale. Yes keeps it; it is not listed for sale as it is.</span>}
                 <div className="approval-actions">
                   <button className="btn sm danger" disabled={busy === d.id} onClick={() => void decide(d, 'reject')}><X size={13} /> No</button>

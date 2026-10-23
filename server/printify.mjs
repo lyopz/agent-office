@@ -27,6 +27,12 @@ export async function svgToPng(svg, deps = {}) {
   const png = r.render();
   return { png: Buffer.from(png.asPng()), width: png.width, height: png.height };
 }
+/** A small PNG of an SVG design, for a look at it (not for print). */
+export async function svgPreview(svg, width = 768, deps = {}) {
+  try { resvg ??= deps.resvg ?? (await import('@resvg/resvg-js')).Resvg; } catch { return null; }
+  const png = new resvg(String(svg), { fitTo: { mode: 'width', value: width }, font: { loadSystemFonts: true, defaultFontFamily: 'Arial' }, background: 'rgba(128,128,128,1)' }).render();
+  return { png: Buffer.from(png.asPng()), width: png.width, height: png.height };
+}
 const FILE = () => path.join(secretsDir(), 'printify.json');
 
 export function printifyConfig() {

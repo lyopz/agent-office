@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { applyOps } from '../src/engine/ops';
 import { creatorBrain } from '../src/model/sample';
 import { ORIGIN_ID, agentPrompt, branchAgentOps, opportunityOriginOps, originOutdated } from '../src/brain/opportunity';
-import { MEME_DESIGN_ID, MEME_DESIGN_SKILL, TREND_SCOUT_ID, TREND_SCOUT_SKILL, builtinSkillOps, builtinSkillsFor } from '../src/brain/builtinSkills';
+import { MEME_DESIGN_ID, MEME_DESIGN_SKILL, NOT_FOR_DESIGNERS, TREND_SCOUT_ID, TREND_SCOUT_SKILL, builtinSkillOps, builtinSkillsFor } from '../src/brain/builtinSkills';
 
 const w = { everyMinutes: 120, maxMinutes: 5, setBy: 'owner' as const, reason: 'test' };
 const withAgents = () => {
@@ -37,7 +37,7 @@ describe('built-in skills', () => {
     expect(doc.agents.agent_design.bankSkills).not.toContain(TREND_SCOUT_ID);
     expect(doc.agents.agent_trend.bankSkills).toContain(TREND_SCOUT_ID);
     expect(doc.agents.agent_price.bankSkills ?? []).not.toContain(MEME_DESIGN_ID);
-    expect(agentPrompt(doc, 'agent_design')).toMatch(/fih: a plain fish in high-tops/);
+    expect(agentPrompt(doc, 'agent_design')).toMatch(/The meme-type playbook/);
     expect(agentPrompt(doc, 'agent_trend')).toMatch(/Never log in, never scrape/);
     expect(builtinSkillOps(doc)).toEqual([]);
   });
@@ -73,5 +73,17 @@ describe('the Ad strategy playbook', () => {
     expect(AD_STRATEGY_SKILL.instructions).toMatch(/Organic before paid/);
     expect(AD_STRATEGY_SKILL.instructions).toMatch(/ad_save/);
     expect(creatorBrain().skillBank.map((k) => k.id)).toContain(AD_STRATEGY_ID);
+  });
+
+  test('designers lose the library skills that push AI art; other agents keep theirs', () => {
+    const doc = withAgents();
+    const given = { ...doc, agents: { ...doc.agents, agent_design: { ...doc.agents.agent_design, bankSkills: [...(doc.agents.agent_design.bankSkills ?? []), 'skill_degen_design', 'skill_degen_banner_design'] }, agent_trend: { ...doc.agents.agent_trend, bankSkills: [...(doc.agents.agent_trend.bankSkills ?? []), 'skill_degen_brand'] } } };
+    const r = applyOps(given, builtinSkillOps(given));
+    expect(r.doc.agents.agent_design.bankSkills).toContain(MEME_DESIGN_ID);
+    expect(r.doc.agents.agent_design.bankSkills!.filter((k) => NOT_FOR_DESIGNERS.includes(k))).toEqual([]);
+    expect(r.doc.agents.agent_trend.bankSkills).toContain('skill_degen_brand');
+    expect(builtinSkillOps(r.doc)).toEqual([]);
+    expect(MEME_DESIGN_SKILL.instructions).toMatch(/Image macro[\s\S]*no_caption true/);
+    expect(MEME_DESIGN_SKILL.instructions).toMatch(/five options/);
   });
 });

@@ -4,6 +4,8 @@
 // owner's PC's installed fonts. No web image search: memes come from the scouts' memez folder.
 const PRINT_WIDTH = 4500;
 const MAX_BYTES = 25_000_000;
+/** The kinds of meme, each with its own recipe in the design skill. */
+export const MEME_TYPES = ['image_macro', 'reaction', 'edited_photo', 'doodle', 'format_template', 'animal_or_object', 'other'];
 /** Where a design prints on the garment. */
 export const PLACEMENTS = ['front_center', 'full_front', 'left_chest', 'back'];
 const FONTS = { impact: 'Impact, Haettenschweiler, "Arial Black", sans-serif', bold: '"Arial Black", Bahnschrift, Arial, sans-serif', plain: '"Segoe UI", Arial, sans-serif', mono: '"Courier New", monospace', serif: 'Georgia, "Times New Roman", serif', hand: '"Segoe Print", "Comic Sans MS", cursive' };
@@ -14,6 +16,7 @@ export const CAPTION_TOOL = {
   input_schema: { type: 'object', properties: {
     design_id: { type: 'string', description: 'or: an image already in the gallery (from design_generate_image or an earlier save)' },
     source_file: { type: 'string', description: 'a file from files_source the owner picked Yes on (or their own file), e.g. memez/fish.png; a reference file gives a flagged draft' },
+    meme_type: { type: 'string', enum: MEME_TYPES, description: 'which kind of meme this is (the recipe you followed): image_macro (already has its words), reaction (a face or gesture), edited_photo (a changed photo, deep-fried, bad Photoshop), doodle (crude drawing), format_template (labelled panels), animal_or_object (being a person), other' },
     no_caption: { type: 'boolean', description: 'true when the meme already carries its own words: no text is added' },
     placement: { type: 'string', enum: PLACEMENTS, description: 'where it prints: front_center (most designs), full_front (a big picture), left_chest (a small doodle or one-liner, pocket size), back (a big piece, with a small mark on the front optional). Pick what suits this design.' },
     crop: { type: 'object', description: 'optional: keep only this part of the image, in percent of its width and height, e.g. {"x": 10, "y": 0, "w": 80, "h": 100} (after remove_background, percent of the cut-out)', properties: { x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' } } },
@@ -135,5 +138,6 @@ export async function captionImage(input, deps) {
   if (!out) throw new Error('The image renderer is not installed on this PC (run npm.cmd install once).');
   const rights = sourceMeta ? (sourceMeta.usable || 'reference') : input?.source_file ? 'owner' : 'print';
   const placement = PLACEMENTS.includes(input?.placement) ? input.placement : 'front_center';
-  return { placement, png: out.png, width: out.width, height: out.height, source, sourceFile: input?.source_file ? String(input.source_file) : null, sourceMeta, rights, background, crop: crop ? { x: crop.x, y: crop.y, w: crop.w, h: crop.h } : null, caption: [top, bottom].filter(Boolean).join(' / '), original: { width: size.width, height: size.height, mime: size.mime } };
+  const memeType = MEME_TYPES.includes(input?.meme_type) ? input.meme_type : null;
+  return { placement, memeType, font: FONTS[input?.font] ? input.font : 'impact', svg, png: out.png, width: out.width, height: out.height, source, sourceFile: input?.source_file ? String(input.source_file) : null, sourceMeta, rights, background, crop: crop ? { x: crop.x, y: crop.y, w: crop.w, h: crop.h } : null, caption: [top, bottom].filter(Boolean).join(' / '), original: { width: size.width, height: size.height, mime: size.mime } };
 }

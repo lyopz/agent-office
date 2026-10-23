@@ -11,7 +11,7 @@ import type { Agent, BankSkill, OfficeDoc } from '../model/types';
 export const MEME_DESIGN_ID = 'skill_builtin_meme_design';
 export const TREND_SCOUT_ID = 'skill_builtin_trend_scout';
 export const AD_STRATEGY_ID = 'skill_builtin_ad_strategy';
-export const BUILTIN_SKILL_VERSION = 2;
+export const BUILTIN_SKILL_VERSION = 3;
 const versionTag = `builtin-v${BUILTIN_SKILL_VERSION}`;
 
 const ORIGIN = 'agent_origin';
@@ -23,81 +23,53 @@ export const AD_ROLE = /\bads?\b|advertis|marketing|promot|campaign|\breach\b|gr
 export const MEME_DESIGN_SKILL: Omit<BankSkill, 'createdAt'> = {
   id: MEME_DESIGN_ID,
   name: 'Meme shirt design',
-  description: "The owner's playbook for shirt designs: a real internet meme feel, one flat subject and a short caption, original work only, five per ask to Approvals. Every agent that designs uses it.",
+  description: "The owner's playbook for shirt designs from the memes they picked: name the meme's type and follow its recipe, five caption options with one kept, the owner's taste learned from their Yes and No, print rules, and a check of each finished design. Every agent that designs uses it.",
   tags: ['builtin', versionTag, 'design', 'apparel'],
   instructions: `# Meme shirt design
 
-The owner's playbook for every design that goes to their store. It sits beside your own SKILL.md and the DESIGN STYLE and ORIGINAL ONLY rules in each brief; where this file and the brief differ, the brief wins, because it carries the owner's latest words.
+The owner's playbook for every design that goes to their store. It sits beside your own SKILL.md and the rules in each brief; where this file and the brief differ, the brief wins, because it carries the owner's latest words.
 
 ## 1. Mission
-Shirts that feel like a genuine internet meme, not a polished AI poster. The meme is the product; the words make the variation; the typography serves the joke. One-second joke first, any deeper meaning second and optional. Done means the owner can press Yes in Approvals without fixing anything: one subject, one short caption, a clean print file, a title that says the joke. Excellent means the owner laughs before reading the title, the shirt reads from three metres away, and nobody sells it yet.
+Turn a meme the owner picked into a shirt people would actually wear. The meme stays the meme: no AI art, no redrawing, no new pictures. Your job is the few decisions that make it a shirt: which kind of meme it is, what words (if any) go with it, which font, where it prints. Done means the owner can press Yes without fixing anything. Excellent means they laugh before reading the title and the shirt reads from across a room.
 
 ## 2. Scope
-You turn a trend, a joke or the owner's words into original designs, save them with design_save, and make the Printify product when the owner presses Yes. You do not publish, buy, clear rights, or decide what sells; the owner does. You take concepts from Trend Scout, JARVIS and the owner, and you give the owner finished designs. If an idea needs a photo of a real person, a brand, a character or someone else's picture, it is not yours to make: say so in taskNotes and offer an original take instead.
+You work only from memes the owner said Yes to in memez (files_source with picks "yes") or their own files. You never search the web for pictures, never draw, never generate. A meme or post is someone's work, so your design is a flagged draft the owner reviews; it is never listed for sale as it is. After the owner's Yes on a design you get a task to make that product in Printify.
 
-## 3. Recurring workflows
-A. From a concept to a batch of five (the default for every design ask).
-1. Decode: write the joke in one sentence and its grammar in another (for example "small animal + impossible seriousness + two-word slang"). Name the one detail that must stay untouched.
-2. Caption: write three to five options of 1 to 7 words (2 to 5 is best). Keep the owner's wording exactly when they gave one, including typos and lowercase. Pick one; keep the runner-up for the title.
-3. Image first, the owner's way: take a meme the owner picked Yes on in memez (files_source with picks "yes"; the scouts find them on Pinterest, Reddit and Imgflip) and use design_caption_image with a light touch. Keep the meme as it is; add a few words in a font that fits the picture (hand for doodles and hand-drawn memes, plain lowercase for deadpan, impact for a classic macro), or no_caption when it already has its words. Crop or cut the background only when it clearly prints better. Choose the placement: front_center, full_front, left_chest or back. A meme the owner has not picked, or said No to, is refused. No Wikipedia or public-domain image search. A meme or post is someone's work, so a design on it is a flagged draft the owner reviews, never listed as it is.
-4. Make it, then compare it with the idea: is the same joke instantly recognisable, is anything added that competes with it, does it look like an actual meme and not AI art? Remove before you add.
-5. Save with design_save (title and assets filled in). Stop at five waiting designs for the ask; set waitingOnOwner true and finish the run. The owner decides in Approvals.
-B. The gate every design passes before it is saved: Spot (which trend or joke, seen where and when, or "owner's idea"), Decode, Pitch (captions), Rights gate (is every element yours, public domain, or the owner's; is the phrase trademark-searched), Mock up (the minimal version first), Compare (joke intact, nothing extra), then the owner Approves.
-C. After the owner's Yes you get a task for that design: choose the product type with printify_find_product_type, a centred chest print about 10 to 12 inches wide for a single subject with its caption, a price from etsy_search, an SEO title and 13 tags that name the joke and the feeling, never the meme's source or a brand. Then printify_request_publish; the Yes was the approval, so it lists at once.
-D. After the owner's No the product is deleted and the design is gone. Do not remake a near copy with a new colour. The next idea changes the subject or the joke. Write why you think it was declined in taskNotes and keep that list of declined jokes current.
+## 3. The meme-type playbook (name the type first, then follow its recipe)
+1. Image macro: the meme already carries its words (top and bottom text, a punchline baked in). Recipe: no_caption true. Crop away watermarks, borders and app UI only. Placement full_front or front_center. Never add a second joke on top.
+2. Reaction image: a face or gesture that means a feeling (side-eye, crying, pointing at itself). Recipe: one short caption that names the situation the face reacts to, 1 to 5 words, lowercase deadpan (plain) or impact. The face is the punchline, the words are the setup. front_center.
+3. Edited or deep-fried photo: a real photo changed for the joke (the casino man with "ALWAYS BET ON NOTHING", glowing eyes, bad Photoshop). Recipe: keep every edit as it is, they are the joke. If the words are already in it, no_caption. If not, one bold all-caps line in impact. Do not remove the background. full_front.
+4. Doodle or badly drawn meme: crude lines on paper or MS Paint. Recipe: remove_background so only the drawing prints, then a few words in hand or plain lowercase, or none. A small doodle with a one-liner suits left_chest; a big one front_center.
+5. Format template: a multi-panel or labelled format (two buttons, distracted boyfriend). Recipe: these only work with the labels; write fresh labels that fit a wearer's life, short enough to read on a shirt (two to four words per label). If the panels are too busy to read from three metres, pick another meme. full_front or back.
+6. Animal or object being a person: a cat at a desk, a frog in a suit, an object with a face. Recipe: cut the background if it is plain, caption the "job" or the feeling in 1 to 4 words (the job-title joke: "professional yapper", "locked in"). front_center or left_chest.
+7. Anything else: say which of the above it is closest to and why, then follow that recipe.
+Write the type in meme_type when you save, so the owner's Yes and No teach the next run which types and recipes work.
 
-## 4. Methods and techniques
-Anti-slop directive (outranks every taste note here):
-- Keep the recognisable composition: one subject, its expression, its proportions, its deadpan. Do not make it cinematic.
-- Light touch: crop, isolate, clean one artefact, add a thin outline for contrast, place concise text above or below. Nothing else by default.
-- No unasked effects: no lightning, glow, neon, clouds, flames, lens flare, metallic or 3D type, heavy gradients, ornate frames, extra characters, action poses, busy backgrounds.
-- Typography stays subordinate: one clean bold readable face, one or two lines, black or white or one accent colour, lots of empty space. Big type is fine only when the type is the joke.
-- Preserve exact wording; never correct an intentional typo or make it "professional".
-- Wearable: strong contrast on the shirt colour, a sensible print area, no white rectangle around a cutout, no accidental screenshot UI.
-- No forced depth: a meme can be funny because it is stupid. Say the immediate joke; add subtext only when it truly fits.
-Default visual recipe: one subject (flat drawing or cutout); words 1 to 8, ideally 2 to 5, intentionally dumb and quotable; a plain meme sans, Impact-like, condensed bold, basic serif or simple hand lettering; black or white lettering or one accent; centred cutout with text above or below; editing budget starts at zero effects.
-Word poetry tests: one-second laugh; fun to say or mis-say; the picture makes the phrase funnier than either alone; an optional second meaning; new phrase, scene and composition rather than a lightly altered viral graphic; works from several feet away without an essay.
-Formulas: epic hero + minor inconvenience; cute animal + impossible threat; familiar word + ridiculous spelling; ordinary friends + absurd contest; ominous type + trivial statement; intimidating look + human weakness; a harmless flaw turned into a job title or award; motivational-poster imagery + a tiny silly confession; a recognisable focus phrase + an animal doing an implausibly serious job.
-Caption language: current slang, abbreviations, ironic understatement, misspellings, low-effort punchlines and comment-section phrasing, but only when they sound natural. "locked in", "yapper", "bro", "nah", "fr", "lowkey", "idk", "ngl", "shi" and the crying emoji are illustrations, not a claim they are fresh now. Read every caption aloud: would a real person send it in a group chat or laugh seeing it on a shirt? If the joke needs explaining, shorten it or drop it.
-Good against bad, in words: a serious boom operator aims an absurdly huge furry microphone at the viewer, captioned "CAN YOU SAY THAT LOUDER? I'M DEAF" in one plain bold face above and below. Good: the person and microphone unchanged, the white background removed for a dark shirt, nothing else. Bad: the same image buried under giant cyan 3D letters and fake lightning, which swallows the gag and looks like generic AI merch. Check every design against this pair before saving.
-design_caption_image fonts: impact (classic meme caption, uppercase, white with a black outline), bold, plain (deadpan lowercase), mono, serif (mock-serious), hand; top and bottom captions of 0 to 6 words each; cutout true puts the words outside the image on a transparent sheet. Fonts. SVG designs are rendered to PNG on the owner's PC with its installed fonts, so in SVG use Windows fonts only: Impact (classic macro), Arial Black or Bahnschrift (plain bold), Segoe UI (dry deadpan), Comic Sans MS (ironic), Courier New (deadpan terminal), Georgia (mock-serious). In Canva use open Google Fonts: Anton or Bebas Neue (tall understated caps), Archivo Black (plain bold caption), Bangers or Luckiest Guy (chunky comic), Permanent Marker or Caveat or Indie Flower (scribbly hand lettering), Space Mono or Special Elite (deadpan or typewriter), Fredoka (round cute animal humour), DM Sans (neutral), Alfa Slab One (heavy statement), VT323 or Press Start 2P or Pixelify Sans or Silkscreen (pixel nostalgia). One font per design. A pixel look is fine; a game's own font, logo or art is not.
-Original only: never copy a meme image, character, logo, brand, celebrity, song lyric or another seller's design; a meme format may inspire an original phrase and original art, nothing more. Before a phrase, web_search it with "trademark" and "site:uspto.gov"; drop it if a live registration or a known brand owns it, and say in the title that you checked. Pictures come only from the memes the owner picked in memez, or their own files.
+## 4. Captions: five options, keep one
+For every meme that needs words, write five options before you choose, one through each lens: flip it (say the opposite of what the picture shows), understate it (the smallest possible reaction to something huge), who wears it (the situation of the person wearing the shirt: the office, the gym, the group chat), shorten it (the same joke in two words), and the comment-section line (what someone would reply under the post). Read each aloud: would someone send it in a group chat? Keep the one that is funniest with the picture, not alone. Never explain the meme, never a sentence with a full stop, never "when you..." text walls, never inspirational lines. Keep the owner's exact wording when they gave one, typos included.
 
-## 5. Inputs and sources
-- Trend Scout's concept list (joke, grammar, caption idea, evidence, saturation, rights notes). Treat its "experimental seed" label as unproven.
-- The owner's words in the task and their Design style note; both outrank this file.
-- The owner's memez folder: the memes the scouts saved and the owner picked Yes on (files_source with picks "yes").
-- Pinterest, TikTok and Instagram for what recurs; the scouts save the pictures to memez for the owner's pick, and a design on one is a flagged draft.
-- etsy_search to see what already exists: a phrase with thousands of listings is late; pivot to an adjacent original.
-The owner's reference gallery, described so you learn the humour; the pictures are other people's work and none is cleared, so reproduce none of them:
-1. FIH: a plain fish, a pair of white high-top sneakers, the word "fih". Lesson: a tiny distorted word plus an impossible image carries a whole shirt. Use new animals, objects and spellings.
-2. TUMMY HURTS: an armoured knight kneels as if defeated; the caption is a childish complaint. Lesson: huge stakes plus a tiny everyday problem; restrained serif and a washed colour make it funnier.
-3. MINE'S BIGGER: two bears roast hot dogs at a campfire. Lesson: an innocent scene can carry a mischievous double meaning; change the animals, activity and words.
-4. CONSIDER YOUR PANTS PEED: a stern white cat announces victory. Lesson: cute subject plus an absurdly final proclamation; this one is the exception where an effect (lightning) is the joke, and it still needs an original animal and composition.
-5. ME?: a wide-eyed person points at their own chest. Lesson: one clear gesture plus one word; make it an original character ("I'VE BEEN SUMMONED?"), never the stock photo.
-6. PROFESSIONAL YAPPER: a deliberately cluttered pink collage of five cats under enormous type. Lesson: turn a harmless flaw into a fake credential; if you go maximalist, do it on purpose with original pet drawings.
-7. small dh big dreams: a suited figure faces a sunrise; the text is cryptic and casual. Lesson: parody self-help imagery with a mundane confession; keep the owner's exact words.
-8. LOCKED IN: a cat at a tiny desk with an old computer. Lesson: serious slogan plus an improbable worker; invent new jobs, tools and creatures.
-9. been on that peaceful shi: a monkey in profile at sunset, thin stacked lowercase words. Lesson: cinematic sincerity plus casual slang; leave breathing room.
-10. The "son" family: a face captioned "son" became "soneybun" (a bun), "croson" (a croissant), "amaSON" (a delivery box) and "Sonda Civic" (a car). Lesson: when many people remix one seed, learn the rule that makes it reproducible (motif + near-homophone object + rough composite + tiny lowercase caption) and build an original family of your own; the real face, the brands and the car are not yours.
-11. The owner's approved concepts of 21 October 2026: "bro is compressed" (one squat round raccoon), "bro speaking fluent microwave" (one awkward original alien, no franchise), "the whimsy got me" (one badly dancing original goblin), "u buggin" with a crying emoji (one confused cat), "employed against my will" (one exhausted opossum). Approval of a concept is not a licence to any picture; each needs your own drawing.
+## 5. The owner's taste: learn it from their Yes and No
+Your brief carries THE OWNER'S TASTE SO FAR: the memes they picked and turned down, and the designs they said Yes and No to with type, caption, font and placement. Before you design, read it as the store's voice chart: write 3 to 5 traits in taskNotes, each with a do and a don't taken from those decisions (for example "deadpan, not wacky: Yes to 'locked in', No to 'LOL SO RANDOM'"). Follow the traits over your own idea of funny. When there are fewer than five decisions, say so and lean on this playbook.
 
-## 6. Deliverables
-- design_caption_image for the default image-plus-caption design (assets filled from the asset search result), or design_save: svg or image, assets filled, and a title in this shape: caption, then the subject in a few words, then why it is funny in a few words, then "phrase trademark-searched" with the date. Example: "fih: a plain fish in high-tops; absurd misspelling; phrase trademark-searched 2026-10-21".
-- taskNotes for the batch: one line per design (joke, caption, what stays untouched, trend evidence or "owner's idea", rights status: original, the owner's file, or a draft on a picked meme, placement, suggested shirt colour) and the list of declined jokes you will not remake.
-- After a Yes: the Printify product with price, title, description and 13 tags, then printify_request_publish.
+## 6. Print rules (from banner and print practice)
+- Safe area: everything that matters sits in the central 80% of the print; nothing touches the edge.
+- One font per design, two at most when a format template has labels.
+- Contrast: white text with a black outline or the reverse, so it reads on any shirt colour.
+- The caption is never less than a tenth of the design's height; if it has to be smaller to fit, it is too long.
+- The print file is at least 4500 px wide (the tool does this); a tiny source image that turns to mush when enlarged is the wrong pick.
+- Placement: front_center for most; full_front for a big picture; left_chest for a small doodle or a one-liner; back for a busy format template.
 
-## 7. Quality bar
-Before design_save: one subject; caption 1 to 7 words in one font; the joke survives with the sound off; nothing added that competes; contrast works on the chosen shirt colour; file sized for print (SVG viewBox about 4500 by 5400 for shirts, transparent background); phrase trademark-searched; every element original or public domain with its licence recorded; not a near copy of anything the owner declined; would a 22-year-old wear it; can you describe it in five words. Automatic rejection: unasked lightning or glow; a changed subject or pose; altered owner wording; clutter; invented trend evidence; unresolved rights presented as cleared; a full redesign when the ask was a caption.
+## 7. Look at what you made
+design_caption_image renders the shirt and the runner shows the result to a check before it reaches the owner. It fails a design that does not read from three metres, loses the joke, or has something added that competes with the meme. When it fails, it tells you why: fix that one thing (shorter caption, other font, crop, no caption) and save again. After two fails on the same meme, move on to another meme.
 
-## 8. Costs and limits
-Every listing published costs the owner $0.20 on Etsy, every sale carries Printify's production cost, every ChatGPT image its price and every Canva AI design the owner's Canva credits; all of it counts against your branch's monthly budget. One image per product unless it failed. At most five designs waiting per ask; more are refused. SVG is free and sharpest for drawings and type. Make a design only when you expect it to earn the fee back.
+## 8. Anti-slop
+Keep the composition, expression and proportions. No glow, lightning, neon, 3D or metallic type, gradients, frames, extra characters or busy backgrounds unless they are already in the meme. Remove before you add. The editing budget starts at zero.
 
-## 9. Approvals and escalation
-Designs wait in the owner's Approvals; Yes makes and lists the product, No deletes it. Never publish, order or pay yourself. If a concept cannot be made original (it only works with a real person's face or a brand), tell the owner in one sentence in notifyOwner and offer the nearest original idea. "Never show this again" from the owner is permanent, whatever the trend does.
+## 9. Deliverables
+design_caption_image with source_file (a Yes pick), meme_type, the caption or no_caption, font, placement and a title in this shape: caption, then the meme in a few words, then why it is funny. taskNotes: the voice chart traits, one line per design (type, recipe used, the five captions and the one kept), and the declined jokes you will not repeat. At most five designs waiting per ask, then set waitingOnOwner true.
 
-## 10. Improving
-After each batch record in taskNotes: which captions and subjects the owner said Yes and No to and the pattern you see; fonts and colours that read best in the mockups; phrases that failed the trademark search; declined jokes (text only). Carry those notes into the next ask so the owner never sees the same miss twice.`,
+## 10. Approvals and improving
+Designs wait in the owner's Approvals; Yes makes the product, No deletes it. Never publish, order or pay yourself. After each batch, note which types, captions, fonts and placements the owner said Yes and No to and the pattern you see; the next run reads them back in THE OWNER'S TASTE SO FAR.`,
 };
 
 export const TREND_SCOUT_SKILL: Omit<BankSkill, 'createdAt'> = {
@@ -215,6 +187,8 @@ Within a month of the first approved ad: the owner has posted ads for every appr
 };
 
 const BUILTIN_SKILLS = [MEME_DESIGN_SKILL, TREND_SCOUT_SKILL, AD_STRATEGY_SKILL];
+/** Library (degen) skills taken off design agents: AI logo and image generation, web banners and UI tokens. */
+export const NOT_FOR_DESIGNERS = ['skill_degen_design', 'skill_degen_banner_design', 'skill_degen_design_system', 'skill_degen_brand'];
 const roleText = (a: Agent) => `${a.identity.name} ${a.identity.title}`;
 /** The built-in skills a role needs, from its words (name and title). */
 export function builtinSkillsForRole(text: string): string[] {
@@ -236,8 +210,11 @@ export function builtinSkillOps(doc: OfficeDoc): DocOp[] {
     ops.push({ op: 'skillBank.upsert', skill: k });
   }
   for (const a of Object.values(doc.agents)) {
-    const want = builtinSkillsFor(a).filter((id) => !(a.bankSkills ?? []).includes(id));
-    if (want.length) ops.push({ op: 'agent.setBankSkills', id: a.id, skillIds: [...(a.bankSkills ?? []), ...want] });
+    const have = a.bankSkills ?? [];
+    const want = builtinSkillsFor(a).filter((id) => !have.includes(id));
+    // designers lose the library skills that push AI art and web layouts (the owner's rule: found memes, light edits)
+    const drop = builtinSkillsFor(a).includes(MEME_DESIGN_ID) ? have.filter((id) => NOT_FOR_DESIGNERS.includes(id)) : [];
+    if (want.length || drop.length) ops.push({ op: 'agent.setBankSkills', id: a.id, skillIds: [...have.filter((id) => !drop.includes(id)), ...want] });
   }
   return ops;
 }

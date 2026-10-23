@@ -7,6 +7,7 @@ import SkillRequests from './SkillRequests';
 import OriginRuns from './OriginRuns';
 import SkillBank, { BankSkillPicker } from './SkillBank';
 import { brainMap, syncOrigin, taskAction } from './originLink';
+import { useHeadBrain } from './useHeadBrain';
 import { growIdeaOps, ownerIdeaOps } from './ideas';
 import { ownSkillFileOps, useSkillFiles } from './skillFiles';
 import { SkillFileDrop, type OwnSkillFile } from './SkillFileDrop';
@@ -56,6 +57,7 @@ export default function CreatorDesk() {
   // the owner's own SKILL.md for the new agent; without one, JARVIS writes it as soon as the agent exists
   const [ownFile, setOwnFile] = useState<OwnSkillFile | null>(null);
   useSkillFiles();
+  useHeadBrain();
   // what waits for the owner in JARVIS runs, shown on its button since notifications are off
   const runner = useOrigin((st) => st.status);
   const waiting = (runner?.tasks.filter((t) => t.status === 'proposed').length ?? 0) + (runner?.agentProposals?.filter((p) => p.status === 'proposed' && !runner.autoAgents).length ?? 0);

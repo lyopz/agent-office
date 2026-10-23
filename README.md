@@ -223,7 +223,19 @@ Two bank skills written from the owner's own meme-design playbook (`src/brain/bu
 
 ## More brains
 
-**Brains** (top bar) is the brain universe: every brain you started, floating together, the open one in the middle. **Start new brain** grows one with JARVIS as its core and every skill the other brains learned; brains that share skills are joined by nerves from their stems. Click a brain to open it; only the open brain's agents run, the others wait with their tasks. Each brain is a hologram in the colour you picked for it (Colour button in the brain toolbar).
+**Brains** (top bar) is the brain universe: every brain you started, floating together, JARVIS's head brain in the middle. **Start new brain** grows one with JARVIS as its core and every skill the other brains learned; brains that share skills are joined by nerves from their stems. Click a brain to open it; JARVIS works every brain's approved tasks, whichever is open. Each brain is a hologram in the colour you picked for it (Colour button in the brain toolbar).
+
+## JARVIS's head brain
+
+Your original brain is JARVIS's **head brain**: it always sits in the middle and oversees every other brain. Each other brain is one business or task with its own agents, and JARVIS works the approved tasks of every brain, whichever one is open (inside the same monthly cap).
+
+- **Build a brain** (Dashboard > Brains): say what the brain is for. JARVIS researches it and designs the layout: a venture for the brain, its skill agents, which skills from your degen-skill library each one carries, what to keep researching, and the first tasks. The layout waits in Approvals; the brain is built only after your Yes.
+- **Evolve**: once a day, JARVIS researches how one brain could grow (a missing agent, a library skill an agent should carry) and proposes it. Nothing changes before your Yes. "Research growth" asks for one brain now.
+- **Who runs a brain**: JARVIS, until you pick one of the brain's own agents under "Run by". JARVIS still oversees it.
+- **The Etsy store** moved out of the head brain into a brain of its own (once, with a saved version from before the move). "Move back" puts it back.
+- JARVIS holds the whole skill library (lyopz/degen-skill, read only) and hands each brain only the skills that fit; the library is read live, so it is not copied into every save.
+
+Code: `src/brain/headBrain.ts` (move, build, grow, lead), `src/ui/BrainsTab.tsx`, `server/brains.mjs` (the runner side), route `POST /api/origin/brains {action: plan | evolve | approve | reject}`.
 
 ## Charts and Ads
 

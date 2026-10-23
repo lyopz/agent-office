@@ -9,7 +9,13 @@ export const BRAINS_KEY = 'agent-office:brains';
 
 export interface StoredBrain { id: string; name: string; savedAt: string; doc: OfficeDoc; runtime: Partial<RuntimeState> | null }
 /** What the universe shows for a brain without loading its whole document. */
-export interface BrainSummary { id: string; name: string; savedAt: string; agents: number; skillIds: string[]; skillNames: string[]; open: boolean; color: string | null }
+export interface BrainSummary {
+  id: string; name: string; savedAt: string; agents: number; skillIds: string[]; skillNames: string[]; open: boolean; color: string | null;
+  /** JARVIS's head brain, always drawn in the middle. */
+  head: boolean;
+  /** What the brain is for, and who runs it ('jarvis' until the owner hooks up one of its agents). */
+  purpose: string; lead: string;
+}
 
 type Library = Record<string, StoredBrain>;
 
@@ -29,6 +35,7 @@ function writeAll(lib: Library, storage: Storage | null = browserStorage()) {
 const mainColor = (doc: OfficeDoc) => { const c = doc.appearance?.brainColors?.main; return c && /^#[0-9a-f]{6}$/i.test(c) ? c : null; };
 export const summarize = (doc: OfficeDoc, savedAt: string, open: boolean): BrainSummary => ({
   id: doc.id, name: doc.name, savedAt, open, color: mainColor(doc), agents: Object.keys(doc.agents).length,
+  head: !!doc.head, purpose: doc.plan?.purpose ?? (doc.head ? 'JARVIS\'s head brain: builds and oversees every other brain.' : ''), lead: doc.plan?.lead ?? 'jarvis',
   skillIds: (doc.skillBank ?? []).map((k) => k.id), skillNames: (doc.skillBank ?? []).map((k) => k.name),
 });
 
@@ -39,6 +46,14 @@ export function listBrains(storage?: Storage | null): BrainSummary[] {
 /** The library's skill banks, for sharing skills with the open brain. */
 export function librarySkillBanks(storage?: Storage | null): { brainId: string; brainName: string; skills: OfficeDoc['skillBank'] }[] {
   return Object.values(readAll(storage)).map((b) => ({ brainId: b.id, brainName: b.name, skills: b.doc.skillBank ?? [] }));
+}
+/** The library's brains in full, for JARVIS's runner (it works the tasks of every brain). */
+export function libraryDocs(storage?: Storage | null): OfficeDoc[] {
+  return Object.values(readAll(storage)).map((b) => b.doc);
+}
+/** One library brain in full, or null. */
+export function peekBrain(id: string, storage?: Storage | null): StoredBrain | null {
+  return readAll(storage)[id] ?? null;
 }
 export function putBrain(doc: OfficeDoc, runtime: Partial<RuntimeState> | null, storage?: Storage | null) {
   const lib = readAll(storage);

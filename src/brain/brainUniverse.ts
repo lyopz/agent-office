@@ -42,10 +42,16 @@ export function brainLinks(brains: BrainSummary[]): BrainLink[] {
   return links;
 }
 
-/** Where each brain sits: the open brain in the middle, the others on a ring around it (a single brain sits alone). */
+/** JARVIS's head brain first (it sits in the middle and oversees the rest), then the others as they were. */
+export function headFirst<T extends Pick<BrainSummary, 'head' | 'open'>>(brains: T[]): T[] {
+  const head = brains.find((b) => b.head) ?? brains.find((b) => b.open) ?? brains[0];
+  return head ? [head, ...brains.filter((b) => b !== head)] : [];
+}
+
+/** Where each brain sits: JARVIS's head brain in the middle (the open one when there is no head yet), the others on a ring around it (a single brain sits alone). */
 export function brainPlaces(brains: BrainSummary[], radius = 2.6): Record<string, [number, number, number]> {
   const out: Record<string, [number, number, number]> = {};
-  const open = brains.find((b) => b.open) ?? brains[0];
+  const open = headFirst(brains)[0];
   if (!open) return out;
   out[open.id] = [0, 0, 0];
   const rest = brains.filter((b) => b.id !== open.id);
