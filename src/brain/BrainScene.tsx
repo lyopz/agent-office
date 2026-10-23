@@ -9,6 +9,7 @@
 // make the activity readable at a glance. Every brain is a hologram in the
 // colour the owner picked for it (the brain picker chooses which brain).
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -20,8 +21,8 @@ import { RotateCcw } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { Agent } from '../model/types';
 import { teamOfAgent, teamsOf, type Team } from './connectome';
-import { MAIN_BRAIN, REGIONS, brainColor, buildBrainGeometry, holoBrainMaterial } from './brainMesh';
-import { brainRing, type RingBrain } from './brainRing';
+import { MAIN_BRAIN, brainColor, buildBrainGeometry, holoBrainMaterial } from './brainMesh';
+import { brainRing, ringBrainsOf } from './brainRing';
 import BrainColorPicker from './BrainColor';
 import { CEREBRUM, buildNerveTree, ideaSprouts, insideCerebrum, pathToRoot, route, subtree, type IdeaSprout, type NerveTree, type Path3 } from './nerveTree';
 import { growIdeaOps, openIdeas, treeIdeas } from './ideas';
@@ -154,7 +155,9 @@ export default function BrainScene() {
   const host = useRef<HTMLDivElement>(null);
   const labels = useRef<HTMLDivElement>(null);
   const api = useRef<{ reset(): void; setRegions(on: boolean): void } | null>(null);
-  const [regions, setRegions] = useState(() => { try { return localStorage.getItem('brain:regions') !== 'off'; } catch { return true; } });
+  // the scene's own buttons sit under the JARVIS card, in the right column (see ConnectomeView)
+  const [toolsHost, setToolsHost] = useState<HTMLElement | null>(null);
+  useEffect(() => { setToolsHost(document.getElementById('brain-view-tools')); }, []);
   const [hover, setHover] = useState<{ id: string; x: number; y: number; idea?: boolean } | null>(null);
   const agents = useStore((s) => s.doc.agents);
   const teams = teamsOf({ agents });
@@ -215,12 +218,15 @@ export default function BrainScene() {
     dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3)); dustGeo.setAttribute('aSeed', new THREE.BufferAttribute(dustSeed, 1));
     const dustMat = new THREE.ShaderMaterial({ vertexShader: dustVertex, fragmentShader: dustFragment, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uTime: { value: 0 }, uScale: { value: 7 }, uColor: { value: new THREE.Color(HOLO_FALLBACK) } } });
     const dust = new THREE.Points(dustGeo, dustMat); dust.renderOrder = 2; scene.add(dust);
-    // the halo: specialist brains riding a glass ring around the main brain
-    const halo = brainRing({ geo, glow, labelLayer, core: new THREE.Vector3(0, 0.08, 0), onPick: (k) => useBrainFocus.setState({ selectedTeamId: k, brainAgentId: null, teamId: k, agentId: null }) });
+    // the halo: the owner's other brains riding a glass ring around this one; click one to open it
+    const openRingBrain = (id: string) => {
+      const b = useStore.getState().brains.find((x) => x.id === id);
+      if (!b) return;
+      confirmAction({ title: `Open the brain “${b.name}”?`, confirmLabel: 'Open it', body: `This brain moves onto the ring and “${b.name}” opens in the middle, with its own JARVIS and agents. Click this brain on the ring to come back.`,
+        onConfirm: () => { if (useStore.getState().switchBrain(id)) useStore.getState().notify(`Opened the brain “${b.name}”.`); } });
+    };
+    const halo = brainRing({ geo, glow, labelLayer, core: new THREE.Vector3(0, 0.08, 0), onPick: openRingBrain });
     scene.add(halo.group);
-    const ringBrains = (doc: { agents: Record<string, Agent>; appearance: Parameters<typeof brainColor>[0] }): RingBrain[] =>
-      teamsOf({ agents: Object.fromEntries(brainAgents(doc.agents).filter((a) => a.branch?.kind === 'skill').map((a) => [a.id, a])) })
-        .map((team) => ({ key: team.id, name: team.name, color: brainColor(doc.appearance, team.id, team.color) }));
     const nerves = new THREE.Group(); nerves.renderOrder = 2; scene.add(nerves);
     const nodeGroup = new THREE.Group(); scene.add(nodeGroup);
     const pulseGroup = new THREE.Group(); scene.add(pulseGroup);
@@ -353,9 +359,16 @@ export default function BrainScene() {
       const { width, height } = el.getBoundingClientRect();
       if (!width || !height) return;
       composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(width, height);
+      // The canvas fills the window, but the brain is framed in the open space between the top bar
+      // and the task track: the field of view covers that space, and the view shifts up to centre it.
+      const [top, bottom] = el.closest('.brain-stage-view') ? (height < 850 ? [70, 210] : [70, 260]) : [0, 0];
+      const room = Math.max(height * 0.45, height - top - bottom);
+      const aspect = width / room;
+      const fov = aspect < 1 ? 34 / Math.max(0.55, aspect) : 34; // keep the whole brain in view on narrow screens
       camera.aspect = width / height;
-      // keep the whole brain in view on narrow screens
-      camera.fov = width / height < 1 ? 34 / Math.max(0.55, width / height) : 34;
+      camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(fov / 2)) * height / room));
+      const shift = Math.round((bottom - top) / 2);
+      if (shift) camera.setViewOffset(width, height, 0, shift, width, height); else camera.clearViewOffset();
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
     };
@@ -382,7 +395,7 @@ export default function BrainScene() {
     };
 
     let raf = 0, last = performance.now(), nextAmbient = 0;
-    let prevDoc: unknown = null, prevFocus: unknown = null;
+    let prevDoc: unknown = null, prevFocus: unknown = null, prevBrains: unknown = null;
     const v = new THREE.Vector3();
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
@@ -398,8 +411,8 @@ export default function BrainScene() {
         prevDoc = st.doc; prevFocus = focus;
         const pick = selectedBrain(focus, teamsOf(st.doc), st.doc.agents);
         holo.setColor(brainColor(st.doc.appearance, pick.key, pick.fallback));
-        halo.setBrains(ringBrains(st.doc));
       }
+      if (st.brains !== prevBrains) { prevBrains = st.brains; halo.setBrains(ringBrainsOf(st.brains)); }
       holo.update(time, dt);
       (dustMat.uniforms.uColor.value as THREE.Color).copy(holo.front.uniforms.uColor.value as THREE.Color);
       // which agents are lit: hover or menu focus on an agent shows its line to the core and everyone under it
@@ -519,12 +532,18 @@ export default function BrainScene() {
     regrowBuds.current?.(sprouts.current);
   }, [ideaKey, key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { api.current?.setRegions(regions); try { localStorage.setItem('brain:regions', regions ? 'on' : 'off'); } catch { /* storage unavailable */ } }, [regions]);
+  // one colour for the whole brain (the regions key and its button were removed)
+  useEffect(() => { api.current?.setRegions(false); }, []);
 
   const hoverIdea = hover?.idea ? library[hover.id] : null;
   const hoverAgent = hover && !hover.idea ? agents[hover.id] : null;
   const hoverNode = hover ? tree.current.nodes[hover.id] : null;
   const reports = hoverNode?.childIds.length ?? 0;
+  const tools = <div className="brain-rotate-tools">
+    <span>DRAG TO ORBIT · SCROLL TO ZOOM · CLICK A NODE FOR ITS AGENT</span>
+    <BrainColorPicker teams={teams} agents={agents} />
+    <button className="btn icon sm" aria-label="Reset brain view" title="Reset view" onClick={() => api.current?.reset()}><RotateCcw size={13}/></button>
+  </div>;
   return <div className="brain-object-wrap">
     <div ref={host} className="brain-scene" aria-label="Three-dimensional brain. The main agent sits at the core and every agent it creates branches out as a nerve. Drag to rotate, scroll to zoom, double-click to reset.">
       <div ref={labels} className="brain-node-labels" aria-hidden="true" />
@@ -537,12 +556,6 @@ export default function BrainScene() {
         <small>{hoverNode?.depth === 0 ? 'Main agent · the core of the brain' : `Branch of ${tree.current.nodes[hoverNode?.parentId ?? '']?.name ?? 'the core'}`}{reports ? ` · ${reports} agent${reports === 1 ? '' : 's'} branch from it` : ''}</small>
       </div>}
     </div>
-    {regions && <ul className="brain-regions" aria-label="Brain regions">{REGIONS.map((r) => <li key={r.id}><i style={{ background: r.color }} />{r.name}</li>)}</ul>}
-    <div className="brain-rotate-tools">
-      <span>DRAG TO ORBIT · SCROLL TO ZOOM · CLICK A NODE FOR ITS AGENT</span>
-      <BrainColorPicker teams={teams} agents={agents} />
-      <button className="btn sm brain-regions-toggle" aria-pressed={regions} onClick={() => setRegions((r) => !r)} title="Colour the brain by region">Regions</button>
-      <button className="btn icon sm" aria-label="Reset brain view" title="Reset view" onClick={() => api.current?.reset()}><RotateCcw size={13}/></button>
-    </div>
+    {toolsHost ? createPortal(tools, toolsHost) : tools}
   </div>;
 }

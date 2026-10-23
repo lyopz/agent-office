@@ -170,6 +170,11 @@ export default function CreatorDesk() {
             <div><span className="creator-kicker"><Sparkles size={13} /> AGENT CREATOR / {leaderName}</span><h2 id="creator-title">{tab === 'ideas' ? 'Add an idea' : tab === 'agent' ? (kind === 'skill' ? 'Add a skill to a venture' : 'Start a venture branch') : tab === 'requests' ? 'Skill requests' : tab === 'runs' ? `${leaderName}'s runs and budget` : 'Skill bank'}</h2></div>
             <button className="creator-close" aria-label="Close dialog" onClick={() => setTab(null)}><X size={17} /></button>
           </header>
+          <nav className="page-tabs creator-tabs" role="tablist" aria-label="Agent Creator">
+            {([['ideas', 'Add idea', Plus], ['agent', 'Start a venture', GitBranch], ['runs', `${leaderName} runs`, Sparkles], ['bank', 'Skill bank', Library], ['requests', 'Skill requests', Plus]] as const).map(([id, label, Icon]) => (
+              <button key={id} role="tab" aria-selected={tab === id} className="page-tab" onClick={() => { if (id === 'agent' && tab !== 'agent') pickParent(null); if (id === 'requests') setRequestFrom(null); setTab(id); setNotice(''); }}><Icon size={15} />{label}</button>
+            ))}
+          </nav>
 
           {tab === 'ideas' && <div className="creator-body">
             <label className="creator-field"><span>Your idea</span><textarea value={idea} onChange={(e) => setIdea(e.target.value)} placeholder="e.g. An Etsy store selling custom pet portraits" rows={6} /></label>

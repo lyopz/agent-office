@@ -77,6 +77,8 @@ interface State {
   refreshBrains(): void;
   /** Keep the open brain in the library and start a new one that already knows the other brains' skills. */
   startNewBrain(name?: string): boolean;
+  /** Add a new brain to the library (on the ring around the open one) without leaving the open brain. */
+  addBrain(name?: string): BrainSummary | null;
   /** Keep the open brain in the library and open another one from it. */
   switchBrain(id: string): boolean;
   deleteBrain(id: string): boolean;
@@ -364,6 +366,16 @@ export const useStore = create<State>((set, get) => {
       setDoc(grown.doc, { past: [...get().past, { doc: prev, label: 'Start new brain' }].slice(-100), future: [], selection: { kind: 'none' }, page: 'universe', brains: listBrains() });
       get().save();
       return true;
+    },
+    addBrain(name) {
+      const { doc: open } = get();
+      const doc = { ...creatorBrain(), id: `brain_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name: (name ?? '').trim() || `Brain ${listBrains().length + 2}` };
+      // like a started brain, it already knows what the open brain and the others learned
+      const grown = applyOps(doc, sharedSkillOps(doc, [{ brainId: open.id, brainName: open.name, skills: open.skillBank ?? [] }, ...librarySkillBanks()]));
+      try { putBrain(grown.doc, null); } catch (e) { get().notify((e as Error).message, 'error'); return null; }
+      const brains = listBrains();
+      set({ brains });
+      return brains.find((b) => b.id === grown.doc.id) ?? null;
     },
     switchBrain(id) {
       const { doc: prev, runtime } = get();

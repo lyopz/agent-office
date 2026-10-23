@@ -1,10 +1,17 @@
-// The halo around the main brain: a glass ring of light with the specialist brains riding on it,
-// each linked to JARVIS's brain by a nerve that carries sparks. Decorative and cheap: one torus,
-// one point cloud, and a small hologram per specialist brain (sharing the main brain's geometry).
+// The halo around the main brain: a glass ring of light with the owner's other brains riding on it
+// (the brain library; Add brain puts a new one there), each linked to the open brain by a nerve that
+// carries sparks. Cheap: one torus, one point cloud, and a small hologram per brain (sharing the
+// main brain's geometry). With no other brains the ring is empty.
 import * as THREE from 'three';
 import { holoBrainMaterial, type HoloBrain } from './brainMesh';
 
 export interface RingBrain { key: string; name: string; color: string }
+
+const RING_PALETTE = ['#38d6ff', '#a46bff', '#ff4fb0', '#19e3c3', '#ffb347', '#5f8cff', '#c3f36b', '#ff6f6f'];
+/** The brains on the ring: every brain in the library (never the open one), in its own colour or the ring's palette. */
+export function ringBrainsOf(brains: { id: string; name: string; color: string | null; open?: boolean }[]): RingBrain[] {
+  return brains.filter((b) => !b.open).map((b, i) => ({ key: b.id, name: b.name, color: b.color ?? RING_PALETTE[i % RING_PALETTE.length] }));
+}
 
 const ringVertex = `varying vec3 vN; varying vec3 vV; varying float vA; varying float vY;
   void main(){ vec4 mv=modelViewMatrix*vec4(position,1.); vN=normalize(normalMatrix*normal); vV=normalize(-mv.xyz);
