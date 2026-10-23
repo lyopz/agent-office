@@ -17,12 +17,14 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { RotateCcw } from 'lucide-react';
+import { Pause, Play, RotateCcw } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { Agent } from '../model/types';
 import { teamOfAgent, teamsOf, type Team } from './connectome';
 import { MAIN_BRAIN, brainColor, buildBrainGeometry, holoBrainMaterial } from './brainMesh';
 import { brainRing, ringBrainsOf } from './brainRing';
+import { brainWire, loadBrainModel } from './brainModel';
+import { useSpin } from './spin';
 import BrainColorPicker from './BrainColor';
 import { CEREBRUM, buildNerveTree, ideaSprouts, insideCerebrum, pathToRoot, route, subtree, type IdeaSprout, type NerveTree, type Path3 } from './nerveTree';
 import { growIdeaOps, openIdeas, treeIdeas } from './ideas';
@@ -151,6 +153,12 @@ export function askGrow(ideaId: string) {
   });
 }
 
+/** Stops or starts the brains turning on their own. */
+export function SpinToggle() {
+  const on = useSpin((s) => s.on);
+  return <button className="btn sm brain-spin-toggle" aria-pressed={!on} onClick={() => useSpin.getState().toggle()} title={on ? 'Stop the brain turning' : 'Let the brain turn on its own'}>{on ? <Pause size={12} /> : <Play size={12} />} {on ? 'Stop spin' : 'Spin'}</button>;
+}
+
 export default function BrainScene() {
   const host = useRef<HTMLDivElement>(null);
   const labels = useRef<HTMLDivElement>(null);
@@ -177,7 +185,7 @@ export default function BrainScene() {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(34, 1, 0.05, 50);
     // far enough back to see the ring of brains around the main one
-    camera.position.set(-4.7, 2.8, 3.65);
+    camera.position.set(-3.85, 2.05, 3.0); // close enough that the brain fills the middle, the ring just around it
     const renderer = new THREE.WebGLRenderer({ alpha: true, premultipliedAlpha: false, antialias: true, powerPreference: 'high-performance' });
     renderer.setClearColor(0x000000, 0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
@@ -196,7 +204,7 @@ export default function BrainScene() {
     orbit.target.set(0, -0.08, -0.05);
     orbit.enableDamping = true; orbit.dampingFactor = 0.08; orbit.enablePan = false;
     orbit.minDistance = 1.6; orbit.maxDistance = 12;
-    orbit.autoRotate = !calm; orbit.autoRotateSpeed = 0.45;
+    orbit.autoRotate = !calm && useSpin.getState().on; orbit.autoRotateSpeed = 0.45;
     orbit.saveState();
     let idleSince = performance.now();
     orbit.addEventListener('start', () => { orbit.autoRotate = false; });
@@ -209,6 +217,16 @@ export default function BrainScene() {
     const brainBack = new THREE.Mesh(geo, holo.back); brainBack.renderOrder = 0;
     const brain = new THREE.Mesh(geo, holo.front); brain.renderOrder = 1;
     scene.add(brainBack, brain);
+    // the Blender model replaces the procedural shape once it loads, with bright edges and sparkles
+    let model: { facets: THREE.BufferGeometry; mesh: THREE.BufferGeometry } | null = null, wire: ReturnType<typeof brainWire> | null = null, gone = false;
+    void loadBrainModel().then((m) => {
+      if (!m) return;
+      if (gone) { m.facets.dispose(); m.mesh.dispose(); return; }
+      model = m; brain.geometry = brainBack.geometry = m.facets;
+      wire = brainWire(m.mesh); scene.add(wire.group);
+      // the edges carry the light now, so the glass fill steps back to a dark glow
+      holo.front.uniforms.uOpacity.value = 0.72; holo.back.uniforms.uOpacity.value = 0.5;
+    });
 
     const glow = glowTexture();
     // neural dust inside the cerebrum
@@ -225,7 +243,7 @@ export default function BrainScene() {
       confirmAction({ title: `Open the brain “${b.name}”?`, confirmLabel: 'Open it', body: `This brain moves onto the ring and “${b.name}” opens in the middle, with its own JARVIS and agents. Click this brain on the ring to come back.`,
         onConfirm: () => { if (useStore.getState().switchBrain(id)) useStore.getState().notify(`Opened the brain “${b.name}”.`); } });
     };
-    const halo = brainRing({ geo, glow, labelLayer, core: new THREE.Vector3(0, 0.08, 0), onPick: openRingBrain });
+    const halo = brainRing({ geo, glow, labelLayer, core: new THREE.Vector3(0, 0.08, 0), onPick: openRingBrain, radius: 2.15, tube: 0.15 });
     scene.add(halo.group);
     const nerves = new THREE.Group(); nerves.renderOrder = 2; scene.add(nerves);
     const nodeGroup = new THREE.Group(); scene.add(nodeGroup);
@@ -399,8 +417,10 @@ export default function BrainScene() {
     const v = new THREE.Vector3();
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
-      const dt = Math.min(0.05, (now - last) / 1000); last = now;
-      if (!orbit.autoRotate && !calm && now - idleSince > 9000 && !down) orbit.autoRotate = true;
+      const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now;
+      const spin = useSpin.getState().on;
+      if (!spin) orbit.autoRotate = false;
+      else if (!orbit.autoRotate && !calm && now - idleSince > 9000 && !down) orbit.autoRotate = true;
       orbit.update();
       const time = now / 1000;
       const st = useStore.getState();
@@ -459,7 +479,7 @@ export default function BrainScene() {
       // synapse rings fade out as they spread
       rings = rings.filter((r) => { r.age += dt * 1.6; const m = r.sprite.material as THREE.SpriteMaterial; r.sprite.scale.multiplyScalar(1 + dt * 2.6); m.opacity = Math.max(0, 1 - r.age); if (r.age >= 1) { m.dispose(); pulseGroup.remove(r.sprite); return false; } return true; });
       dustMat.uniforms.uTime.value = time;
-      { const r = el.getBoundingClientRect(); dustMat.uniforms.uScale.value = renderer.getPixelRatio() * Math.min(r.width, r.height) * 0.012; halo.update(time, dt, camera, r, renderer.getPixelRatio() * Math.min(r.width, r.height) * 0.011, calm); }
+      { const r = el.getBoundingClientRect(); dustMat.uniforms.uScale.value = renderer.getPixelRatio() * Math.min(r.width, r.height) * 0.012; wire?.update(time, holo.front.uniforms.uColor.value as THREE.Color, dustMat.uniforms.uScale.value * 0.75, calm); halo.update(time, dt, camera, r, renderer.getPixelRatio() * Math.min(r.width, r.height) * 0.011, calm, spin); }
       // idea buds grow out, then breathe; now and then the main agent sends a spark into one
       for (const b of buds) {
         b.grow = calm ? 1.25 : Math.min(1.25, b.grow + dt * 0.7);
@@ -514,7 +534,7 @@ export default function BrainScene() {
       disposeNerves(); disposeBuds();
       for (const p of pulses) for (const sp of [p.sprite, ...p.trail]) (sp.material as THREE.Material).dispose();
       for (const r of rings) (r.sprite.material as THREE.Material).dispose();
-      halo.dispose(); orbit.dispose(); geo.dispose(); holo.dispose(); glow.dispose(); ringTex.dispose(); sky.dispose();
+      gone = true; wire?.dispose(); model?.facets.dispose(); model?.mesh.dispose(); halo.dispose(); orbit.dispose(); geo.dispose(); holo.dispose(); glow.dispose(); ringTex.dispose(); sky.dispose();
       dustGeo.dispose(); dustMat.dispose(); composer.dispose();
       renderer.dispose(); renderer.domElement.remove();
       api.current = null; rebuild.current = null; regrowBuds.current = null;
@@ -542,6 +562,7 @@ export default function BrainScene() {
   const tools = <div className="brain-rotate-tools">
     <span>DRAG TO ORBIT · SCROLL TO ZOOM · CLICK A NODE FOR ITS AGENT</span>
     <BrainColorPicker teams={teams} agents={agents} />
+    <SpinToggle />
     <button className="btn icon sm" aria-label="Reset brain view" title="Reset view" onClick={() => api.current?.reset()}><RotateCcw size={13}/></button>
   </div>;
   return <div className="brain-object-wrap">

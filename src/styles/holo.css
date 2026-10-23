@@ -150,8 +150,20 @@ body { background: #030616; }
 .app .brain-float-top .creator-desk { position: relative; }
 .app .brain-float-top .creator-actions { position: relative; inset: auto; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 0; border: 0; background: none; box-shadow: none; backdrop-filter: none; }
 .app .brain-float-top button.creator-action:first-of-type { display: none; } /* Add idea lives in the dock */
-.app .brain-float-top :is(.creator-action, .creator-voice) { min-height: 34px; padding: 0 14px; border: 1px solid var(--glass-edge); border-radius: 999px; background: var(--glass); color: #d6e0ff; font: 500 12.5px var(--font-sans); box-shadow: 0 0 14px rgba(56, 110, 255, .12); }
-.app .brain-float-top :is(.creator-action, .creator-voice):hover { border-color: rgba(140, 190, 255, .7); color: #fff; background: linear-gradient(160deg, rgba(40, 60, 150, .6), rgba(12, 18, 60, .7)); }
+.app .brain-float-top .creator-actions { gap: 14px; align-items: flex-start; flex-wrap: nowrap; }
+/* the tools are glowing bubbles with their names under them, like the page dock */
+.app .brain-float-top :is(.creator-action, .creator-voice) { width: 84px; min-height: 0; padding: 0; display: grid; justify-items: center; gap: 7px; border: 0; border-radius: 0; background: none; box-shadow: none; color: #c6d0f2; font: 500 12px/1.2 var(--font-sans); text-align: center; cursor: pointer; }
+.creator-orb { position: relative; width: 56px; height: 56px; display: grid; place-items: center; border-radius: 50%; border: 1px solid rgba(124, 150, 255, .45); color: #dfe7ff;
+  background: radial-gradient(circle at 34% 28%, rgba(150, 110, 255, .5), rgba(46, 36, 130, .78) 55%, rgba(14, 12, 52, .94));
+  box-shadow: inset 0 0 18px rgba(130, 110, 255, .38), 0 0 18px rgba(110, 90, 255, .28), 0 10px 22px rgba(0, 0, 10, .45);
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease); }
+.app .brain-float-top :is(.creator-action, .creator-voice):hover { color: #fff; }
+.app .brain-float-top :is(.creator-action, .creator-voice):hover .creator-orb { transform: translateY(-3px) scale(1.05); border-color: rgba(180, 160, 255, .85); box-shadow: inset 0 0 22px rgba(150, 120, 255, .5), 0 0 28px rgba(140, 100, 255, .5), 0 12px 26px rgba(0, 0, 10, .5); }
+.app .brain-float-top :is(.creator-action, .creator-voice):focus-visible { outline: none; }
+.app .brain-float-top :is(.creator-action, .creator-voice):focus-visible .creator-orb { outline: 2px solid var(--focus); outline-offset: 3px; }
+.creator-label { max-width: 84px; text-shadow: 0 1px 6px rgba(0, 0, 10, .8); }
+.app .creator-orb .creator-count { position: absolute; top: -4px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; display: grid; place-items: center; border-radius: 999px; background: #1b2470; border: 1px solid rgba(56, 214, 255, .6); color: var(--neon-cyan); font: 700 10.5px var(--font-sans); }
+.app .creator-orb .creator-count.alert { background: var(--neon-pink); border-color: transparent; color: #fff; box-shadow: 0 0 10px var(--neon-pink); }
 .app .creator-count { background: rgba(56, 214, 255, .16); color: var(--neon-cyan); border-radius: 999px; }
 
 /* JARVIS's card */
@@ -224,9 +236,9 @@ body { background: #030616; }
 /* ---------- smaller windows ---------- */
 @media (max-width: 1500px) {
   /* the tool row shrinks to round icon buttons with their counts */
-  .app .brain-float-top .creator-actions { flex-wrap: nowrap; }
-  .app .brain-float-top :is(.creator-action, .creator-voice) { width: 38px; min-height: 38px; padding: 0; gap: 0; font-size: 0; position: relative; }
-  .app .brain-float-top .creator-count { position: absolute; top: -6px; right: -8px; min-width: 18px; height: 18px; padding: 0 4px; font-size: 10px; }
+  .app .brain-float-top .creator-actions { gap: 8px; }
+  .app .brain-float-top :is(.creator-action, .creator-voice) { width: 74px; font-size: 11px; }
+  .creator-orb { width: 50px; height: 50px; }
   .status-jarvis { display: none !important; }
 }
 @media (max-width: 1400px) {
@@ -335,3 +347,8 @@ body { background: #030616; }
 .app .creator-overlay { z-index: 40; padding: 92px 22px 120px; }
 .app .creator-dialog { width: min(820px, 100%); max-height: 100%; }
 .app .creator-tabs { position: sticky; top: 0; margin: 12px 24px 0; }
+
+/* Stop spin / Spin on the Brains page, top right of the scene */
+.universe-tools { position: absolute; z-index: 3; top: 8px; right: 32px; }
+.app :is(.universe-tools, .brain-rotate-tools) .brain-spin-toggle { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; border-color: var(--glass-edge); background: rgba(10, 16, 52, .7); color: #d6e2ff; font-size: 11px; }
+.app :is(.universe-tools, .brain-rotate-tools) .brain-spin-toggle[aria-pressed="true"] { border-color: var(--neon-cyan); color: var(--neon-cyan); }

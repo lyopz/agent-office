@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, FileText, GitBranch, Library, Mic2, Plus, ShieldCheck, Sparkles, Upload, X } from 'lucide-react';
+import { Check, FileText, GitBranch, Library, Mic2, Plus, ShieldCheck, Sparkles, Upload, X, type LucideIcon } from 'lucide-react';
 import { useStore } from '../store/store';
 import type { RunWindow } from '../model/types';
 import { ORIGIN_ID, SKILL_LABELS, SKILL_TEAMS, VENTURE_TEAM, agentPrompt, branchAgentOps, describeWindow, growKind, isOpportunityOrigin, opportunityOriginOps, originOutdated, suggestedWindow } from './opportunity';
@@ -21,6 +21,11 @@ const EVERY = [[15, 'every 15 min'], [30, 'every 30 min'], [60, 'every hour'], [
 let pendingTab: DeskTab | null = null;
 const DESK_EVENT = 'brain:open-desk';
 export function openDesk(tab: DeskTab) { pendingTab = tab; window.dispatchEvent(new Event(DESK_EVENT)); }
+
+/** A tool button's round glowing bubble with its label under it, like the page dock. */
+function Orb({ icon: Icon, label, count, alert }: { icon: LucideIcon; label: string; count?: number | null; alert?: boolean }) {
+  return <><span className="creator-orb"><Icon size={20} strokeWidth={1.7} />{count != null && <span className={`creator-count${alert ? ' alert' : ''}`}>{count}</span>}</span><span className="creator-label">{label}</span></>;
+}
 
 export default function CreatorDesk() {
   const doc = useStore((s) => s.doc);
@@ -155,13 +160,13 @@ export default function CreatorDesk() {
     <div className="creator-desk" onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
       <div className="creator-actions" aria-label="Agent Creator actions">
         <span className="creator-live"><i /> {leaderName} · OWNER-LED</span>
-        <button className="creator-action" onClick={() => { setTab('ideas'); setNotice(''); }}><Plus size={14} /> Add idea <span className="creator-count">{pending}</span></button>
-        <button className="creator-action" title="Start a venture" onClick={() => { setTab('agent'); pickParent(null); setNotice(''); }}><GitBranch size={14} /> Start a venture</button>
-        <button className="creator-action" title={`${leaderName} runs`} onClick={() => { setTab('runs'); setNotice(''); }}><Sparkles size={14} /> {leaderName} runs {waiting > 0 && <span className="creator-count" title="Waiting for your approval">{waiting}</span>}</button>
-        <button className="creator-action" title="Skill bank" onClick={() => { setTab('bank'); setNotice(''); }}><Library size={14} /> Skill bank <span className="creator-count">{doc.skillBank.length}</span></button>
-        <button className="creator-action" title="Skill requests" onClick={() => { setTab('requests'); setRequestFrom(null); setNotice(''); }}><Plus size={14} /> Skill requests <span className="creator-count">{openRequests}</span></button>
-        {needsSetup && <button className="creator-action" onClick={setupOrigin} title="Give JARVIS your Opportunity Research & Builder prompt and starting memory"><Sparkles size={14} /> {isOpportunityOrigin(doc) ? 'Update Opportunity agent rules' : 'Set up Opportunity agent'}</button>}
-        <button className="creator-voice" onClick={speak} title={`Hear ${leaderName}'s low-pitched voice`}><Mic2 size={14} /> Hear {leaderName}</button>
+        <button className="creator-action" title="Add idea" onClick={() => { setTab('ideas'); setNotice(''); }}><Orb icon={Plus} count={pending} label="Add idea" /></button>
+        <button className="creator-action" title="Start a venture" onClick={() => { setTab('agent'); pickParent(null); setNotice(''); }}><Orb icon={GitBranch} label="Start a venture" /></button>
+        <button className="creator-action" title={`${leaderName} runs`} onClick={() => { setTab('runs'); setNotice(''); }}><Orb icon={Sparkles} count={waiting || null} alert label={`${leaderName} runs`} /></button>
+        <button className="creator-action" title="Skill bank" onClick={() => { setTab('bank'); setNotice(''); }}><Orb icon={Library} count={doc.skillBank.length} label="Skill bank" /></button>
+        <button className="creator-action" title="Skill requests" onClick={() => { setTab('requests'); setRequestFrom(null); setNotice(''); }}><Orb icon={Plus} count={openRequests} label="Skill requests" /></button>
+        {needsSetup && <button className="creator-action" onClick={setupOrigin} title="Give JARVIS your Opportunity Research & Builder prompt and starting memory"><Orb icon={Sparkles} label={isOpportunityOrigin(doc) ? 'Update rules' : 'Set up Opportunity agent'} /></button>}
+        <button className="creator-voice" onClick={speak} title={`Hear ${leaderName}'s low-pitched voice`}><Orb icon={Mic2} label={`Hear ${leaderName}`} /></button>
       </div>
 
       {tab && <div className="creator-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setTab(null); }}>

@@ -12,6 +12,8 @@ import { summarize, type BrainSummary } from '../persistence/brains';
 import { brainLinks, brainPlaces, type BrainLink } from './brainUniverse';
 import { buildBrainGeometry, holoBrainMaterial } from './brainMesh';
 import { STEM_BASE, hash, rng } from './nerveTree';
+import { useSpin } from './spin';
+import { SpinToggle } from './BrainScene';
 import { confirmAction } from '../ui/primitives';
 
 const PALETTE = ['#ff5a74', '#5ad2ff', '#b28cff', '#ffc46b', '#78f7b0', '#ff9a74', '#4ff0d0', '#e0a8ff'];
@@ -34,7 +36,7 @@ function nerveBundle(link: BrainLink, from: THREE.Vector3, to: THREE.Vector3): {
   const curves: THREE.CatmullRomCurve3[] = [];
   const side = new THREE.Vector3().subVectors(to, from).cross(new THREE.Vector3(0, 1, 0)).normalize();
   for (let i = 0; i < link.strength; i++) {
-    const sag = 0.55 + r() * 0.5, sway = (r() - 0.5) * 0.5, spread = (r() - 0.5) * 0.09;
+    const sag = 0.3 + r() * 0.3, sway = (r() - 0.5) * 0.4, spread = (r() - 0.5) * 0.09;
     const a = from.clone().add(side.clone().multiplyScalar(spread));
     const d = to.clone().add(side.clone().multiplyScalar(spread));
     const b = a.clone().lerp(d, 0.3).add(new THREE.Vector3(0, -sag * 0.75, 0)).add(side.clone().multiplyScalar(sway));
@@ -78,7 +80,8 @@ export default function BrainUniverse() {
     orbit.target.set(0, -0.35, 0);
     orbit.enableDamping = true; orbit.dampingFactor = 0.08; orbit.enablePan = false;
     orbit.minDistance = 2.2; orbit.maxDistance = 16;
-    orbit.autoRotate = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches; orbit.autoRotateSpeed = 0.35;
+    const calm = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    orbit.autoRotate = !calm && useSpin.getState().on; orbit.autoRotateSpeed = 0.35;
     scene.add(new THREE.AmbientLight(0xffffff, 0.35));
     const key1 = new THREE.DirectionalLight(0xffe2e6, 1.1); key1.position.set(3, 4, 2); scene.add(key1);
     const key2 = new THREE.DirectionalLight(0x8fd8ff, 0.5); key2.position.set(-4, 1, -3); scene.add(key2);
@@ -95,6 +98,8 @@ export default function BrainUniverse() {
       const back = new THREE.Mesh(geo, holo.back); back.renderOrder = 0;
       const front = new THREE.Mesh(geo, holo.front); front.renderOrder = 1;
       back.userData.brainId = front.userData.brainId = b.id;
+      // the brain turns about its brainstem, so the nerves to the other brains stay joined to the stem
+      back.position.set(-STEM_BASE[0], 0, -STEM_BASE[2]); front.position.copy(back.position);
       const mesh = new THREE.Group(); mesh.add(back, front);
       mesh.position.copy(pos(b.id)); mesh.scale.setScalar(scale);
       scene.add(mesh); disposables.push(holo);
@@ -112,8 +117,9 @@ export default function BrainUniverse() {
     const pulses: { curve: THREE.CatmullRomCurve3; sprite: THREE.Sprite; t: number; speed: number }[] = [];
     for (const link of links) {
       const sa = all.find((b) => b.id === link.a)!.open ? OPEN_SCALE : OTHER_SCALE, sb = all.find((b) => b.id === link.b)!.open ? OPEN_SCALE : OTHER_SCALE;
-      const from = pos(link.a).add(new THREE.Vector3(...STEM_BASE).multiplyScalar(sa));
-      const to = pos(link.b).add(new THREE.Vector3(...STEM_BASE).multiplyScalar(sb));
+      // each brain's stem sits on its turning axis (see above), right under the brain's place
+      const from = pos(link.a).add(new THREE.Vector3(0, STEM_BASE[1] * sa, 0));
+      const to = pos(link.b).add(new THREE.Vector3(0, STEM_BASE[1] * sb, 0));
       const { geometry, curves } = nerveBundle(link, from, to);
       if (!geometry) continue;
       const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff6a84'), transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -149,14 +155,16 @@ export default function BrainUniverse() {
     const v = new THREE.Vector3();
     let raf = 0, last = performance.now();
     const frame = (now: number) => {
-      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; // the first frame can be stamped before last
       orbit.update();
-      for (const m of meshes) { m.mesh.rotation.y += dt * (m.open ? 0.12 : 0.06); m.mesh.position.y = Math.sin(now / 1400 + hash(m.id) % 7) * 0.03; m.holo.update(now / 1000, dt); }
+      const spin = useSpin.getState().on && !calm;
+      orbit.autoRotate = spin;
+      for (const m of meshes) { if (spin) m.mesh.rotation.y += dt * (m.open ? 0.12 : 0.06); m.holo.update(now / 1000, dt); }
       for (const p of pulses) { p.t = (p.t + dt * p.speed) % 1; p.sprite.position.copy(p.curve.getPointAt(p.t)); }
       renderer.render(scene, camera);
       const w = el.clientWidth, h = el.clientHeight;
       for (const m of meshes) {
-        v.copy(m.top).setY(m.top.y + m.mesh.position.y).project(camera);
+        v.copy(m.top).project(camera);
         const on = v.z < 1;
         m.label.style.opacity = on ? '1' : '0';
         m.label.style.transform = `translate(-50%, -100%) translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px)`;
@@ -183,6 +191,7 @@ export default function BrainUniverse() {
   return (
     <div className="brain-canvas universe" ref={host}>
       <div className="brain-node-labels" ref={labels} />
+      <div className="universe-tools"><SpinToggle /></div>
       <aside className="universe-panel">
         <h4><Brain size={14} /> Brain universe <span className="count">{all.length} brain{all.length === 1 ? '' : 's'}</span></h4>
         <p className="note">Each brain has its own JARVIS, agents and work. Brains that share skills are joined by nerves from their stems. A new brain starts with every skill the others learned, and skills keep flowing between them whenever you switch. Click a brain to open it; only the open brain's agents run.</p>

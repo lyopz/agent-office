@@ -1,4 +1,4 @@
-// The ring around the main brain shows the owner's real brains, never placeholders.
+// The ring around the main brain shows the owner's real brains, never placeholders; the main brain is the Blender model.
 import { describe, expect, test } from 'vitest';
 import { ringBrainsOf } from '../src/brain/brainRing';
 
@@ -14,5 +14,22 @@ describe('brain ring', () => {
   });
   test('the open brain is never on its own ring', () => {
     expect(ringBrainsOf([{ id: 'b1', name: 'Open', color: null, open: true }])).toEqual([]);
+  });
+});
+
+describe('Blender brain model', () => {
+  test('loads with the hologram attributes, inside the same bounds as the procedural brain', async () => {
+    const { loadBrainModel } = await import('../src/brain/brainModel');
+    const m = await loadBrainModel();
+    expect(m).not.toBeNull();
+    const g = m!.mesh;
+    expect(g.attributes.fold.count).toBe(g.attributes.position.count);
+    expect(g.attributes.tint.itemSize).toBe(3);
+    expect(g.index!.count / 3).toBeGreaterThan(2000);
+    g.computeBoundingBox();
+    const { min, max } = g.boundingBox!;
+    expect(min.x).toBeGreaterThan(-0.85); expect(max.x).toBeLessThan(0.85);
+    expect(min.y).toBeGreaterThan(-1.1); expect(max.y).toBeLessThan(0.75);
+    expect(min.z).toBeGreaterThan(-1.0); expect(max.z).toBeLessThan(0.9);
   });
 });

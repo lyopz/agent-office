@@ -50,7 +50,7 @@ export function brainPlaces(brains: BrainSummary[], radius = 2.6): Record<string
   out[open.id] = [0, 0, 0];
   const rest = brains.filter((b) => b.id !== open.id);
   rest.forEach((b, i) => {
-    const t = (i / rest.length) * Math.PI * 2 - Math.PI / 2;
+    const t = (i / rest.length) * Math.PI * 2; // the first ones to the sides, so they don't hide behind the open brain
     out[b.id] = [Math.cos(t) * radius, 0, Math.sin(t) * radius];
   });
   return out;

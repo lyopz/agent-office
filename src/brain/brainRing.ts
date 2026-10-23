@@ -94,14 +94,14 @@ export function brainRing(opts: { geo: THREE.BufferGeometry; glow: THREE.Texture
     });
   };
 
-  const update = (time: number, dt: number, camera: THREE.Camera, size: { width: number; height: number }, pixelScale: number, calm: boolean) => {
+  const update = (time: number, dt: number, camera: THREE.Camera, size: { width: number; height: number }, pixelScale: number, calm: boolean, spin = true) => {
     torusMat.uniforms.uTime.value = calm ? 0 : time;
     sparkMat.uniforms.uTime.value = calm ? 0 : time;
     sparkMat.uniforms.uScale.value = pixelScale;
     for (const [i, s] of sats.entries()) {
       s.holo.update(time, dt);
       const bob = calm ? 0 : Math.sin(time * 0.9 + i * 1.7) * 0.025;
-      for (const m of s.meshes) { m.position.y = s.pos.y + bob; if (!calm) m.rotation.y += dt * 0.25; }
+      for (const m of s.meshes) { m.position.y = s.pos.y + bob; if (!calm && spin) m.rotation.y += dt * 0.25; }
       s.sparks.forEach((sp, k) => { const t = calm ? 0.5 : ((time * 0.28 + i * 0.37 + k * 0.5) % 1); s.curve.getPoint(t, sp.position); (sp.material as THREE.SpriteMaterial).opacity = Math.sin(t * Math.PI); });
       v.set(s.pos.x, s.pos.y + 0.24 + bob, s.pos.z).add(group.position).applyMatrix4(group.parent?.matrixWorld ?? new THREE.Matrix4()).project(camera);
       const x = (v.x * 0.5 + 0.5) * size.width, y = (-v.y * 0.5 + 0.5) * size.height;
