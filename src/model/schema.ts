@@ -54,6 +54,12 @@ const knowledge = z.object({
 export const officeSchema = z.object({
   schemaVersion: z.number().int(),
   id, name: z.string().max(200),
+  head: z.boolean().optional(),
+  plan: z.object({
+    purpose: z.string().max(4000), lead: z.string().max(80), createdBy: z.enum(['jarvis', 'owner']), createdAt: z.string(),
+    research: z.array(z.string().max(400)).max(20).default([]), fromVenture: z.string().max(80).optional(),
+    history: z.array(z.object({ at: z.string(), note: z.string().max(1000) })).max(200).default([]),
+  }).optional(),
   agents: z.record(agent),
   appearance: appearanceSettings,
   alertSettings,
@@ -66,9 +72,9 @@ export const officeSchema = z.object({
     createdAt: z.string(), decidedAt: z.string().nullable(), agentId: id.nullable(),
   })).max(1000).default([]),
   skillBank: z.array(z.object({
-    id, name: z.string().min(1).max(80), description: z.string().max(1000), instructions: z.string().max(20_000),
+    id, name: z.string().min(1).max(80), description: z.string().max(1000), instructions: z.string().max(60_000), // the owner's library skills run long (up to 60,000 characters)
     tags: z.array(z.string().max(40)).max(20).default([]), createdAt: z.string(),
-  })).max(200).default([]),
+  })).max(400).default([]),
 });
 
 const SECRET_KEYS = /^(api[-_]?key|secret|token|password|authorization|credential)s?$/i;

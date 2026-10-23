@@ -12,6 +12,7 @@ import { designDecision, designUrl, mockupUrl, publishDecision, runnerStatus, se
 import { ORIGIN_ID } from '../brain/opportunity';
 import { usd } from './Dashboard';
 import { PageTabs, TabPanel, usePageTab } from './PageTabs';
+import { BrainLayouts } from './BrainsTab';
 
 const when = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
@@ -67,7 +68,7 @@ export function Approvals() {
   const taskOf = (id: string | null) => st.tasks.find((t) => t.id === id);
   const groups = [...new Map(waiting.map((d) => [d.taskId ?? '', d])).keys()];
   const memes = st.memePicks ?? [];
-  const toDecide = waiting.length + products.length + memes.length;
+  const toDecide = waiting.length + products.length + memes.length + (st.brainProposals ?? []).filter((p) => p.status === 'proposed').length;
   const placeName = { front_center: 'front, centred', full_front: 'full front', left_chest: 'left chest', back: 'back' } as const;
 
   return (
@@ -87,7 +88,8 @@ export function Approvals() {
       ]} />
 
       {tab === 'decide' && <TabPanel id="decide">
-      {!toDecide && <div className="card span-12 empty-state"><Check size={22} /><b>All caught up</b><span>Memes, designs and products that wait for your Yes or No show up here.</span></div>}
+      {!toDecide && <div className="card span-12 empty-state"><Check size={22} /><b>All caught up</b><span>Memes, designs, products and brain layouts that wait for your Yes or No show up here.</span></div>}
+      <BrainLayouts />
       {memes.length > 0 && <section id="approvals-memes" className="card approval-group">
         <h4><Images size={13} /> Memes to pick <span className="count">{memes.length} found by the scouts · only your Yes picks get designed</span></h4>
         <div className="approval-grid">

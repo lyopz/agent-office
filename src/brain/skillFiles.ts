@@ -3,12 +3,13 @@
 // (one at a time, like any task); the app saves each finished file to the skill
 // bank and gives it to the agent.
 import { useEffect, useRef } from 'react';
-import type { DocOp } from '../engine/ops';
+import { applyOps, type DocOp } from '../engine/ops';
+import { libraryDocs, peekBrain } from '../persistence/brains';
 import type { OfficeDoc } from '../model/types';
 import { useStore } from '../store/store';
 import { useOrigin } from './useOrigin';
 import { ORIGIN_ID, branchAgentOps, branchKind } from './opportunity';
-import { agentProposalAction, skillFileImported, taskAction, type AgentProposal, type RunnerStatus } from './originLink';
+import { agentProposalAction, skillFileImported, taskAction, type AgentProposal, type RunnerStatus, type SkillFile } from './originLink';
 
 import { SKILL_FILE_VERSION, skillFileId } from './originSkillFile';
 export { SKILL_FILE_VERSION, skillFileId };
@@ -87,16 +88,44 @@ export function bankSkillOps(doc: OfficeDoc, f: { skillKey?: string; skillName?:
 
 /** Create an agent JARVIS proposed (or created on its own), with its SKILL.md, and tell the runner. */
 export async function createProposedAgent(p: AgentProposal): Promise<{ ok: boolean; message: string }> {
-  const d = useStore.getState().doc;
+  const open = useStore.getState().doc;
+  // the venture may live in another brain (JARVIS works every brain); the agent is added there
+  let home: string | null = null;
+  if (!open.agents[p.parentId]) { try { home = libraryDocs().find((x) => x.agents[p.parentId])?.id ?? null; } catch { /* storage unavailable */ } }
+  const d = home ? peekBrain(home)!.doc : open;
   const id = `agent_${p.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'new'}_${Date.now().toString(36)}`;
   const bank = p.bankSkillIds.filter((k) => d.skillBank.some((x) => x.id === k));
   const { ops, error } = branchAgentOps(d, p.parentId, { id, name: p.name, specialty: p.specialty || p.skill, purpose: p.purpose, skill: p.skill, window: { everyMinutes: p.everyMinutes, maxMinutes: p.maxMinutes, setBy: 'origin', reason: p.reason || 'Proposed by JARVIS.' }, bankSkillIds: bank });
   // its own SKILL.md, written by JARVIS with the proposal, goes to the bank with it
   const own: DocOp[] = p.skillFile ? [skillFileUpsert(d, id, p.name, { ...p.skillFile, version: SKILL_FILE_VERSION }), { op: 'agent.setBankSkills', id, skillIds: [...bank, skillFileId(id)] }] : [];
-  const r = error ? null : useStore.getState().commit([...ops, ...own], `${p.auto ? 'JARVIS created' : 'Approve'} agent: ${p.name}`, { silent: true });
+  const label = `${p.auto ? 'JARVIS created' : 'Approve'} agent: ${p.name}`;
+  let r: { ok: boolean; errors: string[] } | null = null;
+  if (error) r = null;
+  else if (home) { const x = applyOps(d, [...ops, ...own]); r = { ok: !x.errors.length && useStore.getState().updateBrain(home, () => x.doc, label), errors: x.errors }; }
+  else r = useStore.getState().commit([...ops, ...own], label, { silent: true });
   if (!r?.ok) return { ok: false, message: `Couldn't add ${p.name}: ${error ?? r?.errors.join(' · ')}` };
   await agentProposalAction({ action: 'approve', id: p.id, agentId: id });
   return { ok: true, message: `${p.name} is now a branch of ${d.agents[p.parentId]?.identity.name}.` };
+}
+
+/** The ops that save a finished file: a shared bank skill, or one agent's SKILL.md (one file can serve several agents with the same job; each gets it under its own name). */
+function fileOps(doc: OfficeDoc, f: SkillFile): DocOp[] {
+  let d = doc;
+  const ops: DocOp[] = f.bank ? bankSkillOps(d, f) : [];
+  if (!f.bank) for (const agentId of f.agentIds ?? [f.agentId]) {
+    const mine = skillFileOps(d, agentId, f);
+    ops.push(...mine);
+    if (mine[0]?.op === 'skillBank.upsert') d = { ...d, skillBank: [...d.skillBank, { ...mine[0].skill, createdAt: '' }] };
+  }
+  return ops;
+}
+
+/** The library brain a file belongs in, when it is not the open one: the brain the runner named, else the one its agents live in. */
+export function homeBrainOf(open: OfficeDoc, f: Pick<SkillFile, 'agentId' | 'agentIds'> & { brainId?: string }): string | null {
+  if (f.brainId && f.brainId !== open.id && peekBrain(f.brainId)) return f.brainId;
+  const ids = f.agentIds?.length ? f.agentIds : [f.agentId];
+  if (ids.some((id) => open.agents[id])) return null;
+  try { return libraryDocs().find((d) => ids.some((id) => d.agents[id]))?.id ?? null; } catch { return null; }
 }
 
 /** Keep every agent's SKILL.md flowing: ask JARVIS for missing ones, and save finished ones. */
@@ -107,7 +136,6 @@ export function useSkillFiles() {
   const made = useRef(new Set<string>());
   useEffect(() => {
     if (!status?.configured) return;
-    const st = useStore.getState();
     // agents JARVIS created on its own (the owner allowed it): add them to the brain
     for (const p of status.agentProposals ?? []) {
       if (p.status !== 'proposed' || !status.autoAgents || made.current.has(p.id)) continue;
@@ -117,15 +145,18 @@ export function useSkillFiles() {
     for (const f of status.skillFiles ?? []) {
       if (saved.current.has(f.id)) continue;
       saved.current.add(f.id);
-      // one file can serve several agents with the same job; each gets it under its own name
-      let d = st.doc;
-      const ops: DocOp[] = f.bank ? bankSkillOps(d, f) : [];
-      if (!f.bank) for (const agentId of f.agentIds ?? [f.agentId]) {
-        const mine = skillFileOps(d, agentId, f);
-        ops.push(...mine);
-        if (mine[0]?.op === 'skillBank.upsert') d = { ...d, skillBank: [...d.skillBank, { ...mine[0].skill, createdAt: '' }] };
+      const label = f.bank ? `Add the ${f.skillName ?? f.name} skill` : `Save ${f.agentName}'s SKILL.md`;
+      // a file for agents of another brain (JARVIS works every brain) is saved into that brain
+      const home = homeBrainOf(useStore.getState().doc, f);
+      if (home) {
+        let empty = false;
+        const ok = useStore.getState().updateBrain(home, (d) => { const ops = fileOps(d, f); empty = !ops.length; const r = applyOps(d, ops); return empty || r.errors.length ? null : r.doc; }, label);
+        if (ok || empty) void skillFileImported(f.id);
+        else saved.current.delete(f.id);
+        continue;
       }
-      const r = ops.length ? useStore.getState().commit(ops, f.bank ? `Add the ${f.skillName ?? f.name} skill` : `Save ${f.agentName}'s SKILL.md`, { silent: true }) : null;
+      const ops = fileOps(useStore.getState().doc, f);
+      const r = ops.length ? useStore.getState().commit(ops, label, { silent: true }) : null;
       if (!ops.length || r?.ok) void skillFileImported(f.id); // an agent removed since is simply skipped
       else saved.current.delete(f.id);
     }

@@ -52,3 +52,4 @@ export function ownerExampleLinks(text: string): string[];
 export function saveOwnerExamples(s: Record<string, unknown>, deps?: { fetch?: unknown }): Promise<string[]>;
 export function shirtCheck(s: Record<string, unknown>, w: Record<string, unknown> | null, deps?: { fetch?: unknown; key?: string }): (png: Buffer, info: { caption?: string; memeType?: string | null; placement?: string; font?: string; title?: string }) => Promise<{ pass: boolean; why: string } | null>;
 export function tasteBrief(s: Record<string, unknown>, dataDir?: string): string;
+export function brainsAction(body: Record<string, unknown>, deps?: { file?: string }): Promise<[number, Record<string, any>]>;

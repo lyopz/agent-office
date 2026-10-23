@@ -1,0 +1,15 @@
+type S = Record<string, any>;
+export const BRAIN_PLAN_KIND: 'brain-plan';
+export const BRAIN_EVOLVE_KIND: 'brain-evolve';
+export const EVOLVE_EVERY_MS: number;
+export function cleanAgent(a: S, brainId: string | null, promptMax?: number): S;
+export function syncBrains(s: S, body: S, at?: string): void;
+export function brainOfAgent(s: S, agentId: string): string | null;
+export function headBrainId(s: S): string | null;
+export function brainsBrief(s: S): string;
+export function leadOf(s: S, task: S): S | null;
+export function brainTaskBrief(s: S, task: S, cat: { skills: { name: string }[] } | null): string;
+export function takeBrainOutput(s: S, task: S, out: S, at?: string): S | null;
+export function planBrainTask(s: S, ask: string, at?: string): S | null;
+export function queueEvolve(s: S, opts?: { approve?: boolean; now?: number; brainId?: string | null; by?: string }): S | null;
+export function brainsPublic(s: S): { id: string | null; head: string | null; others: S[] };
