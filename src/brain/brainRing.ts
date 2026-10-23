@@ -32,6 +32,7 @@ interface Sat { brain: RingBrain; holo: HoloBrain; meshes: THREE.Mesh[]; nerve: 
 
 export function brainRing(opts: { geo: THREE.BufferGeometry; glow: THREE.Texture; labelLayer: HTMLElement; core: THREE.Vector3; onPick: (key: string) => void; radius?: number; tube?: number }) {
   const R = opts.radius ?? 2.45, TUBE = opts.tube ?? 0.17, Y = -0.12;
+  const SAT = TUBE * 0.62; // a ring brain's size: about 1.7 units tall at scale 1, so it fits inside the tube
   const group = new THREE.Group(); group.position.y = Y;
 
   const torusGeo = new THREE.TorusGeometry(R, TUBE, 40, 200); torusGeo.rotateX(Math.PI / 2);
@@ -42,6 +43,12 @@ export function brainRing(opts: { geo: THREE.BufferGeometry; glow: THREE.Texture
   const coreGeo = new THREE.TorusGeometry(R, 0.012, 6, 200); coreGeo.rotateX(Math.PI / 2);
   const coreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#9fd8ff'), transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending });
   group.add(new THREE.Mesh(coreGeo, coreMat));
+  // a wider, thinner ring of light around the tube
+  const OUTER = R + TUBE + 0.75;
+  const outerGeo = new THREE.TorusGeometry(OUTER, 0.05, 24, 240); outerGeo.rotateX(Math.PI / 2);
+  const outerMat = new THREE.ShaderMaterial({ vertexShader: ringVertex, fragmentShader: ringFragment, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+    uniforms: { uColor: { value: new THREE.Color('#7a5cff') }, uColor2: { value: new THREE.Color('#38d6ff') }, uTime: { value: 0 } } });
+  const outer = new THREE.Mesh(outerGeo, outerMat); outer.renderOrder = 3; group.add(outer);
 
   const N = 1400, theta = new Float32Array(N), seed = new Float32Array(N), off = new Float32Array(N * 2), pos = new Float32Array(N * 3);
   for (let i = 0; i < N; i++) { theta[i] = Math.random() * Math.PI * 2; seed[i] = Math.random(); const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * TUBE * 0.95; off[i * 2] = Math.cos(a) * r; off[i * 2 + 1] = Math.sin(a) * r; }
@@ -74,10 +81,11 @@ export function brainRing(opts: { geo: THREE.BufferGeometry; glow: THREE.Texture
     const shown = list.slice(0, 8);
     shown.forEach((brain, i) => {
       const angle = (i / shown.length) * Math.PI * 2 + Math.PI / 4;
-      const p = new THREE.Vector3(Math.cos(angle) * R, 0.02, Math.sin(angle) * R);
+      // the brain's middle (not its origin, which sits high) on the tube's core line, so it rides inside the glass
+      const p = new THREE.Vector3(Math.cos(angle) * R, SAT * 0.17, Math.sin(angle) * R);
       const holo = holoBrainMaterial(brain.color); holo.setRegions(false);
       const back = new THREE.Mesh(opts.geo, holo.back), front = new THREE.Mesh(opts.geo, holo.front);
-      for (const m of [back, front]) { m.position.copy(p); m.scale.setScalar(0.36); m.rotation.y = -angle + Math.PI / 2; }
+      for (const m of [back, front]) { m.position.copy(p); m.scale.setScalar(SAT); m.rotation.y = -angle + Math.PI / 2; }
       back.renderOrder = 3; front.renderOrder = 4;
       const mid = p.clone().add(coreLocal).multiplyScalar(0.5); mid.y += 0.45;
       const curve = new THREE.QuadraticBezierCurve3(coreLocal.clone(), mid, p.clone());
@@ -96,6 +104,7 @@ export function brainRing(opts: { geo: THREE.BufferGeometry; glow: THREE.Texture
 
   const update = (time: number, dt: number, camera: THREE.Camera, size: { width: number; height: number }, pixelScale: number, calm: boolean, spin = true) => {
     torusMat.uniforms.uTime.value = calm ? 0 : time;
+    outerMat.uniforms.uTime.value = calm ? 0 : -time * 0.6;
     sparkMat.uniforms.uTime.value = calm ? 0 : time;
     sparkMat.uniforms.uScale.value = pixelScale;
     for (const [i, s] of sats.entries()) {
@@ -103,13 +112,13 @@ export function brainRing(opts: { geo: THREE.BufferGeometry; glow: THREE.Texture
       const bob = calm ? 0 : Math.sin(time * 0.9 + i * 1.7) * 0.025;
       for (const m of s.meshes) { m.position.y = s.pos.y + bob; if (!calm && spin) m.rotation.y += dt * 0.25; }
       s.sparks.forEach((sp, k) => { const t = calm ? 0.5 : ((time * 0.28 + i * 0.37 + k * 0.5) % 1); s.curve.getPoint(t, sp.position); (sp.material as THREE.SpriteMaterial).opacity = Math.sin(t * Math.PI); });
-      v.set(s.pos.x, s.pos.y + 0.24 + bob, s.pos.z).add(group.position).applyMatrix4(group.parent?.matrixWorld ?? new THREE.Matrix4()).project(camera);
+      v.set(s.pos.x, s.pos.y + TUBE + 0.06 + bob, s.pos.z).add(group.position).applyMatrix4(group.parent?.matrixWorld ?? new THREE.Matrix4()).project(camera);
       const x = (v.x * 0.5 + 0.5) * size.width, y = (-v.y * 0.5 + 0.5) * size.height;
       s.label.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
       s.label.style.opacity = v.z < 1 ? '1' : '0';
     }
   };
 
-  const dispose = () => { clear(); torusGeo.dispose(); torusMat.dispose(); coreGeo.dispose(); coreMat.dispose(); sparkGeo.dispose(); sparkMat.dispose(); };
+  const dispose = () => { clear(); torusGeo.dispose(); torusMat.dispose(); coreGeo.dispose(); coreMat.dispose(); outerGeo.dispose(); outerMat.dispose(); sparkGeo.dispose(); sparkMat.dispose(); };
   return { group, setBrains, update, dispose };
 }

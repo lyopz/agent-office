@@ -185,7 +185,7 @@ export default function BrainScene() {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(34, 1, 0.05, 50);
     // far enough back to see the ring of brains around the main one
-    camera.position.set(-3.85, 2.05, 3.0); // close enough that the brain fills the middle, the ring just around it
+    camera.position.set(-5.3, 2.9, 4.1); // far enough back that both rings fit above the task track
     const renderer = new THREE.WebGLRenderer({ alpha: true, premultipliedAlpha: false, antialias: true, powerPreference: 'high-performance' });
     renderer.setClearColor(0x000000, 0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
@@ -243,7 +243,7 @@ export default function BrainScene() {
       confirmAction({ title: `Open the brain “${b.name}”?`, confirmLabel: 'Open it', body: `This brain moves onto the ring and “${b.name}” opens in the middle, with its own JARVIS and agents. Click this brain on the ring to come back.`,
         onConfirm: () => { if (useStore.getState().switchBrain(id)) useStore.getState().notify(`Opened the brain “${b.name}”.`); } });
     };
-    const halo = brainRing({ geo, glow, labelLayer, core: new THREE.Vector3(0, 0.08, 0), onPick: openRingBrain, radius: 2.15, tube: 0.15 });
+    const halo = brainRing({ geo, glow, labelLayer, core: new THREE.Vector3(0, 0.08, 0), onPick: openRingBrain, radius: 2.3, tube: 0.48 });
     scene.add(halo.group);
     const nerves = new THREE.Group(); nerves.renderOrder = 2; scene.add(nerves);
     const nodeGroup = new THREE.Group(); scene.add(nodeGroup);
