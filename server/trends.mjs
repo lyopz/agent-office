@@ -1,0 +1,147 @@
+// Trend research for the agents, from public sources only: Google's daily trending searches
+// (a public RSS feed, free, no login), meme databases and the trademark search. No image
+// search on Wikimedia or Openverse: memes come from Pinterest, Reddit and Imgflip. TikTok's Creative Center and Pinterest Trends only
+// render in a browser, and Instagram has no public trend page, so those go through
+// web_search for fresh roundups; TREND_SOURCES says how, so agents never log in, scrape,
+// or use the owner's own social accounts.
+import { INSTAGRAM_TOOL, instagramTool, instagramPublic } from './instagram.mjs';
+import { PINTEREST_TOOL, pinterestPublic, pinterestTool } from './pinterest.mjs';
+
+const GOOGLE_TRENDS = 'https://trends.google.com/trending/rss';
+const IMGFLIP = 'https://api.imgflip.com/get_memes';
+const REDDIT = 'https://www.reddit.com';
+const MEME_SUBS = ['memes', 'dankmemes', 'me_irl', 'wholesomememes', 'MemeEconomy'];
+const MAX_ITEMS = 25;
+const UA = 'the-brain/1.0 (research for the owner; a few public reads per task)';
+
+export const GOOGLE_TRENDS_TOOL = {
+  name: 'trends_google',
+  description: "Google's trending searches for the last day (public RSS feed, free, no search fee, no login): each rising search with its approximate traffic and the news headlines behind it. Use it to see whether a meme, phrase or moment born on TikTok or Instagram is breaking into general search; a phrase that is here and in a fresh TikTok roundup is real. Then verify it on Etsy with etsy_search.",
+  input_schema: { type: 'object', properties: { geo: { type: 'string', description: 'two-letter country code, default US' }, limit: { type: 'integer', description: `how many searches, 1 to ${MAX_ITEMS}, default ${MAX_ITEMS}` } } },
+};
+export const MEMES_TOOL = {
+  name: 'trends_memes',
+  description: "What is popular in memes right now, from two public databases (free, no login): Imgflip's most-used meme templates (name, how many captions each has had, and the template image link) and the top posts of the week in meme subreddits (title, score, comments, link, and the image link when the post is a picture). A scout may save an image into the owner's memez folder with source_save (it is kept as reference: someone's work, so the designers may make a draft from it that the owner sees, but it is never sold as it is). Learn which formats and jokes are hot, then make your own phrase and your own art; Know Your Meme (knowyourmeme.com/memes/popular) can be read with web_fetch for a meme's history.",
+  input_schema: { type: 'object', properties: { source: { type: 'string', enum: ['imgflip', 'reddit', 'both'], description: 'default both' }, subreddit: { type: 'string', description: `one subreddit without r/, default ${MEME_SUBS.join(', ')} together` }, period: { type: 'string', enum: ['day', 'week', 'month'], description: 'for reddit, default week' }, limit: { type: 'integer', minimum: 1, maximum: 50 } } },
+};
+// ---------- trademark check: USPTO's public search, from this PC; a check that cannot run is a warning, never a block ----------
+const TMSEARCH = 'https://tmsearch.uspto.gov/api-v1-0-0/tmsearch';
+export const TRADEMARK_TOOL = {
+  name: 'trademark_check',
+  description: "Check a phrase against US trademarks (USPTO's public trademark search, read from the owner's PC). Returns live marks that match the words, with their classes and goods; class 25 (clothing) matters most for shirts. When USPTO cannot be reached, it says unchecked: then flag the phrase 'TM unchecked' in your notes and carry on; it never blocks the task. Free.",
+  input_schema: { type: 'object', properties: { phrase: { type: 'string', description: 'the exact words to check, e.g. "oh look"' } }, required: ['phrase'] },
+};
+const tmQuery = (phrase) => ({ query: { bool: { must: [{ bool: { should: [{ query_string: { query: `wordmark:"${phrase.replace(/["\\]/g, ' ')}"`, default_operator: 'AND' } }] } }] } }, size: 25, _source: ['wordmark', 'alive', 'statusDescription', 'statusCode', 'internationalClass', 'goodsAndServices', 'serialNumber', 'registrationId', 'ownerName', 'filedDate'] });
+export async function trademarkCheck(input, deps = {}) {
+  const phrase = String(input?.phrase || '').trim().slice(0, 80);
+  if (!phrase) throw new Error('Give the phrase to check.');
+  const manual = `https://tmsearch.uspto.gov/search/search-results?query=${encodeURIComponent(phrase)}`;
+  const f = deps.fetch ?? globalThis.fetch;
+  let data;
+  try {
+    const r = await f(TMSEARCH, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json', 'user-agent': UA, referer: 'https://tmsearch.uspto.gov/search/search-results' }, body: JSON.stringify(tmQuery(phrase)), signal: AbortSignal.timeout(20_000) });
+    if (!r.ok) throw new Error(`USPTO answered ${r.status}`);
+    data = await r.json();
+  } catch (e) {
+    return { phrase, checked: false, warning: `TM unchecked: ${String(e.message || e).slice(0, 120)}. Flag it and carry on; the owner can look it up at the link before saying Yes.`, manual };
+  }
+  const hits = (data?.hits?.hits || []).map((h) => h._source || {}).map((m) => ({ mark: String(m.wordmark || '').slice(0, 120), live: m.alive === true || /live|registered|pending/i.test(String(m.statusDescription || '')), status: String(m.statusDescription || m.statusCode || '').slice(0, 60), classes: [].concat(m.internationalClass || []).map(String).slice(0, 8), goods: String([].concat(m.goodsAndServices || []).join('; ')).slice(0, 200), owner: String([].concat(m.ownerName || []).join(', ')).slice(0, 80), serial: m.serialNumber ?? null }));
+  const live = hits.filter((m) => m.live);
+  const clothing = live.filter((m) => m.classes.some((c) => /(^|\D)0?25(\D|$)/.test(c)) || /cloth|shirt|apparel|t-shirt/i.test(m.goods));
+  return { phrase, checked: true, total: hits.length, live: live.length, clothing: clothing.length, verdict: clothing.length ? 'RISK: a live mark covers clothing; do not sell this phrase' : live.length ? 'caution: live marks exist outside clothing; fine for a joke on a shirt unless it copies their brand' : 'clear: no live mark found for these words', marks: live.slice(0, 10), manual };
+}
+export const TREND_TOOLS = [GOOGLE_TRENDS_TOOL, MEMES_TOOL, TRADEMARK_TOOL];
+/** The trend tools this PC offers: the public ones always, Instagram and Pinterest once the owner connected them. */
+export function trendTools(conn = trendsPublic()) {
+  return [...TREND_TOOLS, ...(conn.instagram?.configured ? [INSTAGRAM_TOOL] : []), ...(conn.pinterest?.configured ? [PINTEREST_TOOL] : [])];
+}
+/** What the app may see about trend sources: which are connected, never a token. */
+export function trendsPublic() {
+  return { google: true, memes: true, instagram: instagramPublic(), pinterest: pinterestPublic() };
+}
+
+/** How agents may look at TikTok and Instagram trends: public pages only, and how each one is reached. */
+export const TREND_SOURCES = `TRENDS (TikTok, Instagram and the rest): the owner wants TikTok and Instagram trends checked for design ideas, and you may do that from public sources only: never log in to a social site, never use the owner's accounts, never a scraper or a scraping service. TikTok's Creative Center (free and public at ads.tiktok.com/business/creativecenter) and Pinterest Trends only render in a browser, so web_fetch returns nothing from them; get TikTok trends through web_search for this week's roundups (for example "TikTok trending hashtags this week", "TikTok trends this month", "trending TikTok sounds this week", "TikTok Creative Center top hashtags" with the month and year, and TikTok's own newsroom and Creative Center articles that appear in results) and read the two freshest with web_fetch. Instagram has no public trend page and its hashtag API needs a Meta developer app the owner has not set up, so Instagram trends come from the same kind of weekly roundups (Later, Hootsuite, Sprout Social, Buffer and others publish them) and from press coverage. trends_google (free, no search fee) shows what is breaking into general search right now, with the news behind each search; a phrase that is there and in a fresh TikTok roundup is real. Then measure it with etsy_search: how many listings already use the phrase, their prices and favorites; a trend with real search and few listings is the opportunity, one with thousands of listings is late. Date every trend (first seen, source), treat anything older than four weeks as fading. MEME DATABASES: trends_memes shows the meme templates most used on Imgflip right now and the top posts of the week in meme subreddits (titles, scores and links only), and Know Your Meme's pages (knowyourmeme.com/memes/popular, or one meme's page) can be read with web_fetch for a meme's history and whether it is still alive. A template or a post is a format to learn from; its image may be saved to the owner's memez folder with source_save as reference, drafted on, but never sold as it is. PINTEREST: Pinterest Trends and pin pages also render only in a browser and Pinterest's API needs a developer app the owner has not set up, so use Pinterest through web_search (add "pinterest" to a query: which styles, phrases and products recur) for inspiration only; a pin is someone else's work, never copy one.`;
+/** TREND_SOURCES plus what the owner connected: Instagram's hashtag search, Pinterest's trends and pin search. */
+export function trendSources(conn = trendsPublic()) {
+  return `${TREND_SOURCES}${conn.instagram?.configured ? ` INSTAGRAM CONNECTED: trends_instagram reads the owner's own Instagram account (action account: followers and post count; my_posts: the owner's own posts with captions, likes and comments)${conn.instagram.hashtags ? ` and searches a hashtag (action hashtag) for the top posts' captions, counts and links (30 different hashtags a week${conn.instagram.hashtagsLeft != null ? `, ${conn.instagram.hashtagsLeft} left` : ''})` : '; hashtag search is not available on this token, so Instagram trends come from web search of fresh roundups'}; the pictures stay where they are.` : ''}${conn.pinterest?.configured ? ` PINTEREST CONNECTED: trends_pinterest gives Pinterest\'s trending keywords by region (growing, monthly, yearly, seasonal), a pin search and find (a specific meme by its words) that return titles, descriptions, links and pin ids for ideas, never the images${conn.pinterest.canSave ? `, and save/unsave: a found pin may be kept on the owner\'s secret "${conn.pinterest.board || 'memez'}" board so it is not lost, and removed from it later; its info is written to the memez folder. That board is the only thing the app ever writes to on any social account` : ''}.` : ''}`;
+}
+
+/** What a design may and may not use, so nothing the owner lists is copied or trademarked. */
+export const COPYRIGHT_RULES = `ORIGINAL ONLY: a design the owner lists must be your own work. Never copy a meme image, a character, a logo, a brand, a celebrity's name or likeness, song lyrics or another seller's design; a meme format or a trend may inspire an original phrase and original art, nothing more. Before you build on a phrase, run trademark_check on it and drop it if a live mark covers clothing (class 25) or a known brand owns it; say in the design's title that you checked. If trademark_check says unchecked, flag the phrase "TM unchecked" in your notes and the design's title and carry on: the owner sees the flag before saying Yes. A design uses only memes the owner picked Yes on in memez, or their own files; a meme or post from Pinterest, Reddit or Imgflip in memez is reference, so a design on it is a flagged draft for the owner to review, never listed as it is.`;
+
+/** True when a task (or its agent) is about trends, memes or social video, so the brief explains the sources. */
+export const trendTask = (task, agentName = '') => /\btrend|tiktok|tik tok|instagram|\breels?\b|viral|meme|hashtag|short.?video|what.?s selling|what sells/i.test(`${task?.title || ''} ${task?.detail || ''} ${agentName || ''}`);
+
+const unescape = (t) => String(t || '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").trim();
+const tag = (xml, name) => { const m = xml.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`)); return m ? unescape(m[1]) : ''; };
+
+/** The items of a Google Trends RSS feed: title, approximate traffic, when, and the news behind each. */
+export function parseTrendsRss(xml) {
+  const items = [];
+  for (const m of String(xml || '').matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const it = m[1];
+    const news = [...it.matchAll(/<ht:news_item>([\s\S]*?)<\/ht:news_item>/g)].map((n) => ({ title: tag(n[1], 'ht:news_item_title'), source: tag(n[1], 'ht:news_item_source'), url: tag(n[1], 'ht:news_item_url') })).filter((n) => n.title).slice(0, 3);
+    const title = tag(it, 'title');
+    if (title) items.push({ title, traffic: tag(it, 'ht:approx_traffic') || null, published: tag(it, 'pubDate') || null, news });
+  }
+  return items;
+}
+
+/** Google's trending searches for a country, from the public feed. */
+export async function googleTrends(input = {}, deps = {}) {
+  const f = deps.fetch ?? globalThis.fetch;
+  const geo = /^[A-Za-z]{2}$/.test(input?.geo || '') ? input.geo.toUpperCase() : 'US';
+  const limit = Math.min(MAX_ITEMS, Math.max(1, Number(input?.limit) || MAX_ITEMS));
+  const r = await f(`${GOOGLE_TRENDS}?geo=${geo}`, { headers: { 'user-agent': 'the-brain/1.0 (trend research for the owner; reads the public feed once per task)' } });
+  if (!r.ok) throw new Error(`Google Trends answered ${r.status}`);
+  const items = parseTrendsRss(await r.text()).slice(0, limit);
+  return { source: `Google Trends daily trending searches, ${geo}`, url: `${GOOGLE_TRENDS}?geo=${geo}`, fetchedAt: new Date().toISOString(), items };
+}
+
+
+/** Run one of the trend tools for an agent; the result is text for the model. */
+const SUB = /^[A-Za-z0-9_]{2,21}$/;
+/** Imgflip's most-used templates and the week's top posts in meme subreddits: names, counts, links, and image links for saving to memez (reference). */
+export async function popularMemes(input = {}, deps = {}) {
+  const f = deps.fetch ?? globalThis.fetch;
+  const source = ['imgflip', 'reddit'].includes(input.source) ? input.source : 'both';
+  const limit = Math.max(1, Math.min(50, Number(input.limit) || 25));
+  const out = { note: 'Formats and jokes to learn from. An image may be saved to the memez folder with source_save (licence "unknown (someone\'s work)"): the designers can draft on it, the owner sees the draft, and it is never sold as it is.' };
+  if (source !== 'reddit') {
+    try {
+      const r = await f(IMGFLIP, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(15_000) });
+      const data = await r.json();
+      if (!r.ok || !data?.success) throw new Error(`HTTP ${r.status}`);
+      out.imgflip = (data.data?.memes || []).slice(0, limit).map((m) => ({ template: m.name, captions: m.captions ?? null, text_boxes: m.box_count ?? null, image: /^https:\/\/i\.imgflip\.com\//.test(m.url || '') ? m.url : null, page: `https://imgflip.com/memegenerator/${m.id}` }));
+    } catch (e) { out.imgflip_error = `Imgflip did not answer (${e.message}).`; }
+  }
+  if (source !== 'imgflip') {
+    const subs = input.subreddit ? [String(input.subreddit).replace(/^r\//, '')] : MEME_SUBS;
+    const period = ['day', 'week', 'month'].includes(input.period) ? input.period : 'week';
+    const posts = [], errors = [];
+    for (const sub of subs) {
+      if (!SUB.test(sub)) { errors.push(`${sub}: not a subreddit name`); continue; }
+      try {
+        const r = await f(`${REDDIT}/r/${sub}/top.json?t=${period}&limit=${Math.min(limit, 50)}&raw_json=1`, { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(15_000) });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        for (const c of data?.data?.children || []) { const d = c.data || {}; if (d.over_18) continue; const image = d.post_hint === 'image' && /^https:\/\/(i\.redd\.it|i\.imgur\.com)\/[\w-]+\.(png|jpe?g)$/i.test(d.url || '') ? d.url : null; posts.push({ subreddit: sub, title: String(d.title || '').slice(0, 200), score: d.score ?? null, comments: d.num_comments ?? null, at: d.created_utc ? new Date(d.created_utc * 1000).toISOString() : null, link: d.permalink ? `${REDDIT}${d.permalink}` : null, ...(image ? { image } : {}) }); }
+      } catch (e) { errors.push(`r/${sub}: ${e.message}`); }
+    }
+    out.reddit = posts.sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, limit);
+    if (errors.length) out.reddit_errors = errors;
+  }
+  return out;
+}
+
+export async function runTrendTool(name, input, deps = {}) {
+  try {
+    if (name === GOOGLE_TRENDS_TOOL.name) return { content: JSON.stringify(await googleTrends(input, deps)), isError: false };
+    if (name === MEMES_TOOL.name) return { content: JSON.stringify(await popularMemes(input, deps)), isError: false };
+    if (name === TRADEMARK_TOOL.name) return { content: JSON.stringify(await trademarkCheck(input, deps)), isError: false };
+    if (name === INSTAGRAM_TOOL.name) return { content: JSON.stringify(await instagramTool(input, deps.instagram ?? {})), isError: false };
+    if (name === PINTEREST_TOOL.name) return { content: JSON.stringify(await pinterestTool(input, deps.pinterest ?? {})), isError: false };
+    return { content: `Unknown trend tool ${name}`, isError: true };
+  } catch (e) { return { content: `Trends: ${e.message}`, isError: true }; }
+}

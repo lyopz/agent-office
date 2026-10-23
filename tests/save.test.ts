@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { LocalStorageRepository, SaveError } from '../src/persistence/repository';
 import { STORAGE_KEYS } from '../src/persistence/backends';
 import { checkEnvelope, checksumOf, inspectSave, serializeBody, wrapEnvelope } from '../src/persistence/saveFormat';
-import { sampleOffice } from '../src/model/sample';
+import { creatorBrain as sampleOffice } from '../src/model/sample';
 import { emptyRuntime } from '../src/engine/simulation';
 import type { OfficeDoc, RuntimeState } from '../src/model/types';
 

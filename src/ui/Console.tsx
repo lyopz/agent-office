@@ -1,134 +1,137 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, CornerDownLeft, TerminalSquare } from 'lucide-react';
-import { useStore } from '../store/store';
-import { getProvider, providerStatus } from '../ai/providers';
-import { EXAMPLES, type Plan } from '../ai/parser';
+import { ChevronDown, ChevronUp, CornerDownLeft, Ear, EarOff, Maximize2, Mic, MicOff, Minimize2, TerminalSquare } from 'lucide-react';
+import { useOrigin } from '../brain/useOrigin';
+import { askOrigin, giveTask } from '../brain/originLink';
+import { canListen, listen, onWake, say, setWake, setWakePref, stopListening, wakePref, wakeSupported } from './voice';
 
-type Entry =
-  | { id: number; type: 'user'; text: string }
-  | { id: number; type: 'info'; text: string }
-  | { id: number; type: 'error'; text: string }
-  | { id: number; type: 'clarify'; text: string; options: { label: string; command: string }[] }
-  | { id: number; type: 'plan'; plan: Extract<Plan, { kind: 'plan' }>; summary: string[]; conflicts: string[]; state: 'pending' | 'applied' | 'cancelled' };
+/** The main agent's own name; older runners still answer as ORIGIN. */
+const isLeader = (by?: string | null) => !by || by === 'JARVIS' || by === 'ORIGIN';
+
+type Entry = { id: number; type: 'user' | 'answer' | 'error'; text: string; meta?: string };
 
 let nextId = 1;
-type NewEntry = Entry extends infer E ? (E extends Entry ? Omit<E, 'id'> : never) : never;
 
+/**
+ * The console is a direct line to JARVIS. Ask: a question answered right away by
+ * the best-suited agent (one short model call on the same key and cap). Task: work
+ * for JARVIS, approved by your words; it becomes JARVIS's focus, ahead of creating
+ * agents or its own tasks, and starts right away.
+ */
 export function Console() {
-  // starts folded so the brain and taskbar get the room; the choice is remembered on this device
+  // starts folded so the brain gets the room; the choice is remembered on this device
   const [open, setOpenState] = useState(() => { try { return localStorage.getItem('agent-office:console-open') === '1'; } catch { return false; } });
   const setOpen = (v: boolean) => { setOpenState(v); try { localStorage.setItem('agent-office:console-open', v ? '1' : '0'); } catch { /* storage unavailable */ } };
+  // the log can be made tall to read back through earlier answers; also remembered
+  const [big, setBigState] = useState(() => { try { return localStorage.getItem('agent-office:console-big') === '1'; } catch { return false; } });
+  const setBig = (v: boolean) => { setBigState(v); try { localStorage.setItem('agent-office:console-big', v ? '1' : '0'); } catch { /* storage unavailable */ } };
   const [text, setText] = useState('');
+  // Ask a question, or give a task; remembered on this device
+  const [mode, setModeState] = useState<'ask' | 'task'>(() => { try { return localStorage.getItem('agent-office:console-mode') === 'task' ? 'task' : 'ask'; } catch { return 'ask'; } });
+  const setMode = (v: 'ask' | 'task') => { setModeState(v); try { localStorage.setItem('agent-office:console-mode', v); } catch { /* storage unavailable */ } };
   const [busy, setBusy] = useState(false);
-  const [entries, setEntries] = useState<Entry[]>([{ id: 0, type: 'info', text: 'AI command console. Describe a change in plain English; I build a structured plan, validate it, and preview geometry changes before applying. Type “help” for examples.' }]);
+  const [entries, setEntries] = useState<Entry[]>([]);
   const [history, setHistory] = useState<string[]>([]);
   const [hIdx, setHIdx] = useState(-1);
-  const lastAgent = useRef<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
-  const prefs = useStore((s) => s.prefs);
-  const status = providerStatus(prefs.aiProvider);
-  const add = (e: NewEntry) => setEntries((xs) => [...xs, { ...e, id: nextId++ } as Entry]);
-  const patchEntry = (id: number, p: Partial<Entry>) => setEntries((xs) => xs.map((x) => (x.id === id ? ({ ...x, ...p } as Entry) : x)));
-  useEffect(() => { logRef.current?.scrollTo({ top: 1e6 }); }, [entries]);
+  const status = useOrigin((s) => s.status);
+  const checked = useOrigin((s) => s.checked);
+  const focus = status?.tasks.find((t) => t.status === 'approved' && t.focus);
+  const task = focus ?? status?.tasks.find((t) => t.status === 'approved' && t.kind !== 'skill-file') ?? status?.tasks.find((t) => t.status === 'approved');
+  const add = (e: Omit<Entry, 'id'>) => setEntries((xs) => [...xs, { ...e, id: nextId++ }]);
+  useEffect(() => { logRef.current?.scrollTo({ top: 1e6 }); }, [entries, busy]);
 
-  const apply = (entryId: number, plan: Extract<Plan, { kind: 'plan' }>, force = false) => {
-    const s = useStore.getState();
-    let ok = true;
-    if (plan.ops.length) {
-      const r = s.commit(plan.ops, plan.label, { force, silent: true });
-      ok = r.ok;
-      if (!ok) {
-        if (r.errors.length) add({ type: 'error', text: `Not applied: ${r.errors[0]}` });
-        else { s.setUi({ conflict: null }); add({ type: 'error', text: `Not applied: ${r.conflicts.map((c) => c.message).join('; ')}. Use “Apply anyway” to accept the warnings.` }); }
-        return;
-      }
-    }
-    const out = plan.runtimeOps.length ? s.runRuntimeOps(plan.runtimeOps) : [];
-    s.setUi({ preview: null });
-    patchEntry(entryId, { state: 'applied' } as Partial<Entry>);
-    if (out.length) add({ type: 'info', text: out.join('\n') });
+  // show the last few questions from the runner's log once, so the console survives a reload
+  const loaded = useRef(false);
+  useEffect(() => {
+    if (loaded.current || !status?.asks?.length) return;
+    loaded.current = true;
+    setEntries(status.asks.slice(0, 10).reverse().flatMap((a) => [{ id: nextId++, type: 'user' as const, text: a.q }, { id: nextId++, type: 'answer' as const, text: a.a, meta: isLeader(a.by) ? undefined : `answered by ${a.by}` }]));
+  }, [status]);
+
+  // the mic: speak, and it is sent at once in the current mode; spoken questions get their answer read aloud
+  const [listening, setListening] = useState(false);
+  const mic = async () => {
+    if (listening) { stopListening(); return; }
+    setListening(true);
+    try {
+      const heard = await listen();
+      if (heard.ok) await run(heard.text, true);
+      else add({ type: 'error', text: heard.error });
+    } finally { setListening(false); }
   };
 
-  const run = async (cmd: string) => {
-    const command = cmd.trim();
-    if (!command) return;
-    setHistory((h) => [command, ...h].slice(0, 50)); setHIdx(-1);
-    add({ type: 'user', text: command });
-    const s = useStore.getState();
-    const provider = getProvider(s.prefs.aiProvider);
+  // Hey JARVIS: say it and the mic opens by itself; JARVIS stops talking first. Remembered on this device.
+  const [wake, setWakeState] = useState(() => wakeSupported() && wakePref());
+  const listeningRef = useRef(false); listeningRef.current = listening;
+  const micRef = useRef(mic); micRef.current = mic;
+  useEffect(() => {
+    if (!wake) return;
+    let alive = true;
+    void setWake(true).then((err) => { if (err && alive) { add({ type: 'error', text: err }); setWakeState(false); } });
+    const off = onWake(() => { if (!listeningRef.current) void micRef.current(); }, (msg) => { if (alive) { add({ type: 'error', text: msg }); setWakeState(false); } });
+    return () => { alive = false; off(); void setWake(false); };
+  }, [wake]);
+  const toggleWake = () => { const on = !wake; setWakePref(on); setWakeState(on); };
+
+  const run = async (q: string, spoken = false) => {
+    const question = q.trim();
+    if (!question || busy) return;
+    setHistory((h) => [question, ...h].slice(0, 50)); setHIdx(-1); setText('');
+    add({ type: 'user', text: question });
     setBusy(true);
-    const idle = Object.entries(s.runtime.agents).filter(([, r]) => r.status === 'idle').map(([id]) => id);
-    let plan: Plan;
-    try { plan = await provider.plan(command, { doc: s.doc, selection: s.selection, idleAgentIds: idle, lastAgentId: lastAgent.current }); }
-    finally { setBusy(false); }
-    if (plan.kind === 'clarify') { add({ type: 'clarify', text: plan.question, options: plan.options }); return; }
-    if (plan.kind === 'unsupported') {
-      add({ type: plan.alternatives.length ? 'info' : 'error', text: plan.message });
-      if (plan.alternatives.length) add({ type: 'clarify', text: 'Closest supported commands:', options: plan.alternatives.map((a) => ({ label: a, command: a })) });
-      return;
-    }
-    const agentRef = plan.ops.find((o) => o.op === 'agent.update') as { id: string } | undefined;
-    if (agentRef) lastAgent.current = agentRef.id;
-    if (!plan.ops.length && !plan.runtimeOps.length) { add({ type: 'info', text: plan.explanation.join('\n') || 'Nothing to change.' }); return; }
-    const dry = plan.ops.length ? s.dryRun(plan.ops) : { ok: true, summary: [], errors: [], conflicts: [], doc: s.doc };
-    if (!dry.ok) { add({ type: 'error', text: `That change can't be applied: ${dry.errors[0]}` }); return; }
-    const id = nextId;
-    add({ type: 'plan', plan, summary: [...new Set([...plan.explanation, ...dry.summary])], conflicts: dry.conflicts.map((c) => c.message), state: 'pending' });
-    const safe = !plan.needsConfirm && !dry.conflicts.length && s.prefs.autoApplySafe;
-    if (safe || (!plan.ops.length && !plan.needsConfirm)) { setTimeout(() => apply(id, plan), 0); return; }
-    s.setUi({ preview: { doc: dry.doc!, ops: plan.ops, runtimeOps: plan.runtimeOps, label: plan.label, summary: dry.summary, issues: dry.conflicts, source: 'ai' } });
+    try {
+      if (mode === 'task') {
+        const t = await giveTask(question);
+        if (!t) add({ type: 'error', text: "JARVIS's runner isn't running. Open the desktop app (or npm.cmd run origin)." });
+        else if (!t.ok) add({ type: 'error', text: t.reason });
+        else add({ type: 'answer', text: `Got it. This is JARVIS's focus now, ahead of everything else${t.task.count ? `: ${t.task.count} items, each sent to you to approve or reject one by one under Focus in JARVIS runs` : ''}. ${t.started ? 'Working on it now.' : 'It starts as soon as the current run ends.'}`, meta: 'task approved' });
+        return;
+      }
+      const r = await askOrigin(question);
+      if (!r) add({ type: 'error', text: "JARVIS's runner isn't running. Start it on your PC with npm.cmd run origin." });
+      else if (!r.ok) add({ type: 'error', text: r.reason });
+      else { if (spoken) say(r.answer); add({ type: 'answer', text: r.answer, meta: [isLeader(r.by) ? '' : `answered by ${r.by}`, r.costUsd == null ? 'cost unknown' : `$${r.costUsd.toFixed(4)}`, r.approved?.length ? `approved: ${r.approved.join('; ')}${r.started ? ' · started' : ''}` : '', r.skills && (r.skills.files.length || r.skills.bank.length) ? `writing ${[r.skills.files.length ? `${r.skills.files.length} SKILL.md file${r.skills.files.length === 1 ? '' : 's'}` : '', r.skills.bank.length ? `skills: ${r.skills.bank.join(', ')}` : ''].filter(Boolean).join(' and ')}${r.skills.unknown.length ? ` (not found: ${r.skills.unknown.join(', ')})` : ''}` : ''].filter(Boolean).join(' · ') }); }
+    } finally { setBusy(false); }
   };
 
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !busy) { run(text); setText(''); }
+    if (e.key === 'Enter') void run(text);
     if (e.key === 'ArrowUp' && history.length) { const i = Math.min(history.length - 1, hIdx + 1); setHIdx(i); setText(history[i]); e.preventDefault(); }
     if (e.key === 'ArrowDown') { const i = hIdx - 1; setHIdx(i); setText(i >= 0 ? history[i] : ''); e.preventDefault(); }
   };
 
+  const badge = !checked ? { kind: 'sim', label: 'checking' } : !status ? { kind: 'off', label: 'runner off' } : !status.configured ? { kind: 'off', label: 'no API key' } : { kind: 'live', label: status.running ? 'JARVIS working' : 'JARVIS live' };
+
   return (
-    <section className={`console${open ? '' : ' collapsed'}`} aria-label="AI command console">
+    <section className={`console${open ? (big ? ' big' : '') : ' collapsed'}`} aria-label="Command center">
       <div className="panel-h" style={{ position: 'static' }}>
-        <TerminalSquare size={14} /><span className="grow">AI Command Console</span>
-        <span className={`badge ${status.kind}`} title={status.detail}>{status.label}</span>
+        <TerminalSquare size={14} /><span className="grow" title="Your question goes to the agent best suited to it. Name an agent to ask it directly.">Command center{task ? <span className="muted"> · {focus ? 'focus' : 'working on'}: {task.title}</span> : null}</span>
+        {status && <span className="small muted" title="Spent this month on the API, and today">${status.spentUsd.toFixed(2)} of ${status.capUsd} · today ${(status.spentTodayUsd ?? 0).toFixed(2)}</span>}
+        {listening && <span className="badge live" role="status" aria-live="polite"><Mic size={11} /> Listening…</span>}
+        <span className={`badge ${badge.kind}`}>{badge.label}</span>
+        {open && <button className="btn icon sm ghost" aria-label={big ? 'Make the chat log smaller' : 'Make the chat log bigger'} title={big ? 'Smaller' : 'Bigger'} onClick={() => setBig(!big)}>{big ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>}
         <button className="btn icon sm ghost" aria-label={open ? 'Collapse console' : 'Expand console'} onClick={() => setOpen(!open)}>{open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}</button>
       </div>
       {open && (
         <>
           <div className="console-log" ref={logRef} aria-live="polite">
-            {entries.map((e) => {
-              if (e.type === 'user') return <div key={e.id} className="u">{e.text}</div>;
-              if (e.type === 'info' || e.type === 'error') return <div key={e.id} className={e.type === 'info' ? 'a' : 'err'}>{e.text}</div>;
-              if (e.type === 'clarify') return (
-                <div key={e.id} className="q">{e.text}
-                  <div className="row wrap" style={{ marginTop: 4 }}>{e.options.map((o) => <button key={o.label} className="btn sm" onClick={() => run(o.command)}>{o.label}</button>)}</div>
-                </div>
-              );
-              return (
-                <div key={e.id} className="plan">
-                  <div className="row"><b className="grow" style={{ color: 'var(--accent-blue)' }}>{e.plan.label}</b>
-                    <span className="small muted">{e.plan.ops.length} op(s){e.plan.runtimeOps.length ? ` + ${e.plan.runtimeOps.length} action(s)` : ''}</span></div>
-                  <ol>{e.summary.map((x, i) => <li key={i}>{x}</li>)}</ol>
-                  {e.conflicts.length > 0 && <div className="err">Validation warnings: {e.conflicts.join('; ')}</div>}
-                  <details><summary className="small muted">Structured operations</summary><pre className="small" style={{ whiteSpace: 'pre-wrap', maxHeight: 160, overflow: 'auto' }}>{JSON.stringify([...e.plan.ops, ...e.plan.runtimeOps], null, 1)}</pre></details>
-                  {e.state === 'pending' && (
-                    <div className="row" style={{ marginTop: 4 }}>
-                      <button className="btn sm primary" onClick={() => apply(e.id, e.plan)}>Apply{e.plan.ops.some((o) => o.op.startsWith('room') || o.op.startsWith('corridor')) ? ' (preview shown in blue)' : ''}</button>
-                      {e.conflicts.length > 0 && <button className="btn sm danger" onClick={() => apply(e.id, e.plan, true)}>Apply anyway</button>}
-                      <button className="btn sm" onClick={() => { useStore.getState().setUi({ preview: null }); patchEntry(e.id, { state: 'cancelled' } as Partial<Entry>); }}>Cancel</button>
-                    </div>
-                  )}
-                  {e.state === 'applied' && <div className="small" style={{ color: 'var(--accent)' }}>✓ Applied · undo with Ctrl+Z</div>}
-                  {e.state === 'cancelled' && <div className="small muted">Cancelled — nothing changed</div>}
-                </div>
-              );
-            })}
-            {busy && <div className="muted">thinking…</div>}
+            {entries.map((e) => (
+              <div key={e.id} className={e.type === 'user' ? 'u' : e.type === 'answer' ? 'a' : 'err'}>
+                {e.text}{e.meta && <span className="small muted"> · {e.meta}</span>}
+              </div>
+            ))}
+            {busy && <div className="muted">{mode === 'task' ? 'Giving JARVIS the task…' : 'JARVIS is answering…'}</div>}
           </div>
-          <div className="suggestions">{EXAMPLES.slice(0, 4).map((x) => <button key={x} className="chip" style={{ cursor: 'pointer' }} onClick={() => setText(x)}>{x}</button>)}</div>
           <div className="console-input">
+            <div className="seg" role="group" aria-label="Ask a question or give a task">
+              <button className="btn sm" aria-pressed={mode === 'ask'} onClick={() => setMode('ask')} title="A question: answered right away by the best-suited agent">Ask</button>
+              <button className="btn sm" aria-pressed={mode === 'task'} onClick={() => setMode('task')} title="Work: JARVIS's focus until done, starting now">Task</button>
+            </div>
             <span className="prompt">&gt;</span>
-            <input id="console-input" type="text" value={text} placeholder="e.g. Move the server room beside the research lab and widen the hallway  (press / to focus)" onChange={(e) => setText(e.target.value)} onKeyDown={onKey} aria-label="AI command" disabled={busy} />
-            <button className="btn sm primary" disabled={busy || !text.trim()} onClick={() => { run(text); setText(''); }}><CornerDownLeft size={13} />Run</button>
+            <input id="console-input" type="text" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} aria-label={mode === 'task' ? 'Task for JARVIS' : 'Question for your agents'} placeholder={mode === 'task' ? 'A task for JARVIS, e.g. make 5 items for my Etsy store' : 'Ask anything. It goes to the best-suited agent, or name one.'} disabled={busy} />
+            {wakeSupported() && <button className={`btn sm${wake ? ' primary' : ''}`} aria-pressed={wake} onClick={toggleWake} aria-label={wake ? 'Turn Hey JARVIS off' : 'Turn Hey JARVIS on'} title={wake ? 'Hey JARVIS is on: say it and JARVIS listens. Press to turn off.' : 'Hey JARVIS: listen for that phrase so you can talk without pressing Speak.'}>{wake ? <Ear size={13} /> : <EarOff size={13} />}{wake ? 'Hey JARVIS on' : 'Hey JARVIS'}</button>}
+            {canListen() && <button className={`btn sm${listening ? ' danger' : ''}`} disabled={busy && !listening} onClick={() => void mic()} aria-label={listening ? 'Stop listening' : 'Speak to JARVIS'} title={listening ? 'Listening… press to stop' : 'Speak to JARVIS. It is sent when you stop talking, and an answer is read aloud.'}>{listening ? <MicOff size={13} /> : <Mic size={13} />}{listening ? 'Listening…' : 'Speak'}</button>}
+            <button className="btn sm primary" disabled={busy || !text.trim()} onClick={() => void run(text)}><CornerDownLeft size={13} />{mode === 'task' ? 'Do it' : 'Ask'}</button>
           </div>
         </>
       )}

@@ -1,23 +1,34 @@
 'use strict';
-// Desktop shell for Neural Command Campus.
+// Desktop app for The Brain. It also starts ORIGIN's runner (server/origin-runner.mjs) in the
+// background, so one double-click on the desktop shortcut is all it takes. Run from the app
+// folder, it also keeps itself current: when new code lands in the folder it rebuilds and
+// reloads, restarts the runner (between runs) when the runner changed, and relaunches itself
+// when the desktop shell changed. No PowerShell needed after the first setup.
 //
 // Security posture: the window runs the built app from a private `app://campus/` scheme (or, for
 // development, the local Vite server named by OFFICE_DEV_SERVER_URL). The renderer has no Node:
 // contextIsolation on, nodeIntegration off, sandbox on, a strict Content-Security-Policy, all
-// permission requests denied except notifications, navigation away from the app blocked, and
+// permission requests denied except notifications and the app's own microphone, navigation away from the app blocked, and
 // new windows refused (http/https links open in the system browser instead). The preload exposes
 // only `window.officeDesktop.saves`, whose file IO happens here with fixed file names under
 // <userData>/saves. No environment variables or secrets are passed to the renderer.
 const { app, BrowserWindow, ipcMain, protocol, session, shell, Menu } = require('electron');
+const { spawn, execFile } = require('node:child_process');
+const http = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs');
 const { createSaveStore } = require('./saveStore.cjs');
 
-const APP_NAME = 'Neural Command Campus';
+const APP_NAME = 'The Brain';
+// saves from before the rename live under this name; they are copied over once
+const OLD_APP_NAME = 'Neural Command Campus';
 const SCHEME = 'app';
 const HOST = 'campus';
 const APP_ORIGIN = `${SCHEME}://${HOST}`;
-const DIST = path.resolve(__dirname, '..', 'dist');
+const ROOT = path.resolve(__dirname, '..');
+const DIST = path.join(ROOT, 'dist');
+const RUNNER = path.join(ROOT, 'server', 'origin-runner.mjs');
+const RUNNER_PORT = Number(process.env.ORIGIN_PORT || 8788);
 
 /** Only a local Vite dev server may be loaded instead of the built files. */
 function devServerUrl() {
@@ -91,8 +102,12 @@ function serveApp() {
   });
 }
 
+// Node reports the origin of a custom scheme such as app:// as "null", so compare scheme and host instead.
 const isAppUrl = (raw) => {
-  try { const o = new URL(raw).origin; return o === APP_ORIGIN || (DEV_ORIGIN !== null && o === DEV_ORIGIN); } catch { return false; }
+  try {
+    const u = new URL(raw);
+    return (u.protocol === `${SCHEME}:` && u.host === HOST) || (DEV_ORIGIN !== null && u.origin === DEV_ORIGIN);
+  } catch { return false; }
 };
 const openExternally = (raw) => {
   try { const u = new URL(raw); if (u.protocol === 'https:' || u.protocol === 'http:') void shell.openExternal(u.toString()); } catch { /* ignore */ }
@@ -106,8 +121,145 @@ function hardenSession() {
       done({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [DEV_CSP] } });
     });
   }
-  ses.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'notifications'));
-  ses.setPermissionCheckHandler((_wc, permission) => permission === 'notifications');
+  // the microphone (audio only, never the camera) for talking to JARVIS, and only for the app itself
+  const micOnly = (details) => Array.isArray(details?.mediaTypes) && details.mediaTypes.length > 0 && details.mediaTypes.every((t) => t === 'audio');
+  ses.setPermissionRequestHandler((_wc, permission, done, details) => done(permission === 'notifications' || (permission === 'media' && micOnly(details) && isAppUrl(details?.requestingUrl ?? ''))));
+  ses.setPermissionCheckHandler((_wc, permission, origin, details) => permission === 'notifications' || (permission === 'media' && details?.mediaType === 'audio' && isAppUrl(origin || '')));
+}
+
+/** Saves made before the app was renamed: copy them into the new data folder once, never over newer ones. */
+function adoptOldSaves() {
+  const now = path.join(app.getPath('userData'), 'saves');
+  const old = path.join(app.getPath('appData'), OLD_APP_NAME, 'saves');
+  try {
+    if (fs.existsSync(path.join(now, 'current.json')) || !fs.existsSync(old)) return;
+    fs.mkdirSync(now, { recursive: true });
+    for (const f of fs.readdirSync(old)) if (f.endsWith('.json')) fs.copyFileSync(path.join(old, f), path.join(now, f));
+  } catch (e) { console.warn(`Could not copy the old saves: ${e && e.message}`); }
+}
+
+// Run a Node script with Electron's own Node, so nothing else needs to be installed.
+const runNode = (script, args, opts) => spawn(process.execPath, [script, ...args], { ...opts, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', ...(opts && opts.env) }, windowsHide: true });
+
+/** Newest modification time under a folder (or of a file). */
+function newest(p) {
+  try {
+    const st = fs.statSync(p);
+    if (!st.isDirectory()) return st.mtimeMs;
+    return fs.readdirSync(p).reduce((m, f) => Math.max(m, newest(path.join(p, f))), 0);
+  } catch { return 0; }
+}
+
+/** From the app folder (not an installed copy), rebuild dist/ when the source is newer than the last build. */
+function buildIfStale() {
+  const vite = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
+  if (app.isPackaged || DEV_ORIGIN || !fs.existsSync(vite)) return Promise.resolve(true);
+  const built = newest(path.join(DIST, 'index.html'));
+  const source = Math.max(newest(path.join(ROOT, 'src')), newest(path.join(ROOT, 'public')), newest(path.join(ROOT, 'index.html')));
+  if (built && built >= source) return Promise.resolve(true);
+  const splash = new BrowserWindow({ width: 420, height: 160, frame: false, resizable: false, backgroundColor: '#03060b', show: true, webPreferences: { sandbox: true, contextIsolation: true } });
+  void splash.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent('<body style="margin:0;display:grid;place-items:center;height:100vh;background:#03060b;color:#9beaff;font:15px system-ui">Updating The Brain…</body>')}`);
+  return new Promise((resolve) => {
+    const child = runNode(vite, ['build'], { cwd: ROOT, stdio: 'ignore' });
+    child.on('exit', (code) => { splash.destroy(); resolve(code === 0 || fs.existsSync(path.join(DIST, 'index.html'))); });
+    child.on('error', () => { splash.destroy(); resolve(fs.existsSync(path.join(DIST, 'index.html'))); });
+  });
+}
+
+/** The runner's status, or null when nothing answers on its port. */
+function runnerStatus() {
+  return new Promise((resolve) => {
+    const req = http.get({ host: '127.0.0.1', port: RUNNER_PORT, path: '/api/origin/status', timeout: 2000 }, (res) => {
+      let body = ''; res.setEncoding('utf8');
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve({}); } });
+    });
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('error', () => resolve(null));
+  });
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Wait until the runner is between runs, so a restart never cuts a run short. */
+async function runnerIdle() {
+  for (;;) { const st = await runnerStatus(); if (!st || !st.running) return; await sleep(15_000); }
+}
+
+/** Windows: the process listening on the runner's port (a runner started by hand), if any. */
+function portOwner() {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') return resolve(null);
+    execFile('netstat', ['-ano', '-p', 'tcp'], { windowsHide: true }, (err, out) => {
+      if (err) return resolve(null);
+      const line = String(out).split(/\r?\n/).find((l) => new RegExp(`127\\.0\\.0\\.1:${RUNNER_PORT}\\s.*LISTENING`).test(l));
+      const pid = line ? Number(line.trim().split(/\s+/).pop()) : NaN;
+      resolve(Number.isInteger(pid) && pid > 0 ? pid : null);
+    });
+  });
+}
+
+let runner = null;
+/** Start ORIGIN's runner in the background. The app owns it, so it can restart it when its code changes:
+ *  a runner already on the port (started by hand) is stopped first, between runs, to avoid two on one port. */
+async function startRunner() {
+  if (!fs.existsSync(RUNNER)) return;
+  if (await runnerStatus()) {
+    await runnerIdle();
+    const pid = await portOwner();
+    if (pid && pid !== process.pid) { try { process.kill(pid); } catch { /* gone already */ } await sleep(1000); }
+    if (await runnerStatus()) return; // still answering (not Windows, or not ours to stop): use it as it is
+  }
+  // from the app folder the runner keeps its state in <app folder>/origin-data, as with npm run origin
+  const dataDir = app.isPackaged ? path.join(app.getPath('userData'), 'origin-data') : path.join(ROOT, 'origin-data');
+  fs.mkdirSync(dataDir, { recursive: true });
+  const log = fs.openSync(path.join(dataDir, 'runner.log'), 'a');
+  const child = runNode(RUNNER, [], { cwd: app.isPackaged ? dataDir : ROOT, stdio: ['ignore', log, log], env: { ORIGIN_DATA_DIR: dataDir } });
+  runner = child;
+  child.on('exit', () => { if (runner === child) runner = null; try { fs.closeSync(log); } catch { /* closed */ } });
+}
+function stopRunner() {
+  const child = runner; runner = null;
+  if (!child) return Promise.resolve();
+  return new Promise((resolve) => { child.once('exit', () => resolve()); try { child.kill(); } catch { resolve(); } setTimeout(resolve, 3000); });
+}
+async function restartRunner() { await runnerIdle(); await stopRunner(); await sleep(500); await startRunner(); }
+
+/** Rebuild dist/ in the background (no splash); resolves true when the build succeeded. */
+function rebuild() {
+  const vite = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
+  return new Promise((resolve) => {
+    const child = runNode(vite, ['build'], { cwd: ROOT, stdio: 'ignore' });
+    child.on('exit', (code) => resolve(code === 0));
+    child.on('error', () => resolve(false));
+  });
+}
+
+/** Watch the app folder: new code is built and shown, a changed runner restarts, a changed shell relaunches. */
+function watchForUpdates() {
+  if (app.isPackaged || DEV_ORIGIN || !fs.existsSync(path.join(ROOT, 'node_modules', 'vite'))) return;
+  const changed = new Set();
+  let timer = null; let busy = false;
+  const apply = async () => {
+    if (busy) { timer = setTimeout(apply, 3000); return; }
+    busy = true;
+    const kinds = new Set(changed); changed.clear();
+    try {
+      if (kinds.has('app') && await rebuild()) for (const w of BrowserWindow.getAllWindows()) w.webContents.reloadIgnoringCache();
+      if (kinds.has('shell')) { await stopRunner(); app.relaunch(); app.quit(); return; }
+      if (kinds.has('runner')) await restartRunner();
+    } finally { busy = false; }
+  };
+  const note = (kind) => (_event, file) => {
+    if (file && /(^|[\\/])(node_modules|dist|\.git)([\\/]|$)|\.(tmp|swp)$|~$/.test(String(file))) return;
+    changed.add(kind);
+    clearTimeout(timer); timer = setTimeout(apply, 4000); // files arrive in bursts: wait for the last one
+  };
+  const watch = (target, kind, recursive) => { try { fs.watch(target, { recursive }, note(kind)); } catch (e) { console.warn(`Not watching ${target}: ${e && e.message}`); } };
+  watch(path.join(ROOT, 'src'), 'app', true);
+  watch(path.join(ROOT, 'public'), 'app', true);
+  watch(path.join(ROOT, 'index.html'), 'app', false);
+  watch(path.join(ROOT, 'server'), 'runner', true);
+  watch(path.join(ROOT, 'desktop'), 'shell', true);
 }
 
 let saves = null;
@@ -127,8 +279,125 @@ function registerSaveIpc() {
   handle('saves:info', () => saves.info(), { dir: '', current: '', backup: '', hasCurrent: false, hasBackup: false, damaged: [] });
 }
 
+// Voice input: the mic button asks for one spoken phrase. Windows' built-in offline speech
+// recognition (desktop/listen.ps1) hears it and returns the text; one listen at a time.
+let listener = null;
+function registerVoiceIpc() {
+  const trusted = (event) => isAppUrl(event.senderFrame?.url ?? '');
+  // Hey JARVIS: a background listener for just that phrase (desktop/wake.ps1); each hit is sent to the window.
+  let waker = null;
+  const stopWake = () => { if (waker) { try { waker.kill(); } catch { /* gone */ } waker = null; } };
+  const pauseWake = () => { const was = !!waker; stopWake(); return was; };
+  const resumeWake = (sender) => { if (!waker && !sender.isDestroyed()) startWake(sender); };
+  ipcMain.handle('voice:wake', (event, on) => {
+    if (!trusted(event)) return { ok: false, error: 'Not allowed.' };
+    stopWake();
+    if (!on) return { ok: true };
+    return startWake(event.sender);
+  });
+  function startWake(sender) {
+    if (process.platform !== 'win32') return { ok: false, error: 'Hey JARVIS needs Windows.' };
+    const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'wake.ps1')], { windowsHide: true });
+    waker = ps;
+    let rest = '';
+    ps.stdout.on('data', (d) => {
+      rest += d.toString('utf8');
+      const lines = rest.split(/\r?\n/); rest = lines.pop() || '';
+      for (const line of lines.map((l) => l.trim()).filter(Boolean)) {
+        if (sender.isDestroyed()) return stopWake();
+        if (line === 'WAKE') sender.send('voice:woke');
+        else if (line.startsWith('ERR')) sender.send('voice:wake-error', line === 'ERR NOMIC' ? "Hey JARVIS can't find a microphone." : line === 'ERR NORECOGNIZER' ? 'Hey JARVIS needs Windows speech recognition (Settings > Time & language > Speech).' : `Hey JARVIS stopped: ${line.slice(4)}`);
+      }
+    });
+    ps.on('close', () => { if (waker === ps) waker = null; });
+    return { ok: true };
+  }
+  app.on('before-quit', stopWake);
+  ipcMain.handle('voice:listen', (event) => new Promise((resolve) => {
+    if (!trusted(event)) return resolve({ ok: false, error: 'Not allowed.' });
+    if (process.platform !== 'win32') return resolve({ ok: false, error: 'Voice input in the desktop app needs Windows.' });
+    if (listener) { try { listener.kill(); } catch { /* already gone */ } }
+    const wakeWas = pauseWake(); // one microphone listener at a time; Hey JARVIS resumes after
+    const done = (r) => { if (wakeWas) resumeWake(event.sender); resolve(r); };
+    let out = '';
+    const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'listen.ps1')], { windowsHide: true });
+    listener = ps;
+    const timer = setTimeout(() => { try { ps.kill(); } catch { /* gone */ } }, 40000);
+    ps.stdout.on('data', (d) => { out += d.toString('utf8'); });
+    ps.on('error', (e) => { clearTimeout(timer); if (listener === ps) listener = null; done({ ok: false, error: `Couldn't start speech recognition: ${e.message}` }); });
+    ps.on('close', () => {
+      clearTimeout(timer); if (listener === ps) listener = null;
+      const line = out.trim().split(/\r?\n/).pop() || '';
+      if (line.startsWith('OK ')) done({ ok: true, text: line.slice(3).trim() });
+      else if (line === 'NONE' || !line) done({ ok: false, error: "Didn't catch that. Press the mic and speak again." });
+      else if (line === 'ERR NORECOGNIZER') done({ ok: false, error: 'Windows has no speech recognition installed. Add it in Windows Settings > Time & language > Language & region: open English (United States) > Language options and install Speech, then try again.' });
+      else if (line === 'ERR NOMIC') done({ ok: false, error: "Windows can't find a microphone. Plug one in or set a default one in Windows Settings > System > Sound > Input, and turn on Settings > Privacy & security > Microphone > Let desktop apps access your microphone." });
+      else done({ ok: false, error: `Speech recognition failed: ${line.replace(/^ERR /, '') || 'no answer from Windows'}. Check Windows Settings > Privacy & security > Microphone > Let desktop apps access your microphone.` });
+    });
+  }));
+  // Piper: a free offline neural voice engine with natural voices (npm.cmd run get-voices puts it in
+  // %LOCALAPPDATA%\the-brain\piper). Text in, WAV out, nothing leaves the PC.
+  const piperDir = path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'the-brain', 'piper');
+  const piperExe = path.join(piperDir, 'piper', process.platform === 'win32' ? 'piper.exe' : 'piper');
+  const voiceDir = path.join(piperDir, 'voices');
+  // Kokoro: a much more natural free offline voice, run with the PC's own Node (kokoro-js needs
+  // Node's native onnxruntime, which Electron's Node can't load). One long-lived child, JSON lines.
+  const kokoroScript = path.join(ROOT, 'server', 'kokoro-say.mjs');
+  const kokoroCache = path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'the-brain', 'kokoro');
+  const KOKORO_VOICES = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'af_sky', 'af_nova', 'af_jessica', 'af_kore', 'af_aoede', 'af_river', 'af_alloy', 'am_michael', 'am_adam', 'am_eric', 'am_liam', 'am_onyx', 'am_echo', 'am_fenrir', 'am_puck', 'am_santa', 'bm_george', 'bm_daniel', 'bm_lewis', 'bm_fable', 'bf_emma', 'bf_isabella', 'bf_alice', 'bf_lily'];
+  const kokoroReady = () => { try { return fs.existsSync(path.join(ROOT, 'node_modules', 'kokoro-js')) && fs.readdirSync(kokoroCache).length > 0; } catch { return false; } };
+  let kokoro = null, kokoroPending = new Map(), kokoroId = 0, kokoroBuf = '';
+  const stopKokoro = () => { if (kokoro) { try { kokoro.kill(); } catch { /* gone */ } kokoro = null; } for (const p of kokoroPending.values()) p({ ok: false, error: 'Kokoro stopped.' }); kokoroPending.clear(); };
+  const startKokoro = () => {
+    if (kokoro) return kokoro;
+    const ps = spawn(process.platform === 'win32' ? 'node.exe' : 'node', [kokoroScript], { windowsHide: true, cwd: ROOT, env: { ...process.env, ORIGIN_KOKORO_DIR: kokoroCache } });
+    kokoro = ps; kokoroBuf = '';
+    ps.stdout.on('data', (d) => {
+      kokoroBuf += d.toString('utf8');
+      const lines = kokoroBuf.split(/\r?\n/); kokoroBuf = lines.pop() || '';
+      for (const line of lines) { let m; try { m = JSON.parse(line); } catch { continue; } const p = kokoroPending.get(m.id); if (p) { kokoroPending.delete(m.id); p(m); } }
+    });
+    ps.stderr.on('data', (d) => { const t = d.toString('utf8'); if (/error|failed/i.test(t)) console.warn(`kokoro: ${t.trim().slice(0, 300)}`); });
+    ps.on('error', (e) => { console.warn(`Kokoro didn't start: ${e.message}`); if (kokoro === ps) stopKokoro(); });
+    ps.on('close', () => { if (kokoro === ps) stopKokoro(); });
+    return ps;
+  };
+  const kokoroSay = (text, voice) => new Promise((resolve) => {
+    if (!kokoroReady()) return resolve({ ok: false, error: 'Kokoro voices are not downloaded yet. Run npm.cmd run get-voices once.' });
+    const ps = startKokoro();
+    const id = ++kokoroId;
+    const timer = setTimeout(() => { if (kokoroPending.delete(id)) resolve({ ok: false, error: 'Kokoro took too long.' }); }, 120000);
+    kokoroPending.set(id, (m) => { clearTimeout(timer); resolve(m.ok ? { ok: true, audio: m.wav, mime: 'audio/wav' } : { ok: false, error: m.error || 'Kokoro failed.' }); });
+    try { ps.stdin.write(`${JSON.stringify({ id, text: String(text || ''), voice: KOKORO_VOICES.includes(voice) ? voice : 'am_michael' })}\n`); }
+    catch (e) { clearTimeout(timer); kokoroPending.delete(id); resolve({ ok: false, error: `Kokoro isn't answering: ${e.message}` }); }
+  });
+  app.on('before-quit', stopKokoro);
+  const piperVoices = () => { try { return fs.existsSync(piperExe) ? fs.readdirSync(voiceDir).filter((f) => f.endsWith('.onnx') && fs.existsSync(path.join(voiceDir, `${f}.json`))).map((f) => f.slice(0, -5)).sort() : []; } catch { return []; } };
+  // voice names are namespaced: "kokoro:am_michael" or "piper:en_GB-alan-medium"
+  ipcMain.handle('voice:voices', (event) => (trusted(event) ? [...(kokoroReady() ? KOKORO_VOICES.map((v) => `kokoro:${v}`) : []), ...piperVoices().map((v) => `piper:${v}`)] : []));
+  ipcMain.handle('voice:say', (event, text, name) => new Promise((resolve) => {
+    if (!trusted(event)) return resolve({ ok: false, error: 'Not allowed.' });
+    const [engine, ...rest] = String(name || '').split(':'); const want = rest.join(':');
+    if (engine === 'kokoro' || (!want && kokoroReady())) return kokoroSay(text, want).then(resolve);
+    const voices = piperVoices();
+    const pick = voices.includes(want) ? want : voices[0];
+    if (!pick) return resolve({ ok: false, error: 'No offline voices yet. Run npm.cmd run get-voices once.' });
+    const out = path.join(app.getPath('temp'), `jarvis-${process.pid}-${Date.now()}.wav`);
+    const ps = spawn(piperExe, ['--model', path.join(voiceDir, `${pick}.onnx`), '--output_file', out], { windowsHide: true, cwd: path.dirname(piperExe) });
+    const timer = setTimeout(() => { try { ps.kill(); } catch { /* gone */ } }, 60000);
+    ps.on('error', (e) => { clearTimeout(timer); resolve({ ok: false, error: `Piper didn't start: ${e.message}` }); });
+    ps.on('close', () => {
+      clearTimeout(timer);
+      try { const wav = fs.readFileSync(out); fs.rmSync(out, { force: true }); resolve({ ok: true, audio: wav.toString('base64'), mime: 'audio/wav' }); }
+      catch { resolve({ ok: false, error: 'Piper made no audio.' }); }
+    });
+    ps.stdin.end(String(text || '').replace(/\s+/g, ' ').slice(0, 3000), 'utf8');
+  }));
+  ipcMain.handle('voice:stop', (event) => { if (trusted(event) && listener) { try { listener.kill(); } catch { /* gone */ } listener = null; } return true; });
+}
+
 function createWindow() {
-  const icon = path.resolve(__dirname, '..', 'build', 'icon.png');
+  const icon = path.join(ROOT, 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
   const win = new BrowserWindow({
     title: APP_NAME,
     width: 1440,
@@ -164,6 +433,9 @@ function createWindow() {
 }
 
 app.setName(APP_NAME);
+// saves live in <AppData>/The Brain/saves, whatever folder or copy the app was started from
+app.setPath('userData', path.join(app.getPath('appData'), APP_NAME));
+if (process.platform === 'win32') app.setAppUserModelId('app.thebrain.desktop');
 // one window, one writer: a second launch focuses the first instead of racing it on the save files
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -173,14 +445,20 @@ if (!app.requestSingleInstanceLock()) {
     contents.on('will-navigate', (e, url) => { if (!isAppUrl(url)) e.preventDefault(); });
     contents.setWindowOpenHandler(({ url }) => { openExternally(url); return { action: 'deny' }; });
   });
-  app.whenReady().then(() => {
-    if (!DEV_ORIGIN && !fs.existsSync(path.join(DIST, 'index.html'))) console.warn('dist/index.html is missing: run `npm run build` first (or use `npm run desktop`).');
+  app.whenReady().then(async () => {
     if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
+    adoptOldSaves();
+    void startRunner();
+    await buildIfStale();
+    if (!DEV_ORIGIN && !fs.existsSync(path.join(DIST, 'index.html'))) console.warn('dist/index.html is missing: run `npm run build` first (or use `npm run desktop`).');
     serveApp();
     hardenSession();
     registerSaveIpc();
+    registerVoiceIpc();
     createWindow();
+    watchForUpdates();
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+  app.on('will-quit', () => { void stopRunner(); });
 }

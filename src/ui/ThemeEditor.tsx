@@ -1,10 +1,10 @@
 // Interface theme editor: dark/light/system, presets, every colour token with
 // hex input, contrast checks, before/after preview, save, duplicate, import,
-// export and restore. Room palettes restyle chosen rooms independently.
+// export and restore.
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store/store';
-import type { OfficeColors, ThemeDef, ThemeTokens } from '../model/types';
-import { BUILTIN_THEMES, ROOM_PALETTES, activeTheme, contrastIssues, parseHex, resolveMode, themeVars } from '../model/themes';
+import type { ThemeDef, ThemeTokens } from '../model/types';
+import { BUILTIN_THEMES, activeTheme, contrastIssues, parseHex, resolveMode, themeVars } from '../model/themes';
 import { saveFile } from '../persistence/saveFile';
 import { uid } from '../model/defaults';
 
@@ -12,7 +12,6 @@ const TOKEN_LABEL: Record<keyof ThemeTokens, string> = {
   bg: 'Primary background', bg2: 'Secondary background', panel: 'Panels', accent: 'Primary accent', accent2: 'Secondary accent', text: 'Text',
   border: 'Borders', selection: 'Selection', success: 'Success', warning: 'Warning', error: 'Error', highlight: 'Highlight / focus',
 };
-const OFFICE_LABEL: Record<keyof OfficeColors, string> = { floor: 'Floor', wall: 'Walls', door: 'Doors', corridor: 'Corridors', lighting: 'Lighting' };
 
 export function usePrefersDark() {
   const q = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
@@ -27,7 +26,7 @@ export function useApplyTheme() {
   const prefersDark = usePrefersDark();
   useEffect(() => {
     const t = activeTheme(ap); const mode = resolveMode(ap.mode, prefersDark);
-    const vars = themeVars(t[mode], t.office[mode], mode);
+    const vars = themeVars(t[mode], mode);
     const root = document.documentElement;
     for (const [k, v] of Object.entries(vars)) { if (k === 'color-scheme') root.style.colorScheme = v; else root.style.setProperty(k, v); }
     root.dataset.theme = mode;
@@ -48,25 +47,23 @@ function Swatch({ label, value, onChange }: { label: string; value: string; onCh
 }
 
 function Preview({ theme, mode, label }: { theme: ThemeDef; mode: 'dark' | 'light'; label: string }) {
-  const vars = themeVars(theme[mode], theme.office[mode], mode) as Record<string, string>;
+  const vars = themeVars(theme[mode], mode) as Record<string, string>;
   const style = Object.fromEntries(Object.entries(vars).filter(([k]) => k.startsWith('--'))) as React.CSSProperties;
   return (
     <figure className="theme-preview" style={{ ...style, background: 'var(--bg)', color: 'var(--text)' }}>
       <figcaption>{label}</figcaption>
       <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', padding: 8, display: 'grid', gap: 6 }}>
-        <div style={{ color: 'var(--accent)', fontWeight: 700 }}>NEXUS HQ</div>
+        <div style={{ color: 'var(--accent)', fontWeight: 700 }}>THE BRAIN</div>
         <div style={{ color: 'var(--muted)', fontSize: 11 }}>Secondary text</div>
         <div className="row" style={{ gap: 4 }}>
           <span style={{ border: '1px solid var(--accent)', color: 'var(--accent)', padding: '1px 6px', fontSize: 11 }}>Button</span>
           <span style={{ color: 'var(--warn)', fontSize: 11 }}>warning</span><span style={{ color: 'var(--danger)', fontSize: 11 }}>error</span><span style={{ color: 'var(--success)', fontSize: 11 }}>ok</span>
         </div>
         <svg viewBox="0 0 120 50" width="100%" height={50} aria-hidden>
-          <rect x={6} y={6} width={50} height={38} fill="var(--floor-grid)" stroke="var(--wall)" strokeWidth={3} />
-          <rect x={56} y={20} width={40} height={10} fill="var(--hall-floor)" />
-          <rect x={96} y={6} width={18} height={38} fill="var(--floor-grid)" stroke="var(--wall)" strokeWidth={3} />
-          <rect x={53} y={20} width={6} height={10} fill="var(--door)" />
-          <rect x={14} y={14} width={16} height={8} fill="var(--panel-3)" stroke="var(--accent)" strokeOpacity={0.5} />
-          <circle cx={40} cy={32} r={4} fill="#d9772b" /><circle cx={105} cy={25} r={4} fill="#4cc9ff" />
+          <ellipse cx={60} cy={26} rx={30} ry={18} fill="var(--panel-3)" stroke="var(--accent)" strokeOpacity={0.6} strokeWidth={1.5} />
+          <path d="M60 8 C 52 18, 68 34, 60 44 M 36 20 C 48 22, 50 30, 40 36 M 84 20 C 72 22, 70 30, 80 36" fill="none" stroke="var(--accent)" strokeOpacity={0.5} />
+          <line x1={90} y1={26} x2={110} y2={12} stroke="var(--accent2, var(--accent-blue))" /><line x1={90} y1={26} x2={112} y2={38} stroke="var(--accent2, var(--accent-blue))" />
+          <circle cx={110} cy={12} r={3.5} fill="var(--accent2, var(--accent-blue))" /><circle cx={112} cy={38} r={3.5} fill="var(--accent2, var(--accent-blue))" /><circle cx={60} cy={26} r={4} fill="var(--accent)" />
         </svg>
       </div>
     </figure>
@@ -75,8 +72,6 @@ function Preview({ theme, mode, label }: { theme: ThemeDef; mode: 'dark' | 'ligh
 
 export function ThemeEditor() {
   const ap = useStore((s) => s.doc.appearance);
-  const rooms = useStore((s) => s.doc.rooms);
-  const sel = useStore((s) => s.selection);
   const { commit, notify } = useStore.getState();
   const prefersDark = usePrefersDark();
   const current = activeTheme(ap);
@@ -85,10 +80,8 @@ export function ThemeEditor() {
   const [editMode, setEditMode] = useState<'dark' | 'light'>(resolveMode(ap.mode, prefersDark));
   const issues = useMemo(() => contrastIssues(draft[editMode]), [draft, editMode]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(current);
-  const [roomIds, setRoomIds] = useState<string[]>(sel.kind === 'room' ? sel.ids : []);
 
   const setTok = (k: keyof ThemeTokens, v: string) => setDraft((d) => ({ ...d, [editMode]: { ...d[editMode], [k]: v } }));
-  const setOff = (k: keyof OfficeColors, v: string) => setDraft((d) => ({ ...d, office: { ...d.office, [editMode]: { ...d.office[editMode], [k]: v } } }));
   const apply = () => { const t = draft.builtin && dirty ? { ...draft } : draft; commit([{ op: 'theme.upsert', theme: t }, { op: 'appearance.update', patch: { themeId: t.id } }], `Apply theme ${t.name}`); };
   const saveAs = () => { const t: ThemeDef = { ...JSON.parse(JSON.stringify(draft)), id: uid('theme'), name: `${draft.name.replace(/ \(custom\)$/, '')} (custom)`, builtin: false }; commit([{ op: 'theme.upsert', theme: t }, { op: 'appearance.update', patch: { themeId: t.id } }], `Save theme ${t.name}`); };
   const restore = () => { const b = BUILTIN_THEMES.find((x) => x.id === draft.id); if (b) { setDraft(JSON.parse(JSON.stringify(b))); commit([{ op: 'theme.upsert', theme: JSON.parse(JSON.stringify(b)) }], `Restore ${b.name}`); } else notify('Custom themes have no default; pick a preset instead', 'warn'); };
@@ -96,9 +89,9 @@ export function ThemeEditor() {
     try {
       const t = JSON.parse(await f.text()) as ThemeDef;
       const keys = Object.keys(TOKEN_LABEL) as (keyof ThemeTokens)[];
-      const valid = t && typeof t.name === 'string' && (['dark', 'light'] as const).every((m) => keys.every((k) => parseHex(String(t[m]?.[k] ?? ''))) && (Object.keys(OFFICE_LABEL) as (keyof OfficeColors)[]).every((k) => parseHex(String(t.office?.[m]?.[k] ?? ''))));
+      const valid = t && typeof t.name === 'string' && (['dark', 'light'] as const).every((m) => keys.every((k) => parseHex(String(t[m]?.[k] ?? ''))));
       if (!valid) { notify('That file is not a valid theme (every colour must be a hex value)', 'error'); return; }
-      const theme: ThemeDef = { id: uid('theme'), name: t.name.slice(0, 60), dark: t.dark, light: t.light, office: t.office };
+      const theme: ThemeDef = { id: uid('theme'), name: t.name.slice(0, 60), dark: t.dark, light: t.light };
       commit([{ op: 'theme.upsert', theme }, { op: 'appearance.update', patch: { themeId: theme.id } }], `Import theme ${theme.name}`);
     } catch { notify('Could not read that theme file', 'error'); }
   };
@@ -118,7 +111,7 @@ export function ThemeEditor() {
             </button>
           ))}
         </div>
-        <p className="note">Themes change the interface and default office surfaces. Characters keep their own colours in every theme.</p>
+        <p className="note">Themes change the interface. The brain keeps its own colours.</p>
       </div>
       <div className="card span-6">
         <h4>Before and after</h4>
@@ -141,24 +134,12 @@ export function ThemeEditor() {
           <button className="btn sm" disabled={!dirty} onClick={() => setDraft(JSON.parse(JSON.stringify(current)))}>Discard edits</button>
           {draft.builtin && <button className="btn sm" onClick={restore}>Restore default</button>}
           {!draft.builtin && <button className="btn sm danger" onClick={() => commit([{ op: 'theme.delete', id: draft.id }], `Delete ${draft.name}`)}>Delete</button>}
-          <button className="btn sm" onClick={() => saveFile(`${draft.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.theme.json`, JSON.stringify({ name: draft.name, dark: draft.dark, light: draft.light, office: draft.office }, null, 2))}>Export</button>
+          <button className="btn sm" onClick={() => saveFile(`${draft.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.theme.json`, JSON.stringify({ name: draft.name, dark: draft.dark, light: draft.light }, null, 2))}>Export</button>
           <label className="btn sm">Import<input type="file" accept="application/json,.json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) importTheme(f); e.target.value = ''; }} /></label>
         </div>
         <div className="grid-3">
           <div>{(Object.keys(TOKEN_LABEL) as (keyof ThemeTokens)[]).slice(0, 6).map((k) => <Swatch key={k} label={TOKEN_LABEL[k]} value={draft[editMode][k]} onChange={(v) => setTok(k, v)} />)}</div>
           <div>{(Object.keys(TOKEN_LABEL) as (keyof ThemeTokens)[]).slice(6).map((k) => <Swatch key={k} label={TOKEN_LABEL[k]} value={draft[editMode][k]} onChange={(v) => setTok(k, v)} />)}</div>
-          <div>{(Object.keys(OFFICE_LABEL) as (keyof OfficeColors)[]).map((k) => <Swatch key={k} label={OFFICE_LABEL[k]} value={draft.office[editMode][k]} onChange={(v) => setOff(k, v)} />)}</div>
-        </div>
-      </div>
-      <div className="card span-12">
-        <h4>Room palettes</h4>
-        <p className="note">Give individual rooms their own look, independent of the interface theme. Rooms set to “global colours” follow the theme.</p>
-        <div className="row wrap" style={{ marginBottom: 8 }}>
-          {Object.values(rooms).map((r) => <label key={r.id} className="chip-btn" aria-pressed={roomIds.includes(r.id)}><input type="checkbox" checked={roomIds.includes(r.id)} onChange={(e) => setRoomIds(e.target.checked ? [...roomIds, r.id] : roomIds.filter((x) => x !== r.id))} /> {r.name}{r.appearance.theme ? <span className="muted"> · {r.appearance.theme.split(' (')[0]}</span> : null}</label>)}
-        </div>
-        <div className="row wrap">
-          {ROOM_PALETTES.map((p) => <button key={p.id} className="btn sm" disabled={!roomIds.length} onClick={() => commit([{ op: 'room.applyPalette', roomIds, paletteId: p.id }], `Restyle ${roomIds.length} room(s)`)}><span className="dot" style={{ background: p.patch.accent }} />{p.name}</button>)}
-          <button className="btn sm" disabled={!roomIds.length} onClick={() => commit([{ op: 'room.applyPalette', roomIds, patch: { wallColor: '', floorColor: undefined, doorColor: undefined, displayColor: undefined, furnitureMaterial: 'default', lightTemp: 4500, effect: 'none', theme: '' } }], 'Use global colours')}>Use global colours</button>
         </div>
       </div>
     </div>

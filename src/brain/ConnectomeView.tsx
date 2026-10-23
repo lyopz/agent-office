@@ -1,12 +1,13 @@
-import { useMemo } from 'react';
-import { Activity, Network, Users } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ChevronDown, ChevronUp, Plus, Users } from 'lucide-react';
 import { create } from 'zustand';
 import { useStore } from '../store/store';
 import { teamsOf } from './connectome';
 import { AgentMenu } from './AgentMenu';
 import BrainSwitcher from './BrainSwitcher';
 import CreatorDesk from './CreatorDesk';
-import BrainScene from './BrainScene';
+import BrainScene, { brainAgents } from './BrainScene';
+import { JarvisCard, TaskTrack } from './JarvisCard';
 import '../styles/brain.css';
 
 /** Shared focus state for the brain, sector menu, and brain picker. */
@@ -14,30 +15,47 @@ export const useBrainFocus = create<{ teamId: string | null; agentId: string | n
 
 export default function ConnectomeView() {
   const agents = useStore((s) => s.doc.agents);
-  const departments = useStore((s) => s.doc.departments);
   const ideasCount = useStore((s) => Object.values(s.doc.library).filter((entry) => (entry.tags.includes('idea-review') || entry.tags.includes('idea')) && !entry.tags.some((t) => t.startsWith('grown:'))).length);
-  const teams = useMemo(() => teamsOf({ agents, departments }), [agents, departments]);
-  const running = useStore((s) => Object.values(s.runtime.agents).filter((agent) => ['working', 'researching', 'thinking', 'communicating'].includes(agent.status)).length);
-  const total = Object.keys(agents).length;
+  const teams = useMemo(() => teamsOf({ agents }), [agents]);
+  // counts cover the agents the brain shows: JARVIS and its branches
+  const shown = useMemo(() => brainAgents(agents), [agents]);
+  const shownIds = useMemo(() => shown.map((a) => a.id), [shown]);
+  // a specialist brain exists once JARVIS's branches include a skill agent for that skill
+  const specialists = useMemo(() => teamsOf({ agents: Object.fromEntries(shown.filter((a) => a.branch?.kind === 'skill').map((a) => [a.id, a])) }), [shown]);
+  const running = useStore((s) => shownIds.filter((id) => ['working', 'researching', 'thinking', 'communicating'].includes(s.runtime.agents[id]?.status ?? '')).length);
+  const total = shownIds.length;
   const activeTeamId = useBrainFocus((s) => s.selectedTeamId);
   const activeTeam = teams.find((team) => team.id === activeTeamId);
 
+  const dots = useMemo(() => shown.map((a) => teams.find((t) => t.agentIds.includes(a.id))?.color ?? '#5fb8ff'), [shown, teams]);
+  const [menuOpen, setMenuOpen] = useState(() => { try { return localStorage.getItem('brain:menu-open') === '1'; } catch { return false; } });
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const brainCount = useStore((s) => s.brains.length);
+  const toggleMenu = () => setMenuOpen((o) => { try { localStorage.setItem('brain:menu-open', o ? '0' : '1'); } catch { /* private window */ } return !o; });
+
   return <div className="brain-workspace">
-    <header className="brain-toolbar">
-      <BrainSwitcher teams={teams} agents={agents} totalAgents={total}/>
-      <div className="brain-title"><span className="brain-title-kicker">THE BRAIN <i/> LIVE SYSTEM</span><strong>{activeTeam ? `${activeTeam.name} Sector` : 'The Brain'}</strong><span>One connected workspace. Every specialist has a place in the network.</span></div>
-      <CreatorDesk />
-    </header>
-    <div className="brain-main">
-      <AgentMenu />
-      <section className="brain-stage-view" aria-label="Agent brain visualization">
-        <div className="brain-stage-glow" aria-hidden="true"/>
-        <div className="brain-hud brain-hud-top"><span><Network size={14}/> BRAIN MODEL <b>{total.toString().padStart(2, '0')} AGENTS</b></span><span>NERVES GROW FROM THE MAIN AGENT · {ideasCount} IDEAS</span></div>
-        <BrainScene/>
-        <div className="brain-hud brain-hud-bottom"><div><span className="brain-hud-icon"><Users size={15}/></span><span><b>{total} connected agents</b><small>Click a glowing bud to grow an idea into a branch</small></span></div><div className="brain-hud-divider"/><div><span className="brain-hud-icon pulse-icon"><Activity size={15}/></span><span><b>{running} active now</b><small>Drag the brain to view it from every angle</small></span></div></div>
-        {!total && <div className="brain-empty"><b>Your network starts here</b><span>Create a specialist to grow the first branch.</span></div>}
-      </section>
+    <section className="brain-stage-view" aria-label="Agent brain visualization">
+      <BrainScene/>
+      {!total && <div className="brain-empty"><b>Your network starts here</b><span>Create a specialist to grow the first branch.</span></div>}
+    </section>
+    <div className="brain-float brain-float-left">
+      <BrainSwitcher teams={specialists} agents={Object.fromEntries(shown.map((a) => [a.id, a]))} totalAgents={total} running={running} dots={dots}/>
+      <div className="brain-float-row">
+        <button className="brain-menu-toggle" aria-expanded={menuOpen} onClick={toggleMenu}><Users size={14}/> Branches, ideas and tasks {menuOpen ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}</button>
+        <button className="brain-menu-toggle" aria-expanded={adding} onClick={() => setAdding((a) => !a)} title="Add a brain to the ring: its own JARVIS and agents, with the skills this brain has learned"><Plus size={14}/> Add brain</button>
+      </div>
+      {adding && <form className="brain-add" onSubmit={(e) => { e.preventDefault(); const b = useStore.getState().addBrain(newName); if (b) { useStore.getState().notify(`Added the brain “${b.name}” to the ring. Click it to open it.`); setNewName(''); setAdding(false); } }}>
+        <input type="text" autoFocus value={newName} maxLength={60} placeholder={`Name, e.g. Music (or Brain ${brainCount + 2})`} aria-label="New brain name" onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setAdding(false); }} />
+        <button className="btn sm primary" type="submit"><Plus size={13}/> Add</button>
+      </form>}
+      {menuOpen && <AgentMenu />}
     </div>
+    <div className="brain-float brain-float-top" title={`${activeTeam ? `${activeTeam.name} Sector` : 'The Brain'}: JARVIS at the core. Every branch is one it grew. ${ideasCount} ideas.`}>
+      <CreatorDesk />
+    </div>
+    <div className="brain-float brain-float-right"><JarvisCard /><div id="brain-view-tools" /></div>
+    <div className="brain-float brain-float-bottom"><TaskTrack /></div>
   </div>;
 }
 

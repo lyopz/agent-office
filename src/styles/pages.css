@@ -1,0 +1,29 @@
+/* the Charts and Ads tabs */
+.charts .kpi-value { font: 650 26px/1.1 var(--font-sans); letter-spacing: -.03em; margin: 2px 0 4px; }
+.chart { margin: 0 0 10px; }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart .axis { stroke: var(--line); stroke-width: 1; }
+.chart .tick { fill: var(--muted); font: 500 10px var(--font-mono); }
+.chart .mark:hover { filter: brightness(1.25); }
+.chart figcaption { margin-top: 4px; color: var(--muted); font-size: var(--fs-xs); }
+.hbars { display: grid; gap: 8px; }
+.legend { display: flex; gap: 14px; color: var(--muted); font-size: var(--fs-xs); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+.hbar-row { display: grid; grid-template-columns: minmax(90px, 160px) 1fr; gap: 10px; align-items: center; }
+.hbar-name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-tracks { display: grid; gap: 3px; }
+.hbar-track { position: relative; height: 14px; background: rgba(255,255,255,.04); border-radius: 3px; display: flex; align-items: center; }
+.hbar-track i { display: block; height: 100%; min-width: 2px; border-radius: 3px; }
+.hbar-track span { margin-left: 6px; color: var(--muted); font: 500 10px var(--font-mono); white-space: nowrap; }
+.meter { display: grid; gap: 4px; margin-bottom: 10px; font-size: var(--fs-sm); }
+.meter .row { justify-content: space-between; }
+.meter-track { height: 8px; background: rgba(255,255,255,.05); border-radius: 999px; overflow: hidden; }
+.meter-track i { display: block; height: 100%; border-radius: 999px; }
+.ads .approval-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.ad-card .ad-text { margin: 0; white-space: pre-wrap; font-size: var(--fs-sm); }
+.ad-card .ad-script { white-space: pre-wrap; font: 500 11px/1.45 var(--font-mono); color: var(--muted); margin: 4px 0 0; }
+.ad-card details summary { cursor: pointer; color: var(--muted); }
+.design-sources { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+.design-sources ul ul { margin: 4px 0 0 12px; padding: 0; list-style: disc; }
+.design-sources input { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: rgba(255,255,255,.04); color: inherit; font-size: var(--fs-sm); }
+.approval-card .small.warn { color: var(--warn); display: inline-flex; gap: 4px; align-items: flex-start; }

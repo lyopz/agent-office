@@ -68,7 +68,7 @@ export function requestAction(doc: OfficeDoc, rt: RuntimeState, r: ActionRequest
   if (r.taskId && rt.tasks[r.taskId]) {
     rt.tasks[r.taskId] = { ...rt.tasks[r.taskId], status: 'waiting-approval' };
     const ar = rt.agents[r.agentId];
-    if (ar?.currentTaskId === r.taskId) { ar.currentTaskId = null; ar.status = 'waiting'; ar.statusMessage = 'Waiting for owner approval'; ar.path = []; ar.destination = null; }
+    if (ar?.currentTaskId === r.taskId) { ar.currentTaskId = null; ar.status = 'waiting'; ar.statusMessage = 'Waiting for owner approval'; }
   }
   const name = doc.agents[r.agentId]?.identity.name ?? r.agentId;
   log(rt, { kind: 'approval', agentId: r.agentId, simulated: false, level: 'warn', message: `${name} requests approval: ${r.action} — ${r.detail}` });

@@ -9,7 +9,7 @@ import { log } from './simulation';
 export interface AlertInput {
   key: string; severity: AlertSeverity; category: AlertCategory;
   title: string; description: string; recommended: string;
-  agentId?: string | null; projectId?: string | null; roomId?: string | null; taskId?: string | null; approvalId?: string | null;
+  agentId?: string | null; projectId?: string | null; taskId?: string | null; approvalId?: string | null;
   evidence?: Alert['evidence']; test?: boolean;
 }
 
@@ -95,7 +95,7 @@ export function raiseAlert(doc: OfficeDoc, rt: RuntimeState, input: AlertInput, 
     id: uid('alert'), key: input.key, severity: input.severity, category: input.category,
     title: input.title, description: input.description, recommended: input.recommended,
     firstAt: iso, lastAt: iso, count: 1,
-    agentId: input.agentId ?? null, projectId: input.projectId ?? null, roomId: input.roomId ?? null, taskId: input.taskId ?? null, approvalId: input.approvalId ?? null,
+    agentId: input.agentId ?? null, projectId: input.projectId ?? null, taskId: input.taskId ?? null, approvalId: input.approvalId ?? null,
     evidence: input.evidence ?? [], status: 'open',
     ackRequired: s.sounds[input.severity].ackRequired, escalationLevel: 0, lastNotifiedAt: iso,
     deliveries: [], test: input.test,

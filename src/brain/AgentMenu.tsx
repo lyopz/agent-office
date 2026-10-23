@@ -4,19 +4,21 @@
 // and search from here.
 import { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Pause, Play, Search, Send } from 'lucide-react';
+import { GitBranch, MessageSquarePlus, Pause, Play, Search, Send } from 'lucide-react';
+import { ORIGIN_ID } from './opportunity';
 import { useStore } from '../store/store';
 import type { AgentStatus } from '../model/types';
-import { STATUS_COLOR } from '../viewport/AgentsLayer';
+import { STATUS_COLOR } from './status';
 import { teamsOf } from './connectome';
 import { useBrainFocus } from './ConnectomeView';
 import { BranchMenu } from './BranchMenu';
+import { brainAgents } from './BrainScene';
+import { giveTask } from './agentWork';
 
 const BUSY: AgentStatus[] = ['working', 'researching', 'thinking', 'communicating'];
 
 export function AgentMenu() {
   const agents = useStore((s) => s.doc.agents);
-  const departments = useStore((s) => s.doc.departments);
   const selected = useStore((s) => (s.selection.kind === 'agent' ? s.selection.id : null));
   const selectedTeamId = useBrainFocus((s) => s.selectedTeamId);
   const live = useStore(useShallow((s) => {
@@ -30,28 +32,30 @@ export function AgentMenu() {
     }
     return out;
   }));
-  const teams = useMemo(() => teamsOf({ agents, departments }), [agents, departments]);
+  const teams = useMemo(() => teamsOf({ agents }), [agents]);
   const [view, setViewState] = useState<'branches' | 'teams'>(() => { try { return localStorage.getItem('brain:menu') === 'teams' ? 'teams' : 'branches'; } catch { return 'branches'; } });
   const setView = (v: 'branches' | 'teams') => { setViewState(v); try { localStorage.setItem('brain:menu', v); } catch { /* storage unavailable */ } };
   const [q, setQ] = useState('');
   const [task, setTask] = useState('');
   const [target, setTarget] = useState('');
   const match = (id: string) => { const a = agents[id]; return !q.trim() || `${a.identity.name} ${a.identity.title} ${a.identity.department}`.toLowerCase().includes(q.trim().toLowerCase()); };
-  const busy = Object.values(live).filter((v) => BUSY.includes(v.split('|')[0] as AgentStatus)).length;
-  const sorted = Object.values(agents).sort((a, b) => a.identity.name.localeCompare(b.identity.name));
+  // Branches shows JARVIS and the branches it grew; Teams still lists every agent
+  const inBrain = useMemo(() => new Set(brainAgents(agents).map((a) => a.id)), [agents]);
+  const sorted = Object.values(agents).filter((a) => view === 'teams' || inBrain.has(a.id)).sort((a, b) => a.identity.name.localeCompare(b.identity.name));
+  const busy = sorted.filter((a) => BUSY.includes((live[a.id] ?? '').split('|')[0] as AgentStatus)).length;
   const activeTeam = teams.find((t) => t.id === selectedTeamId);
   const shown = sorted.filter((a) => (view === 'branches' || !activeTeam || activeTeam.agentIds.includes(a.id)) && match(a.id));
   const to = target && shown.some((a) => a.id === target) ? target : shown.some((a) => a.id === selected) ? selected! : shown[0]?.id || '';
   const focus = (teamId: string | null, agentId: string | null = null) => useBrainFocus.setState({ teamId: teamId ?? selectedTeamId, agentId });
   const selectTeam = (teamId: string | null) => useBrainFocus.setState({ teamId, agentId: null, selectedTeamId: teamId, brainAgentId: null });
 
-  const give = () => {
-    const a = agents[to];
-    if (!a || !task.trim()) return;
-    const s = useStore.getState();
-    s.runRuntimeOps([{ op: 'task.create', agentId: a.id, name: task.trim(), roomId: a.schedule.assignedRoomId, workstationId: a.schedule.preferredWorkstationId, simulated: true }]);
-    s.notify(`Gave “${task.trim()}” to ${a.identity.name}`);
-    setTask('');
+  const [given, setGiven] = useState('');
+  // a task goes to JARVIS's runner, the only thing that does real work
+  const give = async () => {
+    if (!agents[to] || !task.trim()) return;
+    const r = await giveTask(useStore.getState().doc, to, task);
+    setGiven(r.message);
+    if (r.ok) setTask('');
   };
   const togglePause = (id: string) => {
     const a = agents[id];
@@ -97,6 +101,12 @@ export function AgentMenu() {
                           {taskName && <span className="am-progress" aria-hidden><i style={{ width: `${progress}%`, background: t.color }} /></span>}
                         </span>
                       </button>
+                      {(id === ORIGIN_ID || a.branch?.kind === 'venture') && <button className="am-pause am-grow" aria-label={id === ORIGIN_ID ? 'Start a venture branch' : `Add a skill to ${a.identity.name}`} title={id === ORIGIN_ID ? 'Start a venture branch' : 'Add a skill to this venture'} onClick={() => window.dispatchEvent(new CustomEvent('agent-office:open-creator', { detail: { tab: 'agent', parentId: id } }))}>
+                        <GitBranch size={12} />
+                      </button>}
+                      {a.branch?.kind === 'skill' && <button className="am-pause am-grow" aria-label={`Request a new skill from ${a.identity.name}'s venture`} title="Ask this agent's venture for a new skill agent" onClick={() => window.dispatchEvent(new CustomEvent('agent-office:open-creator', { detail: { tab: 'requests', fromId: id } }))}>
+                        <MessageSquarePlus size={12} />
+                      </button>}
                       <button className="am-pause" aria-label={a.enabled ? `Pause ${a.identity.name}` : `Resume ${a.identity.name}`} title={a.enabled ? 'Pause' : 'Resume'} onClick={() => togglePause(id)}>
                         {a.enabled ? <Pause size={12} /> : <Play size={12} />}
                       </button>
@@ -110,7 +120,7 @@ export function AgentMenu() {
         {!shown.length && <p className="muted small am-none">{q ? `No agent matches “${q}”.` : 'No agents are assigned to this sector yet.'}</p>}
         </>}
       </div>
-      <form className="am-give" onSubmit={(e) => { e.preventDefault(); give(); }}>
+      <form className="am-give" onSubmit={(e) => { e.preventDefault(); void give(); }}>
         <span className="label">Give a task</span>
         <select aria-label="Agent to give the task to" value={to} onChange={(e) => setTarget(e.target.value)}>
           {shown.map((a) => <option key={a.id} value={a.id}>{a.identity.name}</option>)}
@@ -119,6 +129,7 @@ export function AgentMenu() {
           <input value={task} onChange={(e) => setTask(e.target.value)} placeholder="What should they do?" aria-label="Task to give" />
           <button className="btn sm primary" disabled={!task.trim() || !to} aria-label="Give task"><Send size={13} /></button>
         </div>
+        {given && <p className="am-given" role="status">{given}</p>}
       </form>
     </aside>
   );

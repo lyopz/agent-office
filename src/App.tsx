@@ -1,71 +1,30 @@
 import { useEffect, useState } from 'react';
 import { useStore } from './store/store';
 import { TopBar } from './ui/TopBar';
-import { Toolbar } from './ui/Toolbar';
-import { AutoSortPanel } from './ui/AutoSort';
-import { useHqView } from './ui/HqSwitch';
-import { OverviewPanel } from './ui/OverviewPanel';
 import ConnectomeView from './brain/ConnectomeView';
-import { AgentGraphPow } from './brain/AgentGraphPow';
-import { AgentPanel } from './ui/AgentPanel';
-import { Inspector } from './ui/Inspector';
 import { Console } from './ui/Console';
 import { ProfileDrawer } from './ui/ProfileDrawer';
 import { Dashboard } from './ui/Dashboard';
 import { Settings } from './ui/Settings';
-import { Viewport } from './viewport/Viewport';
+import { Approvals } from './ui/Approvals';
+import { Charts } from './ui/Charts';
+import { Ads } from './ui/Ads';
+import BrainUniverse from './brain/UniverseView';
 import { ConfirmDialog } from './ui/primitives';
 import { useShortcuts } from './ui/actions';
-import { ObjectLibrary } from './ui/ObjectLibrary';
-import { PerfPanel } from './ui/PerfPanel';
 import { useApplyTheme } from './ui/ThemeEditor';
-import { useAlertDelivery } from './ui/AlertCenter';
-import { ExecutiveControl } from './ui/ExecutiveControl';
-import { ArcadeHost } from './ui/ArcadeHost';
-import { BriefingHost } from './ui/BriefingBoard';
 import { useAutosave } from './ui/SaveStatus';
 import { RecoveryDialog } from './ui/RecoveryDialog';
+import { NavDock } from './ui/NavDock';
 
-function useSimulationLoop() {
-  const running = useStore((s) => s.prefs.simRunning);
-  const speed = useStore((s) => s.prefs.simSpeed);
-  useEffect(() => {
-    if (!running) return;
-    const t = setInterval(() => useStore.getState().tick(), 100 / speed);
-    return () => clearInterval(t);
-  }, [running, speed]);
-}
-
-function ConflictDialog() {
-  const conflict = useStore((s) => s.conflict);
-  const { setUi, commit } = useStore.getState();
-  if (!conflict) return null;
-  const fixes = conflict.issues.filter((i) => i.fix);
-  return (
-    <div className="overlay">
-      <div className="modal" role="alertdialog" aria-modal="true" aria-labelledby="conflict-h">
-        <div className="panel-h" id="conflict-h" style={{ color: 'var(--danger)' }}>Change blocked: {conflict.label}</div>
-        <div className="modal-b">
-          <p className="note" style={{ fontSize: 'var(--fs-md)', color: 'var(--text)' }}>This change would create layout problems. Nothing has been applied yet.</p>
-          {conflict.issues.map((i) => <div key={i.id} className="issue error"><span className="ico">✕</span><span className="msg">{i.message}</span></div>)}
-        </div>
-        <div className="modal-f">
-          <button className="btn" onClick={() => setUi({ conflict: null })} autoFocus>Cancel change</button>
-          {fixes.length > 0 && <button className="btn primary" onClick={() => { const r = commit([...conflict.ops, ...fixes.flatMap((f) => f.fix!.ops)], `${conflict.label} (with fix)`); if (r.ok) setUi({ conflict: null }); }}>Apply with suggested fix: {fixes[0].fix!.label}</button>}
-          <button className="btn danger" onClick={() => commit(conflict.ops, conflict.label, { force: true })}>Apply anyway</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
+/** One line at a time. Only real events reach it: what you just did, and JARVIS's runner (see useOrigin). */
 function Toast() {
   const toast = useStore((s) => s.toast);
   const [shown, setShown] = useState<typeof toast>(null);
   useEffect(() => {
     if (!toast) return;
     setShown(toast);
-    const t = setTimeout(() => setShown(null), 3500);
+    const t = setTimeout(() => setShown(null), 5000);
     return () => clearTimeout(t);
   }, [toast]);
   if (!shown) return null;
@@ -73,61 +32,33 @@ function Toast() {
 }
 
 export function App() {
-  useSimulationLoop();
   useShortcuts();
   useApplyTheme();
-  useAlertDelivery();
   useAutosave();
   const page = useStore((s) => s.page);
-  const mode = useStore((s) => s.mode);
-  const tool = useStore((s) => s.tool);
-  const perf = useStore((s) => s.layers.perf);
-  const hqView = useHqView();
-  const [mobile, setMobile] = useState<'office' | 'agents' | 'inspect'>('office');
   return (
-    <div className="app">
+    <div className="app" data-page={page}>
+      <div className="space-bg" aria-hidden="true"><i className="stars far" /><i className="stars near" /><i className="galaxy g1" /><i className="galaxy g2" /></div>
       <TopBar />
-      {page === 'office' && hqView !== 'overview' && (
+      {page === 'office' && (
         <main className="brain-stage view-fade" key="brain">
           <ConnectomeView />
         </main>
       )}
-      {page === 'office' && hqView === 'overview' && (
-        <main className="main view-fade" data-mobile={mobile} key="overview">
-          <AgentPanel />
-          <div className="center">
-            <Toolbar />
-            <div style={{ position: 'relative', minHeight: 0, display: 'grid' }}>
-              <Viewport />
-              {mode === 'construct' && <div className="mode-banner">CONSTRUCTION MODE</div>}
-              {mode === 'construct' && (tool === 'furniture' || tool === 'workstation') && <ObjectLibrary />}
-              {perf && <PerfPanel />}
-              <AutoSortPanel />
-              <OverviewPanel />
-            </div>
-          </div>
-          <Inspector />
-        </main>
-      )}
-      {page === 'dashboard' && <main style={{ overflow: 'auto', minHeight: 0 }}><Dashboard /></main>}
-      {page === 'control' && <main style={{ overflow: 'auto', minHeight: 0 }}><ExecutiveControl /></main>}
-      {page === 'settings' && <main style={{ overflow: 'auto', minHeight: 0 }}><Settings /></main>}
+      {page === 'dashboard' && <main className="page view-fade" key="dashboard"><Dashboard /></main>}
+      {page === 'universe' && <main className="brain-stage view-fade" key="universe"><BrainUniverse /></main>}
+      {page === 'charts' && <main className="page view-fade" key="charts"><Charts /></main>}
+      {page === 'approvals' && <main className="page view-fade" key="approvals"><Approvals /></main>}
+      {page === 'ads' && <main className="page view-fade" key="ads"><Ads /></main>}
+      {page === 'settings' && <main className="page view-fade" key="settings"><Settings /></main>}
       <div>
         <Console />
-        {page === 'office' && hqView === 'overview' && (
-          <nav className="mobile-tabs" aria-label="Panels">
-            {(['agents', 'office', 'inspect'] as const).map((m) => <button key={m} aria-pressed={mobile === m} onClick={() => setMobile(m)}>{m === 'office' ? 'Floor plan' : m === 'agents' ? 'Agents' : 'Inspector'}</button>)}
-          </nav>
-        )}
       </div>
+      <NavDock />
       <ProfileDrawer />
-      <ConflictDialog />
       <RecoveryDialog />
       <ConfirmDialog />
       <Toast />
-      <ArcadeHost />
-      <BriefingHost />
-      <AgentGraphPow />
     </div>
   );
 }

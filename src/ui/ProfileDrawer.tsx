@@ -1,20 +1,21 @@
 import { saveFile } from '../persistence/saveFile';
 import { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
+import { ORIGIN_ID, describeWindow } from '../brain/opportunity';
+import { AgentSkillFile, AgentTasks } from '../brain/agentWork';
+import { BranchMoneyCards } from '../brain/BranchMoneyCards';
 import { useStore } from '../store/store';
-import type { Agent, MemoryItem, Task } from '../model/types';
+import type { Agent, MemoryItem } from '../model/types';
 import type { DeepPartial } from '../engine/ops';
 import { uid } from '../model/defaults';
 import { stripSecrets } from '../model/schema';
-import { BallIcon, moodFor } from '../brain/Ball';
-import { BallControls } from '../brain/BallControls';
-import { STATUS_COLOR } from '../viewport/AgentsLayer';
+import { STATUS_COLOR } from '../brain/status';
 import { ChipsInput, NumberField, SelectField, Slider, TextField, Toggle, confirmAction } from './primitives';
 import { deleteAgent } from './actions';
 
 const TABS = [
-  ['identity', 'Identity'], ['personality', 'Personality'], ['skills', 'Skills & roles'], ['ai', 'AI model'], ['memory', 'Memory'],
-  ['schedule', 'Schedule & tasks'], ['appearance', 'Ball'], ['activity', 'Activity & logs'], ['permissions', 'Permissions'],
+  ['identity', 'Identity'], ['skillfile', 'SKILL.md'], ['personality', 'Personality'], ['skills', 'Skills & roles'], ['ai', 'AI model'], ['memory', 'Memory'],
+  ['schedule', 'Schedule & tasks'], ['money', 'Money'], ['activity', 'Activity & logs'], ['permissions', 'Permissions'],
 ] as const;
 
 type Up = (patch: DeepPartial<Omit<Agent, 'id'>>, label?: string) => void;
@@ -37,13 +38,7 @@ function Identity({ a, up }: { a: Agent; up: Up }) {
           <SelectField label="Agent status" value={a.identity.status} options={['active', 'paused', 'disabled'] as const} onChange={(status) => up({ identity: { status }, enabled: status !== 'disabled' }, `Set ${a.identity.name} ${status}`)} />
         </div>
       </div>
-      <div className="card" style={{ textAlign: 'center' }}>
-        <h4>Ball</h4>
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <BallIcon a={a.appearance} size={150} mood={moodFor(rt?.status, a.appearance.expression ?? 'smile')} ring={STATUS_COLOR[rt?.status ?? 'idle']} title={`${a.identity.name}'s ball`} />
-        </div>
-        <p className="note">Runtime status: <span style={{ color: STATUS_COLOR[rt?.status ?? 'idle'] }}>{rt?.status}</span>. Change the colour and face in the Ball tab.</p>
-      </div>
+      <div className="card"><p className="note">Runtime status: <span style={{ color: STATUS_COLOR[rt?.status ?? 'idle'] }}>{rt?.status}</span></p></div>
     </div>
   );
 }
@@ -127,7 +122,7 @@ function AIModel({ a, up }: { a: Agent; up: Up }) {
         <NumberField label="Max retries" value={c.maxRetries} min={0} max={10} onCommit={(maxRetries) => up({ ai: { maxRetries } })} />
         <div className="card">
           <h4>Credentials</h4>
-          <p className="note">API keys are never stored in a profile, the browser, logs or saved/exported files. A live provider runs through <code>server/ai-proxy.mjs</code>, which reads <code>ANTHROPIC_API_KEY</code> from the server environment. In this build agent task execution is simulated; the live provider currently powers the command console.</p>
+          <p className="note">API keys are never stored in a profile, the browser, logs or saved/exported files. JARVIS's live runs go through <code>server/origin-runner.mjs</code> on your PC, which reads the key you saved once with <code>npm.cmd run set-key</code> (kept on your PC, outside the app).</p>
         </div>
       </div>
     </div>
@@ -175,69 +170,20 @@ function Memory({ a, up }: { a: Agent; up: Up }) {
 }
 
 function Schedule({ a, up }: { a: Agent; up: Up }) {
-  const doc = useStore((s) => s.doc);
-  const tasks = useStore((s) => s.runtime.tasks);
-  const rt = useStore((s) => s.runtime.agents[a.id]);
-  const { runRuntimeOps } = useStore.getState();
-  const mine = Object.values(tasks).filter((t) => t.agentId === a.id);
-  const open = mine.filter((t) => ['queued', 'active', 'paused'].includes(t.status)).sort((x, y) => x.createdAt.localeCompare(y.createdAt));
-  const done = mine.filter((t) => !['queued', 'active', 'paused'].includes(t.status)).sort((x, y) => (y.completedAt ?? '').localeCompare(x.completedAt ?? '')).slice(0, 30);
-  const [nt, setNt] = useState({ name: '', priority: 'normal' as Task['priority'], roomId: '', deadline: '', dep: '' });
-  const ws = Object.values(doc.furniture).filter((f) => f.workstation);
-  const tu = (id: string, patch: Extract<Parameters<typeof runRuntimeOps>[0][number], { op: 'task.update' }>['patch']) => runRuntimeOps([{ op: 'task.update', id, patch }]);
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <div className="grid-3">
-        <SelectField label="Assigned room" value={a.schedule.assignedRoomId ?? ''} options={[{ value: '', label: 'None' }, ...Object.values(doc.rooms).map((r) => ({ value: r.id, label: r.name }))]} onChange={(v) => useStore.getState().commit([{ op: 'agent.assignRoom', agentId: a.id, roomId: v || null }], 'Assign room')} />
-        <SelectField label="Preferred workstation" value={a.schedule.preferredWorkstationId ?? ''} options={[{ value: '', label: 'None' }, ...ws.map((f) => ({ value: f.id, label: `${f.workstation!.name}${f.workstation!.assignedAgentId && f.workstation!.assignedAgentId !== a.id ? ` (${doc.agents[f.workstation!.assignedAgentId]?.identity.name})` : ''}` }))]} onChange={(v) => useStore.getState().commit([v ? { op: 'workstation.assign', furnitureId: v, agentId: a.id } : { op: 'agent.update', id: a.id, patch: { schedule: { preferredWorkstationId: null } } }], 'Assign workstation')} />
         <div className="field-row">
           <label className="field"><span>Work start</span><input type="time" value={a.schedule.workStart} onChange={(e) => up({ schedule: { workStart: e.target.value } })} /></label>
           <label className="field"><span>Work end</span><input type="time" value={a.schedule.workEnd} onChange={(e) => up({ schedule: { workEnd: e.target.value } })} /></label>
         </div>
         <NumberField label="Break every (min)" value={a.schedule.breakEveryMin} min={15} max={480} onCommit={(breakEveryMin) => up({ schedule: { breakEveryMin } })} />
         <NumberField label="Break length (min)" value={a.schedule.breakLengthMin} min={5} max={120} onCommit={(breakLengthMin) => up({ schedule: { breakLengthMin } })} />
-        <div className="field"><span>Current task</span><input type="text" readOnly value={rt?.currentTaskId && tasks[rt.currentTaskId] ? `${tasks[rt.currentTaskId].name} — ${Math.round(tasks[rt.currentTaskId].progress)}%` : 'none'} /></div>
+        <NumberField label="Work window: minutes per run" value={a.schedule.runWindow?.maxMinutes ?? 0} min={1} max={60} onCommit={(maxMinutes) => up({ schedule: { runWindow: maxMinutes ? { everyMinutes: a.schedule.runWindow?.everyMinutes ?? 60, maxMinutes, setBy: 'owner', reason: 'Set by the owner.' } : undefined } })} />
+        <NumberField label="Work window: every (min)" value={a.schedule.runWindow?.everyMinutes ?? 0} min={15} max={10080} onCommit={(everyMinutes) => up({ schedule: { runWindow: everyMinutes ? { maxMinutes: a.schedule.runWindow?.maxMinutes ?? 5, everyMinutes, setBy: 'owner', reason: 'Set by the owner.' } : undefined } })} />
+        <div className="field"><span>Work window</span><input type="text" readOnly value={`${describeWindow(a.schedule.runWindow)}${a.schedule.runWindow ? ` · ${a.schedule.runWindow.setBy === 'origin' ? 'suggested by JARVIS' : 'set by you'} · planned, not scheduled` : ''}`} title={a.schedule.runWindow?.reason} /></div>
       </div>
-      <div className="card">
-        <h4>Task queue ({open.length})</h4>
-        <table className="data"><thead><tr><th>Task</th><th>Priority</th><th>Status</th><th>Progress</th><th>Destination</th><th>Deadline</th><th>Actions</th></tr></thead>
-          <tbody>
-            {open.map((t) => (
-              <tr key={t.id}>
-                <td>{t.name}{t.simulated && <span className="badge sim" style={{ marginLeft: 6 }}>sim</span>}{t.dependencies.length > 0 && <div className="small muted">after {t.dependencies.map((d) => tasks[d]?.name ?? d).join(', ')}</div>}</td>
-                <td><select aria-label="Priority" value={t.priority} onChange={(e) => tu(t.id, { priority: e.target.value as Task['priority'] })}>{['low', 'normal', 'high', 'critical'].map((p) => <option key={p}>{p}</option>)}</select></td>
-                <td>{t.status}</td>
-                <td style={{ minWidth: 80 }}><div className="bar"><i style={{ width: `${t.progress}%` }} /></div></td>
-                <td>{t.destination.roomId ? doc.rooms[t.destination.roomId]?.name : t.destination.workstationId ? doc.furniture[t.destination.workstationId]?.workstation?.name : 'own desk'}</td>
-                <td className="small">{t.deadline ? new Date(t.deadline).toLocaleString() : '—'}</td>
-                <td><div className="row" style={{ gap: 3 }}>
-                  {t.status === 'paused' ? <button className="btn sm" onClick={() => tu(t.id, { status: 'queued' })}>Resume</button> : <button className="btn sm" onClick={() => tu(t.id, { status: 'paused' })}>Pause</button>}
-                  <button className="btn sm danger" onClick={() => tu(t.id, { status: 'cancelled' })}>Cancel</button>
-                  <select aria-label="Reassign" value="" onChange={(e) => e.target.value && tu(t.id, { agentId: e.target.value })}><option value="">Reassign…</option>{Object.values(doc.agents).filter((x) => x.id !== a.id).map((x) => <option key={x.id} value={x.id}>{x.identity.name}</option>)}</select>
-                </div></td>
-              </tr>
-            ))}
-            {!open.length && <tr><td colSpan={7} className="muted">Queue is empty.</td></tr>}
-          </tbody>
-        </table>
-        <div className="row wrap" style={{ marginTop: 8, alignItems: 'end' }}>
-          <label className="field grow"><span>New task</span><input type="text" value={nt.name} onChange={(e) => setNt({ ...nt, name: e.target.value })} placeholder="Task name" /></label>
-          <SelectField label="Priority" value={nt.priority} options={['low', 'normal', 'high', 'critical'] as const} onChange={(priority) => setNt({ ...nt, priority })} />
-          <SelectField label="Room" value={nt.roomId} options={[{ value: '', label: 'Own desk' }, ...Object.values(doc.rooms).map((r) => ({ value: r.id, label: r.name }))]} onChange={(roomId) => setNt({ ...nt, roomId })} />
-          <label className="field"><span>Deadline</span><input type="datetime-local" value={nt.deadline} onChange={(e) => setNt({ ...nt, deadline: e.target.value })} /></label>
-          <SelectField label="Depends on" value={nt.dep} options={[{ value: '', label: 'None' }, ...open.map((t) => ({ value: t.id, label: t.name }))]} onChange={(dep) => setNt({ ...nt, dep })} />
-          <button className="btn primary sm" style={{ marginBottom: 8 }} disabled={!nt.name.trim()} onClick={() => {
-            runRuntimeOps([{ op: 'task.create', agentId: a.id, name: nt.name.trim(), priority: nt.priority, roomId: nt.roomId || a.schedule.assignedRoomId, workstationId: nt.roomId ? null : a.schedule.preferredWorkstationId, simulated: true, deadline: nt.deadline ? new Date(nt.deadline).toISOString() : undefined, dependencies: nt.dep ? [nt.dep] : [] }]);
-            setNt({ ...nt, name: '', deadline: '', dep: '' });
-          }}>Assign task</button>
-        </div>
-      </div>
-      <div className="card"><h4>Task history</h4>
-        <table className="data"><thead><tr><th>Task</th><th>Status</th><th>Started</th><th>Completed</th></tr></thead><tbody>
-          {done.map((t) => <tr key={t.id}><td>{t.name}{t.simulated && <span className="badge sim" style={{ marginLeft: 6 }}>sim</span>}</td><td>{t.status}</td><td className="small">{t.startedAt ? new Date(t.startedAt).toLocaleTimeString() : '—'}</td><td className="small">{t.completedAt ? new Date(t.completedAt).toLocaleTimeString() : '—'}</td></tr>)}
-          {!done.length && <tr><td colSpan={4} className="muted">No finished tasks yet.</td></tr>}
-        </tbody></table>
-      </div>
+      <AgentTasks a={a} />
     </div>
   );
 }
@@ -252,7 +198,7 @@ function Activity({ a }: { a: Agent }) {
       <div className="row" style={{ marginBottom: 8 }}>
         <input type="search" placeholder="Search activity" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search activity" />
         <select aria-label="Event type" value={kind} onChange={(e) => setKind(e.target.value)} style={{ width: 200 }}>
-          {['all', 'task-start', 'task-complete', 'room-change', 'comms', 'tool', 'config', 'error', 'pause', 'resume', 'layout', 'system'].map((k) => <option key={k}>{k}</option>)}
+          {['all', 'task-start', 'task-complete', 'task-failed', 'comms', 'tool', 'config', 'error', 'pause', 'resume', 'change', 'approval', 'library', 'system'].map((k) => <option key={k}>{k}</option>)}
         </select>
       </div>
       <table className="data"><thead><tr><th>Time</th><th>Type</th><th>Event</th><th>Source</th></tr></thead><tbody>
@@ -265,7 +211,6 @@ function Activity({ a }: { a: Agent }) {
 
 function Permissions({ a, up }: { a: Agent; up: Up }) {
   const doc = useStore((s) => s.doc);
-  const s = useStore.getState();
   const p = a.permissions;
   const contactAll = p.contactableAgentIds === 'all';
   const exportCfg = () => {
@@ -284,7 +229,6 @@ function Permissions({ a, up }: { a: Agent; up: Up }) {
           })}</div>
         )}
         <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
-          <Toggle label="May move rooms (layout changes)" checked={p.canMoveRooms} onChange={(canMoveRooms) => up({ permissions: { canMoveRooms } })} />
           <Toggle label="May edit other agents' profiles" checked={p.canEditOthers} onChange={(canEditOthers) => up({ permissions: { canEditOthers } })} />
         </div>
       </div>
@@ -294,11 +238,10 @@ function Permissions({ a, up }: { a: Agent; up: Up }) {
           <button className="btn sm" onClick={() => up({ enabled: !a.enabled, identity: { status: a.enabled ? 'paused' : 'active' } }, a.enabled ? `Pause ${a.identity.name}` : `Resume ${a.identity.name}`)}>{a.enabled && a.identity.status === 'active' ? 'Pause' : 'Resume'}</button>
           <button className="btn sm" onClick={() => {
             const st = useStore.getState(); const r = st.runtime.agents[a.id];
-            if (r) { useStore.setState({ runtime: { ...st.runtime, agents: { ...st.runtime.agents, [a.id]: { ...r, status: 'idle', path: [], destination: null, currentTaskId: null, statusMessage: undefined } } } }); st.notify(`${a.identity.name} restarted`); }
+            if (r) { useStore.setState({ runtime: { ...st.runtime, agents: { ...st.runtime.agents, [a.id]: { ...r, status: 'idle', currentTaskId: null, statusMessage: undefined } } } }); st.notify(`${a.identity.name} restarted`); }
           }}>Restart</button>
-          <button className="btn sm" onClick={() => s.commit([{ op: 'agent.duplicate', id: a.id }], `Duplicate ${a.identity.name}`)}>Duplicate</button>
           <button className="btn sm" onClick={exportCfg}>Export configuration</button>
-          <button className="btn sm danger" onClick={() => deleteAgent(a.id)}>Delete agent…</button>
+          {a.id !== ORIGIN_ID && <button className="btn sm danger" onClick={() => deleteAgent(a.id)}>Delete agent…</button>}
         </div>
         <p className="note" style={{ marginTop: 8 }}>Exported configuration never includes credentials. Deleting asks for confirmation and explains what happens to tasks and memory.</p>
       </div>
@@ -322,7 +265,7 @@ export function ProfileDrawer() {
   return (
     <div className="drawer" role="dialog" aria-modal="false" aria-label={`${agent.identity.name} profile`}>
       <div className="drawer-h">
-        <BallIcon a={agent.appearance} size={44} mood={agent.appearance.expression ?? 'smile'} />
+        <span className="bm-dot" style={{ width: 12, height: 12, background: STATUS_COLOR[useStore.getState().runtime.agents[agent.id]?.status ?? 'idle'] }} aria-hidden />
         <div className="grow"><div className="agent-name" style={{ fontSize: 16 }}>{agent.identity.name}</div><div className="small muted">{agent.identity.title} · {agent.identity.department} · {agent.id}</div></div>
         <span className="small muted">Changes save automatically and can be undone</span>
         <button className="btn icon" aria-label="Close profile" onClick={() => setUi({ profileAgentId: null })}><X size={16} /></button>
@@ -332,12 +275,13 @@ export function ProfileDrawer() {
       </div>
       <div className="tab-body" role="tabpanel">
         {tab === 'identity' && <Identity a={agent} up={up} />}
+        {tab === 'skillfile' && <AgentSkillFile a={agent} />}
         {tab === 'personality' && <Personality a={agent} up={up} />}
         {tab === 'skills' && <Skills a={agent} up={up} />}
         {tab === 'ai' && <AIModel a={agent} up={up} />}
         {tab === 'memory' && <Memory a={agent} up={up} />}
         {tab === 'schedule' && <Schedule a={agent} up={up} />}
-        {tab === 'appearance' && <div className="profile-ball"><BallIcon a={agent.appearance} size={150} mood={agent.appearance.expression ?? 'smile'} title={`${agent.identity.name}'s ball`} /><BallControls agent={agent} /></div>}
+        {tab === 'money' && <BranchMoneyCards agentId={agent.id} />}
         {tab === 'activity' && <Activity a={agent} />}
         {tab === 'permissions' && <Permissions a={agent} up={up} />}
       </div>

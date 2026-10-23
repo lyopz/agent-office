@@ -1,8 +1,8 @@
 # The Brain
 
-The Brain (formerly Agent Office) is an interactive, AI-assisted agent workspace. Its main screen is a 3D brain whose nerves are your agents: the main agent sits at the core and every agent it creates grows a new nerve bundle off it. Behind the brain is the original office simulator. You design a floor plan of rooms, hallways, workstations, and furniture, then populate it with configurable AI agent characters who walk the halls and work through tasks. You can do every edit by hand, or describe it in plain English in the command console.
+The Brain is ed's agent workspace. Its main screen is a 3D brain with one main agent, JARVIS, at the core. Every agent JARVIS grows is a nerve branch off it: JARVIS starts **ventures** (one business or project each), and each venture adds **skill agents** for its own work. Nothing grows, runs or spends without ed's approval.
 
-Everything on screen is data. The room layout, hallway routes, character looks, personalities and tasks all live in one schema-validated document, and every change, whether it comes from the mouse, a form, or the AI console, goes through the same structured operations.
+The old office simulator (rooms, hallways, furniture, characters, arcade, Graph POW and the Blender tools) has been removed. Saves from it still load: their agents, tasks, knowledge, projects and settings are kept and the office parts are dropped.
 
 ## Quick start
 
@@ -11,69 +11,99 @@ npm install
 npm run dev            # http://localhost:5173
 ```
 
-Other scripts:
-
 | Command | What it does |
 |---|---|
-| `npm test` | Runs the acceptance suite with Vitest: 15 acceptance tests plus security and parser checks. |
+| `npm test` | Runs the Vitest suite. |
 | `npm run typecheck` | Runs strict TypeScript checks. |
 | `npm run build` | Writes a production build to `dist/`. |
 | `npm run build:single` | Writes one self-contained `dist-single/index.html` that opens straight from disk. |
-| `npm run proxy` | Starts the server-side AI proxy for the live model (see below). |
+| `npm run origin` | Starts JARVIS's runner on a live model (see [JARVIS live runs](#origin-live-runs)). |
 | `npm run desktop` | Builds the app and opens it in the desktop app (Electron). |
 | `npm run desktop:dev` | Opens the desktop app on the running dev server. Run `npm run dev` first. |
 | `npm run desktop:dist` | Builds installers for this platform into `release/` with electron-builder. |
 
-The app needs no account, backend, or API key. It opens with a sample office, "NEXUS-7", containing 8 rooms, 7 hallways and 6 agents.
+A fresh brain holds JARVIS alone. The app needs no account; JARVIS only runs live when its runner is started with your key.
 
 ## Using it
 
-- **Simulate and Construct.** Press **B** to switch between the two modes. In Construct mode you can drag rooms, pull handles to resize them, and use the toolbar tools:
-  - Room (R)
-  - Hallway (H)
-  - Door (D)
-  - Workstation (K)
-  - Furniture (F)
-  - Agent (N)
-  - Connect two rooms
-- **Exact values.** The Inspector on the right edits position, size, doors, walls, flooring, lighting and capacity with typed numbers.
-- **Hallways.** Hallways connect real doors and route themselves as straight right-angled paths around rooms.
-  - The **Halls** setting picks the routing mode:
-    - *automatic*: every hallway reroutes.
-    - *manual*: hallways keep your points.
-    - *hybrid*: hallways marked "main" stay manual and the rest reroute.
-  - In a manual hallway you can drag individual segments. Switching it back to *auto* reroutes it.
-  - **Realign** rebuilds every automatic route.
-- **Validation.** The editor flags overlapping rooms, hallways that cut through rooms, broken hallways, blocked doors, furniture outside its room, and rooms nobody can reach. Each issue offers a one-click fix.
-  - A change that would introduce a new error opens a dialog with three choices: cancel, apply with the suggested fix, or apply anyway.
-  - Nothing is ever deleted silently.
-- **History and saving.**
-  - Undo and redo with Ctrl+Z and Ctrl+Shift+Z, up to 100 steps.
-  - Autosave writes to this browser every minute, but only when something has changed. In the desktop app it writes to files on disk. See [Saving](#saving).
-  - The **Versions** menu saves named versions and can restore one, reset to the last save, duplicate the layout, start a blank office, or reload the sample.
-  - Export and import use validated `.json` files.
-- **The brain.** The main screen is a nerve network of the teams, with the agents in a menu beside it. See [The agent brain](#the-agent-brain).
-  - On the floor plan and in the profile, agents are glossy balls with a face that follows their status. Open an agent's **Profile**, then the **Ball** tab, to choose the colour, glow, eyes, resting face, mouth, cheeks, tuft and glasses.
-  - The other profile tabs are Identity, Personality, Skills, AI model, Memory, Schedule and tasks, Activity, and Permissions.
-- **AI console.** Press **/** to focus it. Here are some commands it understands:
-  - "Move the server room beside the research laboratory, extend the hallway between them, and move the research agent to the new workstation"
-  - "Make the hallway wider and align it with the conference room entrance"
-  - "Create a private office for the lead agent"
-  - "Make RUSTY a rugged mechanic in a side view with olive work clothes, a cap and a tool belt"
-  - "Block the east wing" (agents reroute, or report "no route")
-  - "Move every idle agent to an available workstation"
-  - "Undo the last layout change"
+- **Brain.** The 3D brain, the Branches menu on the left and the Creator desk. See [The agent brain](#the-agent-brain).
+- **Brain picker.** The menu at the top left switches between the **Main Brain** (JARVIS and every branch it grew), **specialist brains** and single-agent brains. Specialist brains, such as Engineering, stay empty until JARVIS creates an agent with that skill; each new skill adds its own tab.
+- **Dashboard.** Agent activity, task queues, approvals, budgets, alerts and the knowledge library.
+- **Settings.** General (autosave) and theme.
+- **Notifications are real only.** A short notice appears for what you just did and for JARVIS's runner: a run that flags something, a task waiting for your approval, a task it stopped, and 80% or 100% of the monthly cap. There are no simulated alerts, alert bell or alarm sounds.
+- **Nothing is simulated.** Tasks exist only when you give one. **Give a task** (in the Branches menu or an agent's profile) sends it to JARVIS's runner; a task for another agent is done by JARVIS as that agent, with its SKILL.md. Tasks made up by the old in-browser loop are cleared when a save loads.
+- **Console.** Press **/** to ask JARVIS a question.
+- **Profiles.** Click an agent to open its profile: Identity, **SKILL.md** (the playbook JARVIS wrote for it, with a download button), Personality, Skills, AI model, Memory, Schedule and tasks, Activity, and Permissions.
+- **History.** Undo and redo with Ctrl+Z and Ctrl+Shift+Z. The **Versions** menu saves named versions, restores one, or starts a fresh brain. Export and import use validated `.json` files.
 
-  Every command becomes a list of structured operations. Each list is applied to a draft copy and validated before anything changes. Layout changes are drawn in blue as a preview and wait for **Apply**. When a command is ambiguous, the console asks a question with clickable answers.
-- **Dashboard.** Shows agent activity, the task queues, communications, errors, room occupancy and system health. Everything on this page comes from the simulation and is labelled that way.
+## The agent brain
+The main screen is a 3D brain built in three.js (`src/brain/BrainScene.tsx`). The brain itself is generated in code (`src/brain/brainMesh.ts`): two folded hemispheres with a central and Sylvian sulcus, a cerebellum with folia and a brainstem. No model file is needed. Every brain is a hologram (`holoBrainMaterial` in `brainMesh.ts`): a translucent projection with the folds lit, scan lines, a drifting interference band and the far inner surface showing faintly through the near one. Each brain has its own colour: pick a brain in the brain picker (Main, a specialist team, or an agent), then open **Colour** in the brain's toolbar for preset holo colours or any colour. The choice is saved on the brain (`appearance.brainColors`, keyed by `main`, the team id or the agent id, set with the `brain.setColor` op), so every device shows it; a brain with no colour of its own uses its team's colour, and the Main Brain uses holo blue. Drag to turn it and scroll to zoom; it slowly turns on its own after 9 seconds of no input.
 
-The full shortcut list is under **Settings**.
+- **Nerves are agents.** The main agent (JARVIS) sits at the core, fed by a trunk that rises from the brainstem. Every agent is a bundle of nerve fibres that branches off the agent that made it (its supervisor), so when an agent creates another agent, a new bundle grows out of the creator's branch towards the cortex. Bundles are thicker the more agents they carry, and end in a tuft of fine dendrites. The tree is built in `src/brain/nerveTree.ts` from a fixed seed, so the same agents always give the same brain.
+- **Growth.** On load the nerves grow outward from the core, one level at a time. A newly created agent grows its own branch while the rest stays in place.
+- **Ideas grow the brain.** Every open idea is a glowing bud on a short nerve off the main agent: gold for your ideas, cyan for ones the main agent suggests. Add one under **Ideas** in the **Branches** menu, or press **Ask** for a suggestion (simulated from starter patterns until a live model is connected, and labelled that way). Click a bud, or **Grow** in the menu, and after you confirm, the main agent creates an idea lead for it and the bud becomes a full branch (`src/brain/ideas.ts`).
+- **Look.** Thin, tight nerve bundles so new branches stay clean, a soft glow, faint neural dust, signal heads with trails, and a small flash when a signal reaches an agent.
+- **Live, not simulated.** The brain only moves for JARVIS's live runs. The top bar shows JARVIS's runner (live, working, no key or offline) with its spend. **Ask** queues an idea request for JARVIS's next run.
+- **Regions.** The brain is coloured like an anatomy atlas: frontal lobe blue, parietal yellow, temporal green, occipital orange, cerebellum purple and brainstem grey, with a legend. **Regions** turns the colours off.
+- **Branches menu.** On the left, the agent tree as a menu: the main agent at the top, each agent it made underneath, nested by who made whom, with team counts, work in progress and the ideas list. **Teams** switches back to the team grouping.
+- **Signals.** Pulses run from the core out to agents that are working, along the shortest path between two agents when one hands work to another, and back to the core when a task finishes.
+- **Focus.** Hover a node for its name, team and status; click it to open the agent profile. Hovering or choosing an agent in the menu lights its path back to the main agent and every agent below it, and dims the rest. Choosing a sector lights that team.
+- Motion stops when the system asks for reduced motion.
+
+**Teams tab.** Every agent is listed by team with its reporting line, status, current task, a progress bar and how many tasks are queued. Hovering a team or an agent lights up its part of the brain and its information nodes and dims the rest. Click an agent to open the profile, use its button to pause or resume it, search by name, title or team, and use **Give a task** at the bottom (pick an agent, type the task, press Enter).
+
+## Opportunity agent and growing branches
+
+JARVIS, the main agent at the core of the brain, is the owner's **Opportunity Research & Builder Agent** (`src/brain/opportunity.ts`). Its instructions are the owner's operating prompt word for word, plus two notes: how branches work, and that each branch gets its own work window. Its starting memory lives in the library under the `opportunity-agent` tag (status, backlog, approvals, costs and revenue, rejected ideas) and starts honest: no allowance, no sources, no schedule, costs unknown.
+
+- **Branch rules** (`branchKind`, `growKind` in `opportunity.ts`). Only JARVIS starts branches, and each one is a **venture**: one business or project, such as Roblox development (Creator desk → Start a venture). A venture can add only **skill agents** for itself, such as research, 3D modelling, design or ads (use the branch button beside the venture in the side menu). Skill agents can't add agents, so a Roblox branch can't spin off an Amazon business. JARVIS's starter staff (no `branch` record) don't grow branches. Each venture and skill appears as a new nerve bundle off its creator in the 3D brain.
+- **Teaching agents to create agents.** JARVIS and every venture carry `AGENT_BLUEPRINT` (how to design an agent). Ventures also carry `VENTURE_REVIEW`; skill agents carry `SKILL_REQUESTS` instead and can't create agents.
+- **Skill requests** (`doc.skillRequests`, ops `skillRequest.create/review/decide`, Creator desk → Skill requests, or the request button beside a skill agent). A skill agent asks its venture for a new skill agent. The venture marks it relevant or not relevant with a reason, and only a relevant request reaches the owner. Approving it adds the skill agent under that venture. Until a model is connected, the venture's review is recorded by hand.
+- **Work windows** (`agent.schedule.runWindow`): JARVIS works 10 minutes every 2 hours (ed's choice), with a **Run 10 min** button on its row in the Branches menu for an extra run; each specialist gets a window sized to its team (research 10 min every 5 hours, design 5 min every hour, finance once a day…), editable on its profile. These are plans. The app does not wake agents by itself, and nothing runs or spends until a scheduler and an allowance are approved.
+- Older saves get a **Set up Opportunity agent** button that applies the prompt and memory to the existing JARVIS without overwriting anything it already recorded.
+
+## JARVIS live runs
+
+`server/origin-runner.mjs` runs JARVIS on a live model. The defaults are ed's choices: **Claude Haiku 5.5**, a **$15 monthly cap**, and **10 minutes every 2 hours**. You can also start a run with **Run 10 min** on JARVIS's row in the Branches menu. Every other branch has its own **Run 10 min** button, which runs only that branch's agents on their own tasks (giving the branch a next step when it has none), within the same cap.
+
+```powershell
+# Windows PowerShell, in the app folder
+npm.cmd run set-key                        # once: paste your key (hidden); it is checked and saved on this PC
+npm.cmd run origin                         # listens on 127.0.0.1:8788
+npm.cmd run dev                            # in a second window; /api/origin is forwarded
+```
+
+- **Approval is the spending limit.** JARVIS works only on tasks you approve (Creator desk → JARVIS runs). With none approved, a run only proposes tasks. It does no web searches and costs a fraction of a cent.
+- **The cap is hard.** Before every model call, the runner checks that a worst-case call ($0.20) still fits under both the run's $0.50 limit and what's left of the month. When it doesn't, the run stops. Costs come from each response's token usage and search count at list price; a model without a known price is recorded as unknown, never as $0.
+- **The window is enforced.** Every call has a deadline at the end of the window.
+- **Scheduled runs only happen while the runner is on.** Stop them by closing it, or set `ORIGIN_SCHEDULE=off` to allow manual runs only. Other settings: `ORIGIN_MODEL`, `ORIGIN_MONTHLY_CAP_USD`, `ORIGIN_EVERY_MIN`, `ORIGIN_MAX_MIN`, `ORIGIN_RUN_LIMIT_USD`.
+- **State** (JARVIS's rules synced from the app, tasks, notes, runs, the ledger) is saved in `origin-data/state.json`, which is git-ignored. The key is saved by `set-key` outside the app folder (`%APPDATA%\\the-brain\\anthropic-key`), so it is never in git, never logged and never sent to the app. `ANTHROPIC_API_KEY` in the environment still wins if you set it.
+- **Agents work side by side.** Each run gives up to 3 agents (`ORIGIN_PARALLEL`) their own task at the same time, one task per agent, your tasks first. Each task gets an ordered plan of steps; a run works up to 3 steps of it (`ORIGIN_ROUNDS`) and the next run picks up at the first unchecked step, so tasks go from start to finish. Runs happen every 30 minutes (`ORIGIN_EVERY_MIN`).
+- **Command-center tasks come first.** In the command center, switch to **Task** and type the work (for example "make 5 items for my Etsy store"). It is approved by your words and becomes JARVIS's focus: it starts right away, runs alone, ahead of creating agents, empire-mode tasks and SKILL.md writing, with twice the usual spend and steps a run, and repeats every 10 minutes (`ORIGIN_FOCUS_EVERY_MIN`) until it is done. If you name a number of items, each finished product lands in that task's approval list in JARVIS runs, with its mockup and price, for you to publish or reject one by one. Plain approvals in **Ask** mode ("go ahead", "allow etsy store to run") become focus tasks too.
+- **Pacing.** Scheduled runs stop for the day once today's share of what's left of the cap is spent (what's left ÷ days left in the month), so a fast schedule can't use the month up early. Manual runs still work, inside the cap.
+- **Spend in dollars.** JARVIS runs shows this month, today and what's left, spend per agent and per task, and each run's cost per agent. The command center shows the month and today too.
+- **Budget watch.** Spend is tracked per agent and per task, all on the one key and cap. Each task gets a budget (a tenth of the cap, `ORIGIN_TASK_BUDGET_USD`). JARVIS stops a task on its own when its spend pattern shows it will cost far more than it's worth. The runner also stops any task that passes its budget, or whose average cost per run would pass twice its budget by the end of the month. You get one notice, and you can restart a stopped task with a fresh budget.
+- **Ask JARVIS.** The console at the bottom sends your question straight to JARVIS. It answers at any time, with no approval and no tools, as one short call on the same cap (usually well under a cent).
+- **Skill bank.** Creator desk → Skill bank holds the skills your agents use. Add them by hand or import `SKILL.md` files. JARVIS and ventures pick from the bank when they create agents, and every skill JARVIS has goes into its runs. JARVIS can propose a new agent with bank skills, and it waits for your approval in JARVIS runs.
+- **Empire mode** (on by default, ed's choice): JARVIS picks ventures with real demand, starts them, gives them agents and sets its own research tasks, at most 3 open at a time, each within its task budget and the monthly cap. Your own tasks always go first. It still asks before using your accounts, publishing, spending money or contacting anyone. Turn it off in JARVIS runs.
+- **Research tools.** Task runs can search the web ($0.01 a search, 5 a run) and read pages in full with web fetch (5 a run, no fee beyond tokens, 20K tokens a page at most). Agents can't log in anywhere.
+- **Progress.** Every run reports how far along its task is. JARVIS runs shows a bar on each task and a progress log you can filter by agent; each agent's Tasks tab shows its own bar and log.
+- **Etsy (read-only).** Make a personal app at etsy.com/developers, then run `npm.cmd run set-etsy` once and paste its keystring and shared secret (the secret is hidden; both are checked, then saved in `%APPDATA%\\the-brain\\etsy.json`, outside the app). Task runs then get `etsy_search` for real listings, prices, favorites and tags. In JARVIS runs, **Connect my Etsy shop** signs you in to Etsy in your browser with read-only scopes, so agents can also read your own shop's numbers. Register `http://localhost:8788/api/origin/etsy/callback` as the app's callback URL. Agents can't list, change or buy anything.
+- **Printify (posting products).** Connect your Etsy shop in Printify (My stores), create a Printify personal access token, then run `npm.cmd run set-printify` once (hidden input; checked, then saved in `%APPDATA%\\the-brain\\printify.json`, outside the app). Task runs can then browse the catalog, upload designs (agents write typography and vector designs as SVG, which the runner renders to a print-size PNG with `@resvg/resvg-js` because Printify refuses SVG text; or use an image link), and create products with researched prices, titles, descriptions and tags. Products stay unpublished in Printify. When an agent thinks one is ready, it appears under **Ready to publish** in JARVIS runs; only your **Publish** button sends it live to your store, which charges its listing fee.
+- **Design images (ChatGPT).** Agents can make illustrated or photo-style art with OpenAI's `gpt-image-2`, uploaded straight to Printify as a design. It needs an OpenAI **API** key from platform.openai.com with its own billing (a ChatGPT Plus subscription does not include API use). Run `npm.cmd run set-openai` once (hidden input; checked with a free call, then saved in `%APPDATA%\the-brain\openai.json`). Images are billed to your OpenAI account, outside the $15 Anthropic cap, so they have their own monthly limit ($5 by default, set it in JARVIS runs) and a per-image cost log there (about $0.006 low, $0.05 medium, $0.21 high quality at 1024x1024).
+- **Money by branch.** Every agent's profile has a **Money** tab with two cards, **Spending** and **Profit**, for the main branch it belongs to. JARVIS runs shows, for each main branch (an agent under JARVIS and everything that grew from it), what it has spent and earned all time, and the net. Spent is Claude work, ChatGPT images, Etsy listing fees ($0.20 each), Printify production and shipping, Etsy's sale fees (estimated, about 9.5% + $0.25 an order) and costs you add. Earned is only what buyers paid, pulled from your shop's Printify orders every hour (or with **Check sales now**), plus income you add. Each sale counts for the agent that made the product. The Branches menu shows each main branch's spent and earned too.
+- **Canva.** Run `npm.cmd run connect-canva` once: it opens Canva's sign-in in your browser (press Allow) and saves the sign-in in `%APPDATA%\\the-brain\\canva.json`, outside the app; `npm.cmd run connect-canva -- --forget` removes it. Agents then get Canva's own tools in tasks you give them (never in tasks they set themselves, which is Canva's rule for assistants): make designs and images in your Canva account, open a design you link, and export it. Every export is saved to the design gallery and, with Printify set up, uploaded there as a design, so it reaches your store only as a product you approve. AI designs use your Canva AI credits; the runner keeps a monthly limit (30 by default, set it in JARVIS runs) and a log. Sell only designs that are original: Canva does not allow a single library photo or illustration on a product as it is, and its AI images are sold at your own risk.
+- **JARVIS's SKILL.md.** JARVIS has its own file, "JARVIS: taking orders", on its SKILL.md tab and in the skill bank: every request you make becomes a task that starts now, nothing is refused as out of scope, nobody asks you for ids, and it asks at most one question. Replace it with your own .md on that tab if you want JARVIS to work differently; the built-in one is never written over yours.
+- **Skills on request.** Ask JARVIS in the command center for SKILL.md files or skills ("write a SKILL.md for every STORE agent and add a web research skill for them"). It finds the agents by name, writes the files right away, a few at a time (not one per run), saves each to the skill bank and attaches it to its agents. A task in **Task** mode that needs skills asks for them the same way. Every new agent gets its first SKILL.md as soon as it is created. To use your own, attach a .md file (pick it or drag it in) when you create the agent, or on the agent's SKILL.md tab; JARVIS never rewrites a file you attached.
+- **JARVIS's voice.** Press **Speak** in the command center (or say **Hey JARVIS** once that switch is on) and talk; JARVIS stops talking the moment you do, sends what you said when you pause, and reads its answer aloud. Hearing: with `npm.cmd run set-openai` done, OpenAI's transcription (about $0.003 a minute); otherwise Windows' own offline speech recognition in the desktop app (`desktop/listen.ps1`). Speaking: `npm.cmd run get-voices` installs Kokoro (`kokoro-js`, free and offline, 28 natural voices, run with the PC's Node from `server/kokoro-say.mjs`; model in `%LOCALAPPDATA%\\the-brain\\kokoro`) and Piper (simpler, `%LOCALAPPDATA%\\the-brain\\piper`); with the OpenAI key set, its human voices are offered too (about $0.015 a minute, own $3 monthly limit, `ORIGIN_VOICE_CAP_USD`); without either, the computer's best voice. Pick the voice under Settings > JARVIS voice. Hey JARVIS listens for just that phrase, offline (`desktop/wake.ps1`); nothing is recorded or sent anywhere.
+- **Command center.** The console sends each question to the agent best suited to it (a tiny routing call, well under a tenth of a cent), or straight to an agent you name. That agent answers with its own instructions and SKILL.md.
+- Without the runner, nothing runs, and the app says so.
 
 ## Saving
 
 Saves stay on your machine. The browser version uses this browser's `localStorage`, and the desktop app writes files on disk. Nothing is sent over the network.
 
-- **Autosave** runs every 60 seconds, and once more when the tab is hidden or closed. If the office (layout, agents and simulation state) hashes the same as at the last successful save, it skips the write entirely. You can turn it off under Settings → *Autosave*.
+- **Autosave** runs every 60 seconds, and once more when the tab is hidden or closed. If the brain (agents, tasks and settings) hashes the same as at the last successful save, it skips the write entirely. You can turn it off under Settings → *Autosave*.
 - **Save now** in the top bar (or Ctrl+S) saves straight away. Next to it, the status shows one of:
   - the last save time, such as "Saved 14:02 · 3 min ago"
   - an amber **Unsaved changes** dot after an edit
@@ -81,7 +111,7 @@ Saves stay on your machine. The browser version uses this browser's `localStorag
 
   Hover over the status for details.
 
-**The save format.** Each save is an envelope around the office:
+**The save format.** Each save is an envelope around the brain:
 
 ```json
 { "format": "agent-office-save", "version": 1, "savedAt": "2026-10-19T14:02:11.000Z",
@@ -97,414 +127,116 @@ The checksum is FNV-1a over `{"doc":…,"runtime":…}` exactly as it is seriali
 3. Only then does the previous save become the backup (`agent-office:backup` or `backup.json`). A good backup is never replaced by a previous save that is itself damaged.
 4. The new save replaces the current one (`agent-office:current`, or an atomic rename over `current.json`), and the pending copy is removed.
 
-**When a save is damaged.** Sometimes the current save can't be read: the JSON is bad, the checksum doesn't match, or the office fails validation. The app never discards a damaged save, and it never quietly loads the sample over it. Instead it:
+**When a save is damaged.** Sometimes the current save can't be read: the JSON is bad, the checksum doesn't match, or the brain fails validation. The app never discards a damaged save, and it never quietly loads the sample over it. Instead it:
 
 1. Keeps a copy under `damaged-<time>`. In the browser this is an `agent-office:damaged-…` key, and the last three are kept. On desktop it is a `damaged-….json` file next to the saves.
 2. Pauses all saving.
 3. Asks you to choose:
    - **Restore backup** is offered when the backup is valid, and shows when it was saved.
    - **Download damaged save** exports the raw text as a file.
-   - **Start fresh** loads the sample office after you confirm.
+   - **Start fresh** starts a fresh brain with only JARVIS after you confirm.
 
 Named versions and preferences stay in the browser's storage. In the desktop app, that storage is part of the app's data folder.
 
 ## Desktop app
 
+The desktop app is the easiest way to run The Brain on Windows. One double-click opens the app, starts JARVIS's runner in the background (unless one is already running), and saves everything as files on this PC.
+
+```powershell
+cd C:\Users\edpfl\agent-office
+npm.cmd install
+npm.cmd run shortcut
+```
+
+`npm run shortcut` puts a **The Brain** shortcut with the app's icon on the desktop and in the Start menu. It opens the app from this folder.
+
+**Updates ship themselves.** While the app is open it watches this folder. When new code lands in `src/`, `public/` or `index.html` it rebuilds and reloads (your work is saved first). When `server/` changes it restarts JARVIS's runner, waiting until the runner is between runs. When `desktop/` changes it relaunches. A runner started by hand on port 8788 is stopped (between runs) so only the app's runner uses the port. If the source changed while the app was closed, it rebuilds on start ("Updating The Brain…"). A change to the dependencies in `package.json` still needs `npm.cmd install`.
+
 | Command | What it does |
 |---|---|
+| `npm run shortcut` | Adds the desktop and Start menu shortcuts (Windows). |
 | `npm run desktop` | Builds the app and opens it in Electron. |
-| `npm run desktop:dist` | Makes an installer named **Neural Command Campus** in `release/`: NSIS on Windows, DMG on macOS, AppImage on Linux. electron-builder is configured in the `build` field of `package.json` and uses the icons in `build/`. |
+| `npm run desktop:dist` | Makes an installer named **The Brain** in `release/`: NSIS on Windows (with desktop and Start menu shortcuts), DMG on macOS, AppImage on Linux. An installed copy keeps JARVIS's runner data in its own data folder. |
 | `npm run desktop:dev` | Opens the desktop shell on the Vite dev server at `http://localhost:5173`, or on the local URL in `OFFICE_DEV_SERVER_URL`. |
 
-- **Saves** live in `<userData>/saves/` as `current.json`, `backup.json` and any `damaged-*.json` files. `userData` is the app's data folder for your user account:
-
-  | System | Folder |
-  |---|---|
-  | Windows | `%APPDATA%\Neural Command Campus` |
-  | macOS | `~/Library/Application Support/Neural Command Campus` |
-  | Linux | `~/.config/Neural Command Campus` |
-
-- **Bridge.** `desktop/preload.cjs` exposes one object, `window.officeDesktop`, with five calls: `saves.read()`, `saves.readBackup()`, `saves.write(text)`, `saves.keepDamaged(text)` and `saves.info()`.
-  - The main process (`desktop/main.cjs` and `desktop/saveStore.cjs`) does all the file work, with fixed file names.
-  - The page can't pass a path, read any other file, or see environment variables.
-  - When the bridge is there, the app saves to files (`FileRepository`). Otherwise it uses `localStorage`.
-- **Security.**
-  - The window runs with `contextIsolation` and `sandbox` on, and `nodeIntegration` off.
-  - The built app is served from a private `app://campus/` scheme with a strict Content-Security-Policy. Only the app's own scripts run, and no remote content loads, so the web fonts fall back to fonts on your computer. Network access is limited to `localhost`, for the optional AI proxy and Blender bridge.
-  - Navigation away from the app is blocked, new windows are refused, and http(s) links open in your browser.
-  - Every permission request except notifications is denied.
-  - Launching the app a second time focuses the window that is already open.
+- **Saves** are files in `%APPDATA%\The Brain\saves` (`current.json`, `backup.json`, any `damaged-*.json`). They're written shortly after every change and whenever one of JARVIS's tasks finishes. Saves from the old name (`%APPDATA%\Neural Command Campus`) are copied over once.
+- **JARVIS's runner** starts with the app and stops when it closes. It reads the API key saved by `npm run set-key` (never the app), keeps its state in `origin-data/`, and writes its output to `origin-data/runner.log`.
+- **Bridge.** `desktop/preload.cjs` exposes one object, `window.officeDesktop`, with five calls: `saves.read()`, `saves.readBackup()`, `saves.write(text)`, `saves.keepDamaged(text)` and `saves.info()`. The main process does all the file work, with fixed file names. The page can't pass a path, read any other file, or see environment variables.
+- **Security.** The window runs with `contextIsolation` and `sandbox` on and `nodeIntegration` off, from a private `app://campus/` scheme with a strict Content-Security-Policy. Network access is limited to `localhost`, for JARVIS's runner. Navigation away from the app is blocked, new windows are refused, and http(s) links open in your browser.
 
 ## Logo
 
-The Neural Command Campus logo shows an agent's head inside a rounded badge. The head has a visor, an antenna node, a neural link between the eyes and a circuit-trace mouth. It uses three colours from the app palette:
-
-- panel black, `#050a08`
-- signal green, `#39ff88` (`--green-5`)
-- data blue, `#4cc9ff` (`--blue-5`)
+The Brain's logo is a glowing blue brain-circuit mark on a dark rounded badge, the same mark as in the top bar.
 
 | File | Use |
 |---|---|
-| `src/brand/Logo.tsx` | `LogoMark`, the logo on its own (pass `simple` below about 24 px), and `LogoLockup`, the logo with "Neural Command Campus" as used in the top bar. |
-| `public/logo.svg` | The full logo. |
-| `public/favicon.svg` | A simpler version for 16–32 px: no thin lines, and larger eyes and antenna node. |
+| `public/logo.svg` | The full logo, with glow. |
+| `public/favicon.svg` | A simpler version for small sizes. |
 | `build/icon.png` | The 512 px app icon, rendered from `logo.svg`. |
-| `build/icon.ico` | The Windows icon, with PNG images at 16 and 32 px (from `favicon.svg`) and at 48 and 256 px (from `logo.svg`). |
+| `build/icon.ico` | The Windows icon (256, 48, 32 and 16 px). |
 
-To change the logo:
+## Credentials
 
-1. Edit both SVG files and `Logo.tsx`.
-2. Re-render the PNGs with any SVG rasterizer. The current ones were rendered with headless Chromium.
-3. Pack the 16, 32, 48 and 256 px images into the `.ico`.
-
-## AI Headquarters
-
-The sample office now includes the NEXUS-7 Headquarters wing: an executive suite, a library, finance, engineering, design, a studio and a market-intelligence room. It is staffed by eight role agents (ORION the president, CODEX the librarian, VECTOR the COO, LEDGER the CFO, SCOUT, FORGE, MUSE and BOLT), each with its own look, tools, budget and workstation.
-
-- **Object library and placement.** Open the object library from the toolbar to browse holo-desks, archive terminals, tube stations, vaults and more. The placement ghost turns red when an object would overlap another, sit outside the room or block a door. Shift-click or shift-drag selects several objects. Dragging a group moves it as one with its spacing kept. Ctrl+D duplicates, E rotates and the arrow keys nudge. The toolbar can arrange objects in rows, align them, group them and copy a style.
-- **Remodelling commands.** The console understands commands such as "Add a librarian archive terminal against the back wall", "Add a tube station beside every research desk", "Replace the executive desk with a wider black titanium desk", "Make the lighting warmer and the floor dark graphite", "Arrange the desks in two aligned rows" and "Add plants without blocking doors".
-- **Agents and uniforms.** "New agent → From role…" creates an agent from an archetype, wearing its role uniform. A locked uniform sets the ball's colour and glow until it is taken off. Changing the look never touches identity, permissions or memory.
-- **Themes.** Settings → Theme switches between dark, light and system modes, edits colour tokens with a contrast check, and saves, exports and imports themes. Room palettes, such as the library's, are stored on the room and don't change with the global theme. Characters look the same in every theme.
-- **Alerts and sounds.** The bell in the top bar opens the alert centre. Identical alerts are grouped. Repeated failures are escalated, and unacknowledged alerts climb a level over time. Settings → Alerts picks a sound per severity, previews it and fires a test alert. It also sets quiet hours, mutes categories and sets thresholds. Critical alerts always sound. Routine information never makes noise.
-- **Business.** The dashboard shows projects with budgets and usage records, approvals, tube handoffs and the knowledge library. A spend above an agent's limit, an action on the owner's approval list, or a tool the agent hasn't been granted pauses the task until you approve it. Priority tasks travel between rooms in pneumatic-tube capsules, and the recipient acknowledges them on arrival.
-- **Performance.** Rooms and hallways outside the view are not drawn. Collision checks use a spatial index. A drag is drawn as a temporary overlay and committed once when you let go. The gauge button shows frame and tick timings.
-
-## Executive control, production and the arcade
-
-The **Control** page in the top bar has four tabs. The red **Emergency pause** button next to it stops every agent after a confirmation.
-
-### Departments
-
-Agents belong to a department by the department name on their profile. Each department row has an on/off switch, active and paused counts, its task count, a workload bar and a state chip:
-
-| State | Meaning |
-|---|---|
-| Running | Agents take new work. |
-| Pausing | The department is paused, but protected work (a save, or a render under the *finish* policy) is still finishing. |
-| Paused | Every non-excluded agent is frozen and its work is held. |
-| Blocked | A resource policy or the department's task limit is holding new work. Running work continues. |
-| Error | An agent in the department can't reach its destination. |
-
-The header buttons pause all departments, resume the selected rows, or trigger the emergency pause. Expanding a row lets you exclude agents from bulk actions, enable or disable all of its agents, set a maximum number of simultaneous tasks, choose the render policy, mark it essential and assign a batch of tasks round-robin.
-
-**Safe pause.** Pausing never deletes work:
-
-- Paused agents take no new work and stop moving and animating. Their bubble shows "II".
-- A task in progress is held with its progress and resumes from there.
-- Saves always finish.
-- Renders follow the department's render policy. *Finish* lets the render complete. *Defer* holds it at the last 25 % checkpoint. *Cancel* cancels it and logs that.
-- The emergency pause holds everything, renders included, at a checkpoint. Only saves finish.
-
-### Resources
-
-The Resources tab shows only figures that are actually measured. In the browser that is the tab's own JS memory, the device memory class and the CPU core count. System RAM, CPU, GPU memory, GPU utilisation and Blender jobs come from the Blender bridge (below) when it is running. Otherwise they read **Unavailable**. Per-department usage is always labelled unavailable, because agent "work" is simulated and nothing measures a department's real share.
-
-The policies (prioritise rendering, background task limit, pause non-essential departments under heavy load, auto-resume) only ever hold **new** work. They never stop a task that is already running, and every hold is logged and raised as an info alert. Executive, Operations and Finance are essential by default.
-
-### Rooms
-
-- **Operations floor.** Built for 20 to 40 agents, with compact desks in rows and a central walkway. When more agents are visible than Settings → *Simplify above* (30 by default), agents are drawn as simple markers. Agents outside the view are not drawn. Batch assignment spreads tasks across the department's enabled agents.
-- **Game Development Arcade.** Home of the Roblox and Blender production team (LUAU, QUEST, PROBE) and the three arcade cabinets.
-- **Blender Design Studio.** 3D workstations, a render wall, a preview turntable, a review table and a material library, staffed by MESH and RIG.
-
-### Production pipeline
-
-Production items move through *assigned → creating → preview → review → approved → exported → integrated*. Agents do the creation, preview and export stages; integration is done by the QA integrator. Review is yours: **Approve** or **Request changes** on the Production tab.
-
-Every stage reached by simulation is marked simulated, and each card says "Simulated progress only: no Blender or Roblox file has been produced". A card only shows a real file once the bridge has produced one and it has been attached. Roblox publishing is not connected.
-
-**Planning mode.** Without the bridge, the studio runs in planning mode: the pipeline, reviews and render wall all work, but nothing is rendered. To render and export for real, run the bridge on the machine that has Blender:
-
-```bash
-BLENDER_PROJECT_DIR=~/blender-projects npm run blender-bridge   # listens on 127.0.0.1:8790
-```
-
-Then enter `http://127.0.0.1:8790` under Control → Resources. The bridge only accepts `.blend` files inside `BLENDER_PROJECT_DIR` and writes output to its `exports/` folder. `tools/blender/export_glb.py` exports GLB. Optional variables are `BLENDER_BIN`, `BRIDGE_PORT`, `BRIDGE_ORIGIN` and `BRIDGE_MAX_JOBS`. Blender is a content-creation tool only. The app never needs it to run.
-
-### Arcade
-
-Click a cabinet in Simulate mode, or use the Arcade tab, to play **Sky Hopper** (Flappy Bird style), **Maze Muncher** (Pac-Man style) or **Classic Pong** (first to 11). Your games have no caps and are recorded separately from any agent limits.
-
-The arcade policy is **Human only** by default and is enforced in the engine, not just the interface. Agents can't be assigned an arcade machine as a workstation, sent to one, or given a task at one; every attempt is rejected and logged as a policy warning. *Agent play disabled* is the same for agents. *Token-free* agent play is locked off by a code constant (`TOKEN_FREE_VERIFIED = false` in `src/model/control.ts`). Settings, imports and AI commands can't switch it on.
-
-The per-game caps (Flappy 100 points or 3 minutes, Pac-Man 10,000 points or 5 minutes, Pong 11 points or 5 minutes) and the matches-per-day limit are editable on the Arcade tab. They are kept in the saved session history, so a reload doesn't reset the daily count.
-
-### Uniforms
-
-**Locked role uniforms.** Every role has a fixed uniform, and agents created from a role start in it. While it is on, the ball's colour, glow and glasses come from the uniform and can't be changed piece by piece, in the app, through the AI console or by import. The face stays editable. "Take it off" in the profile Ball tab unlocks the agent without changing the look. The uniforms themselves can't be edited or deleted. Functional equipment, such as a ledger slate, still mirrors a tool permission and can only be worn by an agent that has the matching tool.
-
-### Graph POW
-
-**Graph POW** is the glowing knowledge map of the agents. Open it from the top bar or from an information node on the brain. It shows every agent, the work they finished (the latest 160 tasks) and the knowledge entries they wrote, grouped into a lobe per team:
-
-| Link | Meaning |
-|---|---|
-| Handoffs | One agent handed a task to another. |
-| Reports to | The agent's supervisor. |
-| Produced | The agent finished that task or wrote that entry. |
-| Cites | A finished task used that knowledge entry. |
-
-Click a node to see its links and why each one exists; search, filter by link type or team, and zoom or pan. When an agent finishes something, its node flashes and signals fire along its links. The map runs inside the app (no internet, no extra window), so it works in the desktop app too. **Save page** downloads the same graph as a standalone Graph POW page, built from `tools/graph-pow/template.html`; that page loads d3 from cdnjs, so it needs an internet connection.
-
-The codebase file map is still available as a separate page for developers:
-
-```bash
-npm run graph:pow                                  # rebuild public/graph-pow.html from graphify-out/graph.json
-npm run graph:pow -- --from path/to/graph-pow.html # or install a Graph POW page you already have
-```
-
-### Royal Lounge and the hourly briefing
-
-The **King's Lounge** (room type `royal-lounge`, south-east of the Blender studio, reached by the Royal Walk and Court Hall) is a lounge for resting between tasks: like the break room, it restores energy. It has a throne and velvet sofas (seating objects), a crown chandelier, a holographic fountain and a **briefing board** on the north wall. You can add more lounges from the *Royal lounge* room template, or with an AI command such as "add a throne room".
-
-**Opening the board.** Click the briefing board in Simulate mode, or use **Briefing** in the office toolbar. The board covers the last hour of work:
-
-- A summary strip counts **Done**, **Active**, **Blocked** and **Queued** work. Each has its own colour, icon and label, and clicking one filters the list to it.
-- Every item shows the agent, the task and its status, with the completion time, or for active work an ETA (from its progress so far, or estimated from its work units).
-- You can filter by team, project and status, and group by team (the agent's department) or by project.
-- Select an item to see its details: the agent, team, project, priority and progress, its timestamps, the reason it is blocked, handoff notes, and its history (approvals and log lines).
-- With nothing selected, the side panel shows **Needs attention** (blockers, overdue work and stuck agents) and **Idle agents**.
-
-The board shows "Last refreshed hh:mm". It refreshes every 60 seconds while it is open, and **Refresh** updates it straight away. Esc closes the selected item first, then the board. Office shortcuts are off while the board is open, and the fountain's ripple respects *reduce motion*.
-
-**Buckets** (`src/engine/briefing.ts`, `buildBriefing(doc, runtime, now, { windowMinutes = 60, msPerTick })`):
-
-- *Done* means tasks completed inside the window.
-- *Active* means active tasks, and tasks in transit through a tube.
-- *Blocked* means tasks waiting for approval, paused or held, failed inside the window, queued behind a failed or cancelled dependency, or active while their agent is in an error state.
-- *Queued* means everything else that is waiting.
-
-Cancelled tasks are left out. `buildBriefing` is a pure function. It returns `generatedAt`, the window, the totals, the items, `byTeam`, `byProject`, `attention` and `idleAgents`. `taskHistory(runtime, taskId)` builds the timeline for one task.
-
-### Neural Command Campus: bubble office, tubes and Auto Sort
-
-**Layout preset.** The toolbar's *Layout* menu switches between **grid offices** and the **bubble office** (`settings.layoutPreset`). The sample office starts as a bubble office.
-
-- Rooms float as translucent, iridescent bubbles with a glossy rim, and hallways become glass transport tubes.
-- Fills stay faint and the sheen sits on the edges, so agents, labels and activity stay readable.
-- Tubes attach wherever a room's doorway is, and they reroute as rooms move.
-
-**Tube travel.** In the bubble office, an agent leaving a room is drawn into a travel pod: it shrinks a little, glass wraps around it and streaks trail behind. The tube then carries it about twice as fast as walking, and pods pass each other without waiting. On arrival it is released at the far end. Each agent's tube leg is lit while it travels, so the active route reads at a glance.
-
-**Mail tubes.** Work items travel on their own network: thin brass pipes from every tube station to a routing hub. The hub is the Routing Hub object if there is one, otherwise the centre of the stations.
-- Capsules are brass pills with an envelope mark, and urgent ones get a red band.
-- A capsule follows station → hub → station, labelled with its recipient.
-- After it lands, a short receipt shows *Delivered* or *Not acknowledged*.
-
-**Auto Sort.** The toolbar's *Auto Sort* button proposes a new arrangement and shows it as a preview: arrows from each room's current place to its new one, plus a short list of what moves and why. Rooms are placed strongest links first. How strongly two rooms are linked depends on:
-- shared teams;
-- agent interactions: handoffs, work visits, supervision and shared projects;
-- shared resources: the tube station a room relies on, the break room and the servers;
-- existing hallways.
-
-Within a team the gap between rooms is narrow, and between teams it is wider. The bubble preset leaves more space than the grid preset.
-
-The sort moves rooms, re-aims single-hallway doors at their new neighbours and reroutes every hallway or tube, all in one step. You can choose:
-- **Apply**;
-- **Apply and adjust**, which applies and then selects the moved rooms in construction mode so you can drag them;
-- **Cancel**.
-
-*Undo sort* (or Ctrl+Z) reverts the whole sort. When nothing would bring collaborating rooms meaningfully closer, it says the campus is already well arranged. The engine is `src/engine/autosort.ts` (`roomAffinity`, `planAutoSort`) and is pure until you apply.
-
-### Roblox development headquarters
-
-The optional **Roblox Development HQ** sample is available in **Versions**. It uses the bubble preset. The **Throne Room** sits at the centre and is the command centre. Seven team rooms surround it. Each room has a sign naming the team and its work, its own accent colour, floor tint and lighting, and furniture and wall displays that show what the team does:
-
-| Room (id) | Type | What you see |
-|---|---|---|
-| Roblox Development (`room_dev`) | `roblox-dev` | studio workstations (explorer tree, 3D viewport with a play button, properties panel), a live build preview, a code wall and a play-test rig |
-| Research (`room_research`) | `research` | a findings board with strings joining connected findings, searchable reference stacks, a note wall, an archive terminal and a player data station |
-| Game Design (`room_gamedesign`) | `game-design` | a level layout table (route, checkpoints, hazards), a mechanics loop board, a prototype pod and design desks |
-| 3D Design (`room_3d`) | `3d-design` | a dimensional blueprint wall, a wireframe stand, material swatches, a 3D preview turntable and modelling stations |
-| Typography & Fonts (`room_type`) | `typography` | a font specimen wall, a size and weight scale panel, lettering desks and a game interface preview |
-| Roblox Building (`room_build`) | `roblox-build` | a build plan board with phase progress, modular parts racks, a terrain table and scale reference figures |
-| Advertising & Creative (`room_ads`) | `ad-studio` | a campaign timeline, a concept review wall (approved, revise, rejected), image draft galleries and framed final assets |
-| Throne Room (`room_throne`) | `throne-room` | the throne inside a glowing crimson and violet bubble with horn-like spires, a war table mapping every team room, command displays, the briefing board and dark candelabras |
-
-Wide tubes run straight from the throne room's sides to the rooms beside it. An outer ring joins neighbouring rooms, so every room has two ways in, and closing any one tube never cuts a room off. Each team has agents built from role archetypes. The new archetypes are `game-designer`, `type-designer`, `roblox-builder` and `ad-creative`; the others reuse `roblox-dev`, `qa-integrator`, `librarian`, `market-analyst`, `blender-artist` and `coo`. Every agent sits at a workstation in its own room, and every room has a capsule station. Two projects are included: *Sky Islands Obby* and *Launch Campaign*.
-
-To switch between samples, open **Versions** and choose **Creator Brain · Agent Firm**, **Roblox HQ** or **NEXUS-7** (the classic sample). Creator Brain is a general-purpose, local starter with an Agent Creator, an operations lead and research, product, creative, engineering, quality, finance and community specialists. Click a brain sector to filter the roster to that team; choose **All sectors** to return to the full roster. Floor-plan navigation is hidden so the brain remains the main workspace. Its team regions and reporting nerves are generated by the same connectome as the other offices. The app does not connect teammates across devices; agent activity is simulated unless a live provider is connected.
-
-### The agent brain
-
-The main screen is a 3D brain built in three.js (`src/brain/BrainScene.tsx`). The brain itself is generated in code (`src/brain/brainMesh.ts`): two folded hemispheres with a central and Sylvian sulcus, a cerebellum with folia and a brainstem. No model file is needed. Use **Glass** for a see-through brain that shows the nerves inside, or **Tissue** for a solid, realistic surface. Drag to turn it and scroll to zoom; it slowly turns on its own after 9 seconds of no input.
-
-- **Nerves are agents.** The main agent (ORIGIN) sits at the core, fed by a trunk that rises from the brainstem. Every agent is a bundle of nerve fibres that branches off the agent that made it (its supervisor), so when an agent creates another agent, a new bundle grows out of the creator's branch towards the cortex. Bundles are thicker the more agents they carry, and end in a tuft of fine dendrites. The tree is built in `src/brain/nerveTree.ts` from a fixed seed, so the same agents always give the same brain.
-- **Growth.** On load the nerves grow outward from the core, one level at a time. A newly created agent grows its own branch while the rest stays in place.
-- **Ideas grow the brain.** Every open idea is a glowing bud on a short nerve off the main agent: gold for your ideas, cyan for ones the main agent suggests. Add one under **Ideas** in the **Branches** menu, or press **Ask** for a suggestion (simulated from starter patterns until a live model is connected, and labelled that way). Click a bud, or **Grow** in the menu, and after you confirm, the main agent creates an idea lead for it and the bud becomes a full branch (`src/brain/ideas.ts`).
-- **Look.** Bloom glow, drifting neural dust, signal heads with trails, and synapse flashes and rings when a signal reaches an agent.
-- **Branches menu.** On the left, the agent tree as a menu: the main agent at the top, each agent it made underneath, nested by who made whom, with team counts, work in progress and the ideas list. **Teams** switches back to the team grouping.
-- **Signals.** Pulses run from the core out to agents that are working, along the shortest path between two agents when one hands work to another, and back to the core when a task finishes.
-- **Focus.** Hover a node for its name, team and status; click it to open the agent profile. Hovering or choosing an agent in the menu lights its path back to the main agent and every agent below it, and dims the rest. Choosing a sector lights that team.
-- Motion stops when the system asks for reduced motion.
-
-**Teams tab.** Every agent is listed by team with its reporting line, status, current task, a progress bar and how many tasks are queued. Hovering a team or an agent lights up its part of the brain and its information nodes and dims the rest. Click an agent to open the profile, use its button to pause or resume it, search by name, title or team, and use **Give a task** at the bottom (pick an agent, type the task, press Enter).
-
-**Agent Creator Desk.** In the brain workspace, **Compare ideas** saves both submitted concepts and supported text files into the local library, then downloads a dated research request packet. The packet asks for demand evidence, competitors, revenue assumptions, unit economics, build costs, quality retention and a low-cost test. It is a request template, not live market research. **Build an agent** shows its starter blueprint and adds the specialist only when the owner approves it. **Tutorial** explains the workflow, and the lead agent's **Hear** button uses browser speech with a lowered pitch.
-
-Uploaded idea notes are saved locally in the office file. A live research provider, shared mobile/computer intake and real multi-user task handoff still need backend integrations. Custom specialists are added with a simulated provider and manual approval until those integrations are configured.
-
-What was removed: the explorable 3D headquarters, the avatar studio, the Blender character renders and sprite sheets, and the drawn figures. three.js is used again, for the 3D brain only. Saved offices still load; the owner profile (`player`) stays in the file but is no longer shown.
-
-### Schema version 6
-
-Version 6 adds `settings.layoutPreset`. Older files migrate to the grid preset, so their look doesn't change, and gain the Royal Lounge room template. Moving to version 7 adds your avatar (`player`), the headquarters team room templates and the uniforms for the new roles.
-
-### Schema version 5
-
-Version 4 added `departments`, `control` and `arcade`; version 3 files migrate with every department running, no emergency stop and the arcade set to human only. Version 5 adds locked uniforms. Migrating replaces only the built-in wardrobe (custom items and saved outfits are kept), adds the role uniforms, and locks an agent only if it is already dressed exactly in its role uniform, so nobody's look changes.
-
-## What is simulated and what is live
-
-| Area | Status |
-|---|---|
-| Floor-plan editing, hallway routing, validation, undo, saving, import and export | **Real.** This is the actual engine, and the tests run against it. |
-| Agent pathfinding and rerouting around blocked hallways | **Real.** Paths are computed on the current layout. |
-| Agent "work": task progress, demo tasks, messages between agents, CPU and memory figures | **Simulated.** Labelled "sim" throughout the interface. No model runs for agents. |
-| AI console with the default **Simulated AI** provider | **Simulated.** A local rule-based interpreter. No model is called and no key is needed. |
-| AI console with the **Live model** provider | **Live.** Sends commands to a model through `server/ai-proxy.mjs`. The model's reply is checked against the schema, applied to a draft, and validated before you see a preview. |
-| Budgets, usage records and spend alerts | **Simulated.** Usage comes from simulated task work and every record is marked `simulated`. |
-| Alert delivery | In-app and sound are **real**. Sound reports "permission needed" until you click once to enable audio. Desktop notifications are real once you allow them. Email, messaging and push say **not connected**, because they need a server-side service, and nothing is ever reported as sent when it wasn't. |
-| Personality and AI-model settings | Saved with the agent, and sent to the live provider as instructions. They have no effect on the simulation. |
-
-### Connecting a live model
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-... npm run proxy    # listens on :8787
-npm run dev                                   # Vite forwards /api/ai to the proxy
-```
-
-Then go to **Settings → AI integration** and choose **Live model via server proxy**.
-
-Optional environment variables:
-
-| Variable | Default |
-|---|---|
-| `AI_MODEL` | `claude-sonnet-5-5` |
-| `AI_PROXY_PORT` | 8787 |
-| `RATE_LIMIT_PER_MIN` | 20 |
-
-If the proxy is down or returns something invalid, the console says so and nothing changes. Manual editing keeps working with the AI off.
-
-### Credentials
-
-- API keys stay in the proxy's environment and never reach the browser.
-- Exports, saved layouts, saved versions, agent config exports, and the context sent to the model all pass through `stripSecrets`. That function removes any field whose name looks like `apiKey`, `secret`, `token`, `password`, `authorization` or `credential`.
-- The proxy logs only error classes. It never logs headers or request bodies.
+- JARVIS's API key lives only in the runner's environment (`server/origin-runner.mjs`). It never reaches the browser and is never written to disk or logged.
+- Saves, exports, saved versions and agent exports pass through `stripSecrets`, which removes any field named like `apiKey`, `secret`, `token`, `password`, `authorization` or `credential`.
 
 ## Architecture
 
 ```
 src/
-  model/        types, defaults (rooms, furniture, outfits, presets), sample office,
-                zod schema + migrations + secret stripping
-  engine/       geometry · ops (all mutations) · routing (orthogonal A*) ·
-                navigation (walkable grid, A*) · validate · simulation (tick loop)
-  store/        zustand store: undoable document, runtime state, UI state,
-                commit (dry-run → validate → conflict) / undo / redo / autosave
-  persistence/  repository interface, save envelope (saveFormat.ts), atomic
-                save backends (localStorage or desktop files), IndexedDB for art
-  brand/        logo and top-bar lockup
-  characters/   procedural SVG character: front / ¾ / side / top / portrait,
-                idle / walk / work poses, flat / neon / realistic / pixel styles
-  viewport/     floor plan canvas, rooms, corridors, agents, minimap, context menu
-  ai/           rule-based interpreter (parser.ts), provider layer (mock / remote / off)
-  engine/       … plus spatial (object index, placement checks) · alerts (dedupe,
-                escalation, delivery) · governance (usage, budgets, approvals) ·
-                tubes (capsule network) · library (knowledge search)
-  ai/remodel.ts object-level remodelling commands
-  ui/           panels, inspector, profile drawer, appearance editor, console,
-                dashboard, settings, shared form primitives, object library,
-                wardrobe, theme editor, alert centre, alert settings, business
-                panels, sound (WebAudio), perf panel
-server/ai-proxy.mjs   server-side model proxy (key lives here)
-desktop/              Electron main process, preload bridge and save-file store
-tests/                acceptance suite
-examples/             sample-office.json (valid) and malformed-office.json (rejected)
+  model/        types, defaults, the fresh brain (sample.ts), zod schema,
+                migrations from old office saves, secret stripping, themes
+  engine/       ops (every change) · simulation (task loop) · governance (usage,
+                budgets, approvals) · alerts · library (knowledge search)
+  store/        zustand store: undoable document, runtime state, UI state
+  persistence/  save envelope, atomic save backends (localStorage or desktop files)
+  brain/        3D brain (BrainScene, brainMesh, nerveTree), brain picker,
+                Branches menu, Creator desk, JARVIS link, skill bank and requests
+  ui/           top bar, dashboard, settings, profile drawer, console, alerts
+  brand/        logo
+server/origin-runner.mjs   JARVIS's live runner (the key lives here)
+desktop/                   Electron main process, preload bridge and save-file store
+tests/                     Vitest suite
+examples/                  sample-brain.json (valid) and malformed-brain.json (rejected)
 ```
 
-**Data flow.** The UI and the AI both produce a `DocOp[]`. That list goes to `applyOps`, which applies it atomically with immer, then clamps doors and furniture to their rooms, then reroutes hallways. Next, `validate` compares the issues against the state before the change, and new errors open a conflict dialog. Finally the change is committed to history and `reconcileLayout` moves agents along with their rooms and recalculates their paths.
+**Data flow.** Every change is a `DocOp[]` passed to `commit`, which applies it atomically with `applyOps` and records it in history. There are three layers of state: **doc** (agents, projects, library, settings; undoable and saved), **runtime** (tasks, events, usage, approvals; saved but not undoable) and **ui** (never saved).
 
-There are three layers of state:
-- **doc**: the layout and the agents. It is undoable and saved.
-- **runtime**: positions, tasks and events. It is saved but not undoable.
-- **ui**: never saved.
+**Schema.** `schemaVersion` is 8. Any older office save (v1 to v7) is converted into a brain on load.
 
-**Schema.** `schemaVersion` is currently 3. Version-1 and version-2 files migrate automatically. Imports check both the shape of the data and references between objects, such as a hallway pointing at a room that doesn't exist.
+## Tests
 
-## Acceptance tests
-
-All 15 required tests live in `tests/acceptance.test.ts` and run against the real engine and store.
-
-| # | Requirement | Test |
-|---|---|---|
-| 1 | Three rooms connected by a hallway | Routes reach the door anchors, there are 0 errors, and an agent path exists from the first room to the last. |
-| 2 | Move the middle room | Both hallways reroute and stay attached to their doors. |
-| 3 | Resize a room | Doors and furniture are clamped inside the new size, and the hallways stay valid. |
-| 4 | Manual hallway, then auto | A custom detour is kept and stays pinned when a room moves. Switching back to auto reroutes it. |
-| 5 | Switch views | The store's view changes, and the agent's ball is drawn from its one appearance profile. |
-| 6 | Change outfit only | Identity, personality and memory are unchanged. |
-| 7 | Save a profile | The profile is written to storage, read back, and validated. |
-| 8 | AI moves a room | The geometry changes, the room ends up left of Main Operations, and there are 0 errors. |
-| 9 | AI changes appearance | Art style becomes realistic, the view becomes side, the top changes, and the name is unchanged. |
-| 10 | Undo and redo a room move | Workstation and room assignments are identical after each step. |
-| 11 | Save and reload | The document matches exactly, and runtime tasks survive. |
-| 12 | Overlap | A warning with a fix appears, no room is deleted, and the store refuses to commit until you choose. |
-| 13 | Blocked hallway | Agents take a longer detour. With every route blocked, the agent goes into an error state with "No route". |
-| 14 | AI disconnected | The console declines the command, and manual room creation still commits. |
-| 15 | Import | A valid export loads. Broken JSON, the wrong shape, a bad field type, and a dangling reference are each rejected, and the current office is left untouched. |
-
-The suite also checks secret stripping and runs the 11 example commands from the brief through the interpreter.
-
-### AI Headquarters tests
-
-The 15 tests from the headquarters specification live in `tests/hq.acceptance.test.ts`:
-
-| # | Requirement | Test |
-|---|---|---|
-| 1 | Librarian and president differ | Archetype, title, role, outfit, tools, workstation type, room type and the drawn ball all differ. |
-| 2 | Outfit change keeps identity | Identity, permissions, memory, skills, AI settings and budget are unchanged, and the default look can be restored. |
-| 3 | Reuse an outfit | An outfit saved from ORION applied to SCOUT copies the look and leaves SCOUT's identity alone. |
-| 4 | Add HQ objects | A holo-desk, an archive terminal and a tube station are placed with no errors or overlaps. |
-| 5 | Move a group | Relative spacing and the group are kept. |
-| 6 | Dark to light | Theme variables change; agents and their balls are identical. |
-| 7 | Library palette | The room's colours survive mode and theme changes, and other rooms are untouched. |
-| 8 | Sound and test alert | The chosen sound is delivered. Before audio is allowed it reports "permission needed", and email, messaging and push report "not connected". |
-| 9 | Budget warning | The alert carries the project id and links to that project's usage records. |
-| 10 | Tube delivery | A critical task travels from the executive suite to the library and CODEX acknowledges it. |
-| 11 | Approval | An over-limit spend waits for approval; approving queues the task and resolves the alert. |
-| 12 | Remodel while active | A remodel commits mid-simulation in under 1.5 s, and agents and tasks are preserved. |
-| 13 | Save and reload | Object positions, theme, room palette, appearance, sounds, quiet hours and thresholds round-trip, and the saved file has no secrets. |
-| 14 | Repeated failure | Repeats group into one alert that is escalated to high. |
-| 15 | No overwhelm | 600 ticks of routine work produce at most 3 audible alerts. Info never sounds, and critical still sounds through quiet hours and mute. |
-
-A performance test builds an office of 48 rooms, more than 570 objects and 60 agents, and checks the timing of placement checks, a group move with validation, and simulation ticks.
-
-### Executive control tests
-
-`tests/departments.test.ts` covers safe pause and resume with progress kept, the three render policies and saves, exclusions and the emergency pause, pause all and resume selected, enabling agents and batch assignment, task limits and resource policies, save and migration, 40 agents on the operations floor (under 15 ms per tick, no errors, no two agents on one cell), the production pipeline and its simulated labels, and the human-only arcade lock and logging. `tests/arcade.test.ts` covers the three games, their caps and the daily limits. `tests/wardrobe.test.ts` covers the four-per-slot wardrobe, the uniform lock in every path that could change it, and the v4 → v5 migration.
-
-`tests/brain.test.ts` covers the agent brain: a region per team in its colour, fibres that stay inside their region, nerve bundles that thicken with handoffs and join every region, a deterministic brain, no agent looks in the brain data, information nodes in the right team at stable spots with the cap on finished work, faces that follow status, bright ball colours, the agents' Graph POW (nodes, links, degrees, the cap on finished work) and the standalone page (agent wording, and agent text can't break out of the data block).
-
-`tests/briefing.test.ts` covers the briefing: bucket assignment for every task status, the one-hour window, grouping and filters, blockers, attention and idle agents, ETAs, task history, the lounge in the sample (reachable on foot), the lounge template, save and reload, the furniture drawings, and rendering the board.
-### Save tests
-
-`tests/save.test.ts` covers saving:
-
-- Unchanged content skips the write.
-- A save rotates the backup only after the new save has been verified.
-- A failed verification, or a full storage while rotating, leaves the current save and the backup intact.
-- A damaged current save (bad JSON, checksum mismatch or a failed schema check) is reported along with the valid backup and a kept copy. Nothing is overwritten, and a damaged current never replaces a good backup.
-- The store opens recovery and restores the backup.
-- A missing current save still offers the backup.
-- Legacy saves load and are migrated into the envelope.
-- Saves contain no secrets.
-- The desktop main process computes the same checksum.
-- The desktop file store writes atomically, rotates the backup, refuses invalid saves, and cleans up a write that was interrupted.
+`npm test` runs the suite in `tests/`: the brain's agents and task loop, the nerve tree, ideas, JARVIS's opportunity setup, the skill bank, the runner, runner notices, and saving.
 
 ## Extending
 
-- **New room or furniture types.** Add the name to `ROOM_TYPES` or `FURNITURE_TYPES` in `src/model/types.ts`, then add its metadata in `src/model/defaults.ts`.
-- **New operations.** Add a member to the `DocOp` union and a case in `applyOne` in `src/engine/ops.ts`. The AI layer can then emit it; add it to `DOC_OPS` in `src/ai/providers.ts`.
-- **New AI provider.** Implement the `AIProvider` interface (`plan(command, ctx) → Plan`) in `src/ai/providers.ts`.
+- **New operations.** Add a member to the `DocOp` union and a case in `applyOne` in `src/engine/ops.ts`.
 - **Server storage.** Implement `OfficeRepository` from `src/persistence/repository.ts`.
+
+## Trends and free-to-use images
+
+Agents check TikTok, Instagram and Pinterest trends from public sources only: this week's trend roundups found by web search, TikTok's own newsroom and Creative Center articles, and Google's daily trending searches through the `trends_google` tool (a public RSS feed, free). They never log in to a social site, scrape one, or use the owner's accounts; TikTok's Creative Center and Pinterest Trends only render in a browser, and Instagram's and Pinterest's APIs need developer apps that are not set up. `assets_public_domain` finds public-domain and CC0 images on Wikimedia Commons (and Openverse when Commons has little); every asset an agent uses is saved on the design with its title, source page and licence and shown on the Approvals card. Every design must be original: no memes, characters, logos, brands or other sellers' work, and phrases are trademark-searched before use. These rules are in every task brief and in the SKILL.md rules, so a rewritten SKILL.md carries them.
+
+## Built-in playbooks: Meme shirt design and Trend scouting
+
+Two bank skills written from the owner's own meme-design playbook (`src/brain/builtinSkills.ts`) are in every brain and attached by role: an agent whose name or title says design, mockup, graphic, artwork, illustration or Canva gets **Meme shirt design**; one that says trend, scout, meme, viral or social media gets **Trend scouting**. New agents get them on creation; older brains get them the next time the creator desk opens (`originOutdated`). A copy the owner edits in the bank (tag `owner-edited`) is never overwritten. The design playbook keeps the anti-slop directive, the word-poetry methods, the font lists (Windows fonts for SVG, Google Fonts for Canva), the owner's reference gallery in words, and this brain's rules: original only, trademark search, the "fih" style, five designs waiting per ask. The trend playbook keeps the scouting signals, the 35-point rubric, the meme-family method, the decline and revival rules, and the public-sources-only rule. Every brief also lists the designs the owner declined in the last 30 days so no agent remakes one.
+
+## More brains
+
+**Brains** (top bar) is the brain universe: every brain you started, floating together, the open one in the middle. **Start new brain** grows one with JARVIS as its core and every skill the other brains learned; brains that share skills are joined by nerves from their stems. Click a brain to open it; only the open brain's agents run, the others wait with their tasks. Each brain is a hologram in the colour you picked for it (Colour button in the brain toolbar).
+
+## Charts and Ads
+
+**Charts** shows sales per day, earned against spent per branch, top products, designs, ads and this month's budgets, from what the runner recorded (sales come from Printify's orders; **Pull latest sales** fetches them now). **Ads** lists the clothing you approved and listed; **Make ads** has the ads agent write ads for inexpensive reach (short-video hooks and shot lists, Pinterest pins, captions, small Etsy Ads tests), each waiting for your Yes or No. Nothing is posted or paid for by the app: an approved ad is saved in `origin-data/ads` and you post it yourself. **Create the ads agent** adds one under your store venture with the built-in Ad strategy playbook; its first task is to find the cheapest way to reach buyers.
+
+## Trend sources and connectors
+
+Always on, free: Google Trends, the Imgflip and Reddit meme databases (`trends_memes`: formats and jokes, never the images) and public-domain images. Optional, with your own accounts: `npm run set-instagram` (a token from your Meta app: the dashboard's Instagram-login token reads your own account's numbers and posts; a Facebook Login for Business token with Instagram Public Content Access adds hashtag search, 30 hashtags a week) and `npm run connect-pinterest` (a browser sign-in with a refresh token; `set-pinterest` still takes a pasted token). Tokens stay in `%APPDATA%\the-brain\`. The runner renews them by itself: Instagram-login tokens weekly through Meta's refresh call (Facebook-login tokens too, when the app id and secret were given), Pinterest through its refresh token; the runs panel shows until when each is valid. TikTok has no API for small sellers, so TikTok trends come from fresh public roundups found with web search.
+
+## Design sources (memez)
+
+The scouts save images they find online into `origin-data/memez` with the source page and licence recorded: a public-domain or CC0 image can go on a shirt, anything else is reference only (the designers take the joke and remake it). Link your own folders in Approvals, Design style: your files are yours to print. Declining a design made from a saved image deletes that one image.
+
+## Your skill library (degen-skill)
+
+JARVIS hands out the skills in `lyopz/degen-skill` to the agents whose job they fit, design first (`skills_degen`: list, read, give), and the skill bank has **Hand out library skills by role**. The library is read from a `degen-skill` clone next to the app or in your home folder (or `DEGEN_SKILLS_DIR`), else from GitHub; it is never written to. A skill you edited in the bank is never overwritten.

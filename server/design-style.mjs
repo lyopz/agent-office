@@ -1,0 +1,9 @@
+// The owner's taste in designs, in every brief and SKILL.md rule: modern, simple, funny.
+// The owner adds their own notes in the app (Approvals, Design style); they go in after the guide.
+export const DESIGN_STYLE = `DESIGN STYLE (the owner's taste for every shirt and product design, in SVG, ChatGPT images and Canva alike): modern, simple and funny. One simple drawing plus a few words, deadpan internet humour. Examples: a plain little fish with the word "fih" under it; a frog on a tiny stool, "sit"; a slightly crooked mug, "coffe"; a goose, "honk"; a potato, "me"; a cat looking at nothing, "no thoughts". Think a sticker, not a poster. Rules: one subject, drawn flat in 2 to 4 colours or one clean line, lots of empty space; no gradients, no shine, no drop shadows, no banners, ribbons, "est. 1987" badges or distressed vintage type unless the owner asks; one short lowercase caption of 1 to 3 words in a plain sans or hand-lettered style, or none at all; the joke is the understatement, the misspelling, or the mismatch between picture and word; it must read from three metres away on a shirt. Avoid: long slogans, inspirational quotes, text walls like "mom life / wine o'clock", busy backgrounds, more than one font, anything that looks like a template. Before saving, ask: would a 22-year-old wear this, is it funny with the sound off, can you describe it in five words? Put the style words (flat, minimal, single line drawing, lots of negative space, small lowercase caption, sticker-like, isolated on a transparent background) in every image and Canva prompt.`;
+
+/** The style guide plus whatever the owner added in the app. */
+export const styleGuide = (s) => `${DESIGN_STYLE}${s?.designStyle ? ` THE OWNER ADDS: ${s.designStyle}` : ''}`;
+
+/** The owner's extra style notes, cleaned for storage. */
+export const cleanStyleNote = (v) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000);

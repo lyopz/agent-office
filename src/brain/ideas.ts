@@ -6,6 +6,7 @@
 import type { DocOp } from '../engine/ops';
 import type { KnowledgeEntry, OfficeDoc } from '../model/types';
 import type { TreeIdea } from './nerveTree';
+import { AGENT_BLUEPRINT, VENTURE_TEAM, growKind, suggestedWindow, ventureInstructions } from './opportunity';
 
 export const GROWN = 'grown:';
 const isIdea = (e: KnowledgeEntry) => e.tags.includes('idea') || e.tags.includes('idea-review');
@@ -72,13 +73,16 @@ export function growIdeaOps(doc: Pick<OfficeDoc, 'agents'>, idea: KnowledgeEntry
   const agentId = `agent_idea_${idea.id.replace(/[^a-z0-9]/gi, '').slice(-10)}`;
   const name = ideaAgentName(idea.title, new Set(Object.values(doc.agents).map((a) => a.identity.name)));
   const parent = doc.agents[parentId];
-  const brief = `Own this idea: ${idea.summary}\n\nStart with research: current demand, competitors, costs and the smallest cheap test. Cite sources with dates. Never spend, publish, contact people externally or create accounts without owner approval.`;
+  // grown from the main agent, the idea becomes a venture: it may add only the skill agents it needs
+  const venture = growKind(doc, parentId) === 'venture';
+  const brief = `Own this idea: ${idea.summary}\n\nStart with research: current demand, competitors, costs and the smallest cheap test. Cite sources with dates. Never spend, publish, contact people externally or create accounts without owner approval.${venture ? `\n\n${ventureInstructions(name, idea.title)}\n\n${AGENT_BLUEPRINT}` : ''}`;
   return {
     agentId, name,
     ops: [
       { op: 'agent.createFromArchetype', archetype: 'custom', name, id: agentId },
       { op: 'agent.update', id: agentId, patch: {
-        identity: { title: `Idea lead: ${idea.title}`, department: parent?.identity.department ?? 'Command', bio: idea.summary, roleDescription: brief },
+        ...(venture ? { branch: { kind: 'venture' as const, ventureId: agentId }, schedule: { runWindow: suggestedWindow(VENTURE_TEAM) } } : {}),
+        identity: { title: `Idea lead: ${idea.title}`, department: venture ? VENTURE_TEAM : parent?.identity.department ?? 'Command', bio: idea.summary, roleDescription: brief },
         skills: { primaryRole: 'Idea lead', supervisorId: parentId, skills: ['idea research', 'experiment design'], tools: ['web-research', 'library-search', 'reports'], taskPermissions: ['draft', 'research', 'recommend'] },
         permissions: { allowedTools: ['web-research', 'library-search', 'reports'], requireApprovalFor: ['spend', 'publish', 'external-message', 'create-account', 'delete'] },
         ai: { provider: 'simulated', executionMode: 'manual-approval', agentInstructions: brief },

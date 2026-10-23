@@ -1,62 +1,36 @@
 // Application state. Three layers, kept deliberately separate:
-//  - doc      : persistent, undoable office (layout, agents' profiles/appearance)
-//  - runtime  : persistent simulation state (tasks, positions, activity log); not undoable
-//  - ui       : ephemeral view state (selection, camera, tools) — never saved
+//  - doc      : persistent, undoable brain (agents, knowledge, skills, settings)
+//  - runtime  : persistent work state (tasks, usage, approvals, activity log); not undoable
+//  - ui       : ephemeral view state (selection, page, profile) — never saved
 import { create } from 'zustand';
-import type { AlertSeverity, ArcadeSession, AssetKind, GameId, OfficeDoc, RuntimeState, Task } from '../model/types';
-import { agentArcadeAttempt, isArcade, recordArcadeSession } from '../engine/arcadePolicy';
-import { attachRealFile, createAsset, reviewAsset } from '../engine/production';
-import { departmentId } from '../model/control';
+import type { AlertSeverity, OfficeDoc, RuntimeState, Task } from '../model/types';
 import { acknowledgeAlert, raiseAlert, resolveAlert, testAlert, type AlertInput } from '../engine/alerts';
 import { decideApproval, recordUsage, requestAction, type ActionRequest } from '../engine/governance';
-import { dispatchViaTube } from '../engine/tubes';
 import { applyOps, type DocOp } from '../engine/ops';
-import { newErrors, validate, type Issue } from '../engine/validate';
-import { buildNav, type NavGraph } from '../engine/navigation';
-import { createTask, emptyRuntime, goTo, log, reconcileLayout, step, syncRuntime } from '../engine/simulation';
-import { creatorBrain, robloxHQ, sampleOffice, seedSampleRuntime } from '../model/sample';
-import { emptyOffice } from '../model/defaults';
+import { createTask, emptyRuntime, log, step, syncRuntime } from '../engine/simulation';
+import { creatorBrain } from '../model/sample';
+import { ORIGIN_ID } from '../brain/opportunity';
 import { createRepository, type LoadResult, type OfficeRepository, type Preferences, type SaveResult } from '../persistence/repository';
 import { exportOffice, parseOffice } from '../model/schema';
-import { markFrame } from '../ui/perf';
+import { withBrainTheme } from '../model/themes';
+import { librarySkillBanks, listBrains, putBrain, removeBrain, takeBrain, type BrainSummary } from '../persistence/brains';
+import { sharedSkillOps } from '../brain/brainUniverse';
 
-export type Selection =
-  | { kind: 'none' }
-  | { kind: 'room'; ids: string[] }
-  | { kind: 'corridor'; id: string }
-  | { kind: 'furniture'; id: string; ids?: string[] }
-  | { kind: 'door'; roomId: string; doorId: string }
-  | { kind: 'agent'; id: string };
-
-/** Every furniture id in the selection (multi-select keeps the primary in `id`). */
-export function selectedFurniture(sel: Selection): string[] { return sel.kind === 'furniture' ? (sel.ids?.length ? sel.ids : [sel.id]) : []; }
-
-export type Tool = 'select' | 'room' | 'hallway' | 'door' | 'furniture' | 'workstation' | 'agent' | 'connect' | 'pan';
-export type GlobalView = 'auto' | 'top' | 'front' | 'side' | 'three-quarter';
+export type Selection = { kind: 'none' } | { kind: 'agent'; id: string };
 
 export interface HistoryEntry { doc: OfficeDoc; label: string }
 
-export interface CommitResult { ok: boolean; summary: string[]; errors: string[]; conflicts: Issue[]; doc?: OfficeDoc }
-
-export interface Preview { doc: OfficeDoc; ops: DocOp[]; runtimeOps: RuntimeOp[]; label: string; summary: string[]; issues: Issue[]; source: 'ai' | 'conflict' | 'autosort' }
+export interface CommitResult { ok: boolean; summary: string[]; errors: string[]; doc?: OfficeDoc }
 
 export type RuntimeOp =
-  | { op: 'agent.goTo'; agentId: string; roomId: string | null; workstationId?: string | null }
-  | { op: 'task.create'; agentId: string | null; name: string; description?: string; priority?: Task['priority']; roomId?: string | null; workstationId?: string | null; simulated?: boolean; deadline?: string; dependencies?: string[]; id?: string; projectId?: string | null; handoff?: Task['handoff']; costPerUnit?: number; workUnits?: number; viaTube?: boolean; fromAgentId?: string | null }
+  | { op: 'task.create'; agentId: string | null; name: string; description?: string; priority?: Task['priority']; simulated?: boolean; deadline?: string; dependencies?: string[]; id?: string; projectId?: string | null; handoff?: Task['handoff']; costPerUnit?: number; workUnits?: number }
   | { op: 'task.update'; id: string; patch: Partial<Pick<Task, 'priority' | 'status' | 'agentId' | 'name' | 'description' | 'deadline'>> }
   | { op: 'alert.ack'; id: string } | { op: 'alert.resolve'; id: string } | { op: 'alert.test'; severity: AlertSeverity }
   | { op: 'alert.raise'; input: AlertInput }
   | { op: 'approval.decide'; id: string; approve: boolean }
   | { op: 'action.request'; request: ActionRequest }
   | { op: 'usage.record'; agentId: string | null; projectId: string | null; taskId?: string | null; credits: number; kind?: 'model' | 'tool' | 'purchase'; simulated?: boolean }
-  | { op: 'task.dispatchTube'; taskId: string; fromAgentId: string | null }
   | { op: 'task.fail'; id: string; reason: string }
-  | { op: 'tasks.batch'; departmentId: string; name: string; count: number; workUnits?: number; projectId?: string | null }
-  | { op: 'asset.create'; name: string; kind: AssetKind; ownerAgentId: string | null; projectId?: string | null }
-  | { op: 'asset.review'; id: string; approve: boolean; note?: string }
-  | { op: 'asset.attachFile'; id: string; file: string }
-  | { op: 'arcade.agentPlay'; agentId: string; game: GameId }
-  | { op: 'arcade.recordSession'; game: GameId; score: number; durationSec: number; result: ArcadeSession['result'] }
   | { op: 'history.undo' } | { op: 'history.redo' };
 
 interface State {
@@ -66,35 +40,20 @@ interface State {
   lastSaved: { doc: OfficeDoc; at: string } | null;
   dirty: boolean;
   runtime: RuntimeState;
-  nav: NavGraph;
-  issues: Issue[];
   prefs: Preferences;
   // ui
-  mode: 'simulate' | 'construct';
-  tool: Tool;
-  furnitureType: string;
-  placeRotation: 0 | 90 | 180 | 270;
   selection: Selection;
-  camera: { x: number; y: number; zoom: number };
-  view: GlobalView;
-  layers: { grid: boolean; snap: boolean; boundaries: boolean; paths: boolean; occupancy: boolean; labels: boolean; perf: boolean };
-  preview: Preview | null;
-  conflict: { ops: DocOp[]; label: string; issues: Issue[] } | null;
   profileAgentId: string | null;
   profileTab: string;
-  page: 'office' | 'dashboard' | 'control' | 'settings';
-  toast: { id: number; text: string; level: 'info' | 'warn' | 'error' } | null;
-  hallwayDraft: { roomId: string; doorId: string } | null;
-  /** Room the 3D view should travel to next (set by “Enter in 3D”). */
-  focusRoomId: string | null;
+  page: 'office' | 'universe' | 'dashboard' | 'charts' | 'approvals' | 'ads' | 'settings';
 
-  commit(ops: DocOp[], label: string, opts?: { force?: boolean; silent?: boolean }): CommitResult;
+  commit(ops: DocOp[], label: string, opts?: { silent?: boolean }): CommitResult;
   dryRun(ops: DocOp[]): CommitResult;
   runRuntimeOps(ops: RuntimeOp[]): string[];
   undo(): void; redo(): void;
-  setUi(p: Partial<Pick<State, 'mode' | 'tool' | 'selection' | 'camera' | 'view' | 'preview' | 'conflict' | 'profileAgentId' | 'profileTab' | 'page' | 'furnitureType' | 'placeRotation' | 'hallwayDraft' | 'focusRoomId'>>): void;
-  setLayer(k: keyof State['layers'], v: boolean): void;
+  setUi(p: Partial<Pick<State, 'selection' | 'profileAgentId' | 'profileTab' | 'page'>>): void;
   setPrefs(p: Partial<Preferences>): void;
+  toast: { id: number; text: string; level: 'info' | 'warn' | 'error' } | null;
   notify(text: string, level?: 'info' | 'warn' | 'error'): void;
   tick(): void;
   /** Write the office now (skipped when unchanged since the last save). Returns null when it could not save. */
@@ -111,37 +70,88 @@ interface State {
   loadDoc(doc: OfficeDoc, label: string, runtime?: Partial<RuntimeState> | null): void;
   importText(text: string): { ok: boolean; errors: string[]; warnings: string[] };
   exportText(): string;
-  /** true = the classic NEXUS-7 sample, 'roblox' = the Roblox development headquarters, false = blank. */
-  newOffice(sample: boolean | 'roblox' | 'creator'): void;
+  /** Start a fresh brain with only JARVIS. */
+  newBrain(): void;
+  /** The other brains the owner started, kept in the brain library while this one is open. */
+  brains: BrainSummary[];
+  refreshBrains(): void;
+  /** Keep the open brain in the library and start a new one that already knows the other brains' skills. */
+  startNewBrain(name?: string): boolean;
+  /** Add a new brain to the library (on the ring around the open one) without leaving the open brain. */
+  addBrain(name?: string): BrainSummary | null;
+  /** Keep the open brain in the library and open another one from it. */
+  switchBrain(id: string): boolean;
+  deleteBrain(id: string): boolean;
 }
 
 export const repo: OfficeRepository = createRepository();
 
-const DEFAULT_PREFS: Preferences = { autosave: true, viewMode: 'auto', showDashboard: true, aiProvider: 'mock', autoApplySafe: true, simSpeed: 1, simRunning: true, demoTasks: true, hqView: 'brain' };
+const DEFAULT_PREFS: Preferences = { autosave: true, showDashboard: true, simSpeed: 1, simRunning: true };
 
 function initial() {
   const loaded = repo.load();
   // a damaged save is reported (recovery dialog), never replaced: the sample below is only a placeholder
   const recovery = loaded.status === 'corrupt' ? loaded : null;
   const saved = loaded.status === 'ok' ? loaded : null;
-  const doc = saved?.doc ?? creatorBrain(); // first run opens the user-led agent brain
+  const doc = withOrigin(saved?.doc ?? creatorBrain()); // first run opens the user-led agent brain
   const runtime: RuntimeState = { ...emptyRuntime(), ...(saved?.runtime ?? {}) } as RuntimeState;
-  runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {}; runtime.usage ??= []; runtime.approvals ??= {}; runtime.alerts ??= {}; runtime.capsules ??= {}; runtime.policyHeld ??= []; runtime.arcadeSessions ??= []; runtime.assets ??= {};
-  const nav = buildNav(doc);
-  syncRuntime(doc, runtime, nav);
-  if (!saved) seedSampleRuntime(doc, runtime);
-  if (!saved) log(runtime, { kind: 'system', agentId: null, simulated: false, message: 'Loaded Creator Brain. Agent activity is simulated; no live model or research provider is connected.' });
+  runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {}; runtime.usage ??= []; runtime.approvals ??= {}; runtime.alerts ??= {};
+  cleanRuntime(runtime, doc);
+  syncRuntime(doc, runtime);
+  if (!saved) log(runtime, { kind: 'system', agentId: null, simulated: false, message: 'Started a new brain with JARVIS.' });
   let lastSaved = saved ? { doc, at: saved.savedAt } : null;
   if (loaded.status === 'empty') { try { lastSaved = { doc, at: repo.saveCurrent(doc, runtime).savedAt }; } catch { /* storage unavailable: stay unsaved */ } }
-  return { doc, runtime, nav, lastSaved, recovery };
+  return { doc, runtime, lastSaved, recovery };
+}
+
+/** The brain always has JARVIS at its core; a save without it gets a fresh JARVIS. */
+function withOrigin(doc: OfficeDoc): OfficeDoc {
+  if (!doc.agents[ORIGIN_ID]) return { ...doc, agents: { ...doc.agents, [ORIGIN_ID]: creatorBrain().agents[ORIGIN_ID] } };
+  return renamedLeader({ ...doc, appearance: withBrainTheme(doc.appearance) });
+}
+
+/** The owner renamed ORIGIN to JARVIS (2026-10-21); older saves get the new name in its profile, every agent's instructions and the skill bank. */
+export function renamedLeader(doc: OfficeDoc): OfficeDoc {
+  const has = /\bORIGIN\b/;
+  const lead = doc.agents[ORIGIN_ID];
+  const stale = (lead && lead.identity.name === 'ORIGIN') || Object.values(doc.agents).some((a) => has.test(a.ai.systemInstructions) || has.test(a.ai.agentInstructions)) || doc.skillBank.some((k) => has.test(k.description) || has.test(k.instructions));
+  if (!stale) return doc;
+  const agents = Object.fromEntries(Object.entries(doc.agents).map(([id, a]) => [id, {
+    ...a,
+    identity: id === ORIGIN_ID && a.identity.name === 'ORIGIN' ? { ...a.identity, name: 'JARVIS' } : a.identity,
+    ai: { ...a.ai, systemInstructions: a.ai.systemInstructions.replace(/\bORIGIN\b/g, 'JARVIS'), agentInstructions: a.ai.agentInstructions.replace(/\bORIGIN\b/g, 'JARVIS') },
+  }]));
+  const skillBank = doc.skillBank.map((k) => ({ ...k, description: k.description.replace(/\bORIGIN\b/g, 'JARVIS'), instructions: k.instructions.replace(/\bORIGIN\b/g, 'JARVIS') }));
+  return { ...doc, agents, skillBank };
+}
+
+/** Older saves carried office state (positions, tubes, the arcade, production) and simulated work; drop both. */
+function cleanRuntime(rt: RuntimeState, doc: OfficeDoc) {
+  const old = rt as unknown as Record<string, unknown>;
+  for (const k of ['capsules', 'policyHeld', 'arcadeSessions', 'assets']) delete old[k];
+  for (const [id, a] of Object.entries(rt.agents)) rt.agents[id] = { status: a.status === ('walking' as string) ? 'idle' : a.status, currentTaskId: a.currentTaskId, statusMessage: a.statusMessage, waitTicks: a.waitTicks ?? 0 };
+  for (const t of Object.values(rt.tasks)) {
+    const o = t as unknown as Record<string, unknown>;
+    for (const k of ['destination', 'deliveredVia', 'jobKind', 'assetId', 'checkpoint']) delete o[k];
+    if (t.status === ('in-transit' as string)) t.status = 'queued';
+    if (t.heldBy && t.heldBy !== 'emergency') t.heldBy = null;
+  }
+  // nothing is simulated: real work is JARVIS's, kept by its runner. Tasks made up in the browser,
+  // and the usage, approvals and log lines they produced, are cleared.
+  rt.tasks = {};
+  rt.approvals = {};
+  rt.alerts = {};
+  rt.usage = rt.usage.filter((u) => !u.simulated);
+  rt.events = rt.events.filter((e) => !e.simulated);
+  for (const [id, a] of Object.entries(rt.agents)) if (doc.agents[id]) rt.agents[id] = { ...a, status: doc.agents[id].enabled ? 'idle' : 'paused', currentTaskId: null, statusMessage: undefined, waitTicks: 0 };
 }
 
 function cloneRuntime(rt: RuntimeState): RuntimeState {
   const agents: RuntimeState['agents'] = {};
-  for (const [k, a] of Object.entries(rt.agents)) agents[k] = { ...a, pos: { ...a.pos }, path: a.path.slice() };
+  for (const [k, a] of Object.entries(rt.agents)) agents[k] = { ...a };
   const tasks: RuntimeState['tasks'] = {};
   for (const [k, t] of Object.entries(rt.tasks)) tasks[k] = { ...t };
-  return { ...rt, agents, tasks, events: rt.events.slice(), usage: rt.usage, approvals: { ...rt.approvals }, alerts: { ...rt.alerts }, capsules: { ...rt.capsules }, assets: { ...rt.assets } };
+  return { ...rt, agents, tasks, events: rt.events.slice(), usage: rt.usage, approvals: { ...rt.approvals }, alerts: { ...rt.alerts } };
 }
 
 function pruneTasks(rt: RuntimeState) {
@@ -151,51 +161,38 @@ function pruneTasks(rt: RuntimeState) {
 
 export const useStore = create<State>((set, get) => {
   const init = initial();
-  const prefs = { ...DEFAULT_PREFS, ...repo.loadPrefs() };
-  // the 3D headquarters and avatar studio became the agent brain
-  prefs.hqView = (prefs.hqView as string | undefined) === 'overview' ? 'overview' : 'brain';
-  delete (prefs as { characterStyle?: unknown }).characterStyle;
-  // autosave runs on a 60 s interval (useAutosave in ui/SaveStatus.tsx), not on every change
+  const loaded = repo.loadPrefs();
+  const prefs = { ...DEFAULT_PREFS, ...loaded };
+  // office-era preferences
+  for (const k of ['characterStyle', 'hqView', 'viewMode', 'aiProvider', 'autoApplySafe', 'demoTasks']) delete (prefs as Record<string, unknown>)[k];
+  // autosave (useAutosave in ui/SaveStatus.tsx) saves shortly after each change and on a 60 s interval
 
-  const setDoc = (doc: OfficeDoc, prevDoc: OfficeDoc, patch: Partial<State> = {}) => {
+  const setDoc = (doc: OfficeDoc, patch: Partial<State> = {}) => {
     const runtime = cloneRuntime(get().runtime);
-    const nav = reconcileLayout(prevDoc, doc, runtime);
-    set({ doc, runtime, nav, issues: validate(doc), dirty: true, ...patch });
+    syncRuntime(doc, runtime);
+    set({ doc, runtime, dirty: true, ...patch });
   };
 
   return {
     ...init,
     past: [], future: [], dirty: false, saveError: null,
-    issues: validate(init.doc),
     prefs,
-    mode: 'simulate', tool: 'select', furnitureType: 'desk', placeRotation: 0, selection: { kind: 'none' },
-    camera: { x: -40, y: -40, zoom: 0.8 },
-    view: (prefs.viewMode as GlobalView) ?? 'auto',
-    layers: { grid: true, snap: true, boundaries: true, paths: false, occupancy: true, labels: true, perf: false },
-    preview: null, conflict: null, profileAgentId: null, profileTab: 'identity', page: 'office', toast: null, hallwayDraft: null, focusRoomId: null,
+    selection: { kind: 'none' }, profileAgentId: null, profileTab: 'identity', page: 'office', toast: null,
 
     dryRun(ops) {
-      const { doc, issues } = get();
-      const r = applyOps(doc, ops);
-      if (r.errors.length) return { ok: false, summary: [], errors: r.errors, conflicts: [] };
-      const after = validate(r.doc);
-      return { ok: true, summary: r.summary, errors: [], conflicts: newErrors(issues, after), doc: r.doc };
+      const r = applyOps(get().doc, ops);
+      if (r.errors.length) return { ok: false, summary: [], errors: r.errors };
+      return { ok: true, summary: r.summary, errors: [], doc: r.doc };
     },
 
     commit(ops, label, opts = {}) {
-      const t0 = performance.now();
       const { doc, past } = get();
       const res = get().dryRun(ops);
       if (!res.ok) { if (!opts.silent) get().notify(res.errors[0], 'error'); return res; }
-      if (res.conflicts.length && !opts.force) {
-        set({ conflict: { ops, label, issues: res.conflicts } });
-        return { ...res, ok: false };
-      }
-      setDoc(res.doc!, doc, { past: [...past, { doc, label }].slice(-100), future: [], conflict: null });
+      setDoc(res.doc!, { past: [...past, { doc, label }].slice(-100), future: [] });
       const rt = cloneRuntime(get().runtime);
-      log(rt, { kind: 'layout', agentId: null, simulated: false, message: `${label}: ${res.summary.join('; ') || 'no changes'}` });
+      log(rt, { kind: 'change', agentId: null, simulated: false, message: `${label}: ${res.summary.join('; ') || 'no changes'}` });
       set({ runtime: rt });
-      markFrame('commit', performance.now() - t0);
       return res;
     },
 
@@ -204,37 +201,12 @@ export const useStore = create<State>((set, get) => {
       for (const o of ops) {
         if (o.op === 'history.undo') { get().undo(); out.push('Undid last change'); continue; }
         if (o.op === 'history.redo') { get().redo(); out.push('Redid change'); continue; }
-        const { doc, nav } = get();
+        const { doc } = get();
         const rt = cloneRuntime(get().runtime);
-        if ((o.op === 'agent.goTo' || o.op === 'task.create') && o.agentId && isArcade(doc, o.workstationId)) {
-          const g = doc.furniture[o.workstationId!].arcade!.game;
-          out.push(agentArcadeAttempt(doc, rt, o.agentId, g, o.op === 'agent.goTo' ? 'move request' : 'task').reason);
-          set({ runtime: rt }); continue;
-        }
-        if (o.op === 'arcade.agentPlay') out.push(agentArcadeAttempt(doc, rt, o.agentId, o.game, 'play request').reason);
-        if (o.op === 'arcade.recordSession') { recordArcadeSession(rt, { agentId: null, game: o.game, startedAt: new Date(Date.now() - o.durationSec * 1000).toISOString(), durationSec: o.durationSec, score: o.score, result: o.result, reward: 0 }); out.push('Session recorded'); }
-        if (o.op === 'asset.create') { const a = createAsset(rt, { name: o.name, kind: o.kind, ownerAgentId: o.ownerAgentId, projectId: o.projectId ?? null }); log(rt, { kind: 'production', agentId: o.ownerAgentId, simulated: false, message: `New production item “${a.name}” assigned${o.ownerAgentId ? ` to ${doc.agents[o.ownerAgentId]?.identity.name}` : ''}` }); out.push(`Created ${a.name}`); }
-        if (o.op === 'asset.review') out.push(reviewAsset(rt, o.id, o.approve, o.note) ? (o.approve ? 'Approved' : 'Changes requested') : 'Not awaiting review');
-        if (o.op === 'asset.attachFile') out.push(attachRealFile(rt, o.id, o.file) ? 'Attached' : 'Asset not found');
-        if (o.op === 'tasks.batch') {
-          const members = Object.values(doc.agents).filter((a) => departmentId(a.identity.department || 'General') === o.departmentId && a.enabled);
-          if (!members.length) out.push('No agents in that department');
-          else {
-            const n = Math.max(1, Math.min(200, Math.floor(o.count)));
-            for (let i = 0; i < n; i++) {
-              const a = members[i % members.length];
-              createTask(rt, { name: n > 1 ? `${o.name} (${i + 1}/${n})` : o.name, agentId: a.id, workUnits: o.workUnits ?? 40, projectId: o.projectId ?? null, costPerUnit: 0.01, simulated: true, destination: { roomId: a.schedule.assignedRoomId, workstationId: a.schedule.preferredWorkstationId } });
-            }
-            log(rt, { kind: 'system', agentId: null, simulated: false, message: `Batch: queued ${n} × “${o.name}” across ${Math.min(n, members.length)} agents` });
-            out.push(`Queued ${n} tasks across ${Math.min(n, members.length)} agents`);
-          }
-        }
-        if (o.op === 'agent.goTo') out.push(goTo(doc, rt, nav, o.agentId, o.roomId, o.workstationId ?? null).message);
         if (o.op === 'task.create') {
-          const t = createTask(rt, { ...(o.id ? { id: o.id } : {}), name: o.name, description: o.description ?? '', agentId: o.agentId, priority: o.priority ?? 'normal', destination: { roomId: o.roomId ?? null, workstationId: o.workstationId ?? null }, simulated: o.simulated ?? true, deadline: o.deadline, dependencies: o.dependencies ?? [], projectId: o.projectId ?? null, handoff: o.handoff, costPerUnit: o.costPerUnit, ...(o.workUnits ? { workUnits: o.workUnits } : {}) });
+          const t = createTask(rt, { ...(o.id ? { id: o.id } : {}), name: o.name, description: o.description ?? '', agentId: o.agentId, priority: o.priority ?? 'normal', simulated: o.simulated ?? true, deadline: o.deadline, dependencies: o.dependencies ?? [], projectId: o.projectId ?? null, handoff: o.handoff, costPerUnit: o.costPerUnit, ...(o.workUnits ? { workUnits: o.workUnits } : {}) });
           log(rt, { kind: 'system', agentId: o.agentId, simulated: false, message: `Task “${t.name}” queued${o.agentId ? ` for ${doc.agents[o.agentId]?.identity.name}` : ''}` });
           out.push(`Queued task ${t.name}`);
-          if (o.viaTube) out.push(dispatchViaTube(doc, rt, t.id, o.fromAgentId ?? null).message);
         }
         if (o.op === 'task.update') {
           const t = rt.tasks[o.id];
@@ -243,7 +215,7 @@ export const useStore = create<State>((set, get) => {
             Object.assign(t, o.patch);
             if (o.patch.status === 'queued' && t.progress >= 100) t.progress = 0;
             if (wasAgent && (o.patch.agentId !== undefined && o.patch.agentId !== wasAgent || o.patch.status === 'cancelled' || o.patch.status === 'paused')) {
-              const ar = rt.agents[wasAgent]; if (ar?.currentTaskId === t.id) { ar.currentTaskId = null; ar.status = 'idle'; ar.path = []; ar.destination = null; }
+              const ar = rt.agents[wasAgent]; if (ar?.currentTaskId === t.id) { ar.currentTaskId = null; ar.status = 'idle'; }
               if (o.patch.agentId) t.status = 'queued';
             }
             log(rt, { kind: 'config', agentId: t.agentId, simulated: false, message: `Task “${t.name}” updated: ${Object.entries(o.patch).map(([k, v]) => `${k}=${v}`).join(', ')}` });
@@ -257,7 +229,6 @@ export const useStore = create<State>((set, get) => {
         if (o.op === 'approval.decide') out.push(decideApproval(doc, rt, o.id, o.approve) ? (o.approve ? 'Approved' : 'Rejected') : 'Already decided');
         if (o.op === 'action.request') { const r = requestAction(doc, rt, o.request); out.push(r.allowed ? 'Allowed' : `Approval requested: ${r.approval.reason}`); }
         if (o.op === 'usage.record') out.push(recordUsage(doc, rt, { agentId: o.agentId, projectId: o.projectId, taskId: o.taskId ?? null, credits: o.credits, kind: o.kind ?? 'model', simulated: o.simulated }).id);
-        if (o.op === 'task.dispatchTube') out.push(dispatchViaTube(doc, rt, o.taskId, o.fromAgentId).message);
         if (o.op === 'task.fail') {
           const t = rt.tasks[o.id];
           if (t) {
@@ -278,30 +249,26 @@ export const useStore = create<State>((set, get) => {
       const { past, doc, future } = get();
       const e = past[past.length - 1];
       if (!e) { get().notify('Nothing to undo'); return; }
-      setDoc(e.doc, doc, { past: past.slice(0, -1), future: [{ doc, label: e.label }, ...future] });
+      setDoc(e.doc, { past: past.slice(0, -1), future: [{ doc, label: e.label }, ...future] });
       get().notify(`Undid: ${e.label}`);
     },
     redo() {
       const { past, doc, future } = get();
       const e = future[0];
       if (!e) { get().notify('Nothing to redo'); return; }
-      setDoc(e.doc, doc, { past: [...past, { doc, label: e.label }], future: future.slice(1) });
+      setDoc(e.doc, { past: [...past, { doc, label: e.label }], future: future.slice(1) });
       get().notify(`Redid: ${e.label}`);
     },
 
     setUi(p) { set(p as Partial<State>); },
-    setLayer(k, v) { set({ layers: { ...get().layers, [k]: v } }); },
     setPrefs(p) { const prefs = { ...get().prefs, ...p }; repo.savePrefs(prefs); set({ prefs }); },
     notify(text, level = 'info') { set({ toast: { id: Date.now(), text, level } }); },
 
     tick() {
-      const t0 = performance.now();
-      const { doc, nav, prefs } = get();
       const rt = cloneRuntime(get().runtime);
-      step(doc, rt, nav, { demoTasks: prefs.demoTasks });
+      step(get().doc, rt);
       if (rt.tick % 100 === 0) pruneTasks(rt);
       set({ runtime: rt });
-      markFrame('tick', performance.now() - t0, { agents: Object.keys(rt.agents).length, tasks: Object.keys(rt.tasks).length, events: rt.events.length });
     },
 
     save() {
@@ -322,17 +289,17 @@ export const useStore = create<State>((set, get) => {
       if (get().recovery) { get().notify('Saving is paused until you choose how to recover the damaged save.', 'warn'); return; }
       const r = get().save();
       if (!r) { const e = get().saveError; if (e) get().notify(e, 'error'); return; }
-      get().notify(r.status === 'saved' ? 'Office saved' : 'Already saved: nothing changed since the last save');
+      get().notify(r.status === 'saved' ? 'Brain saved' : 'Already saved: nothing changed since the last save');
     },
     resolveRecovery(choice) {
       const rec = get().recovery;
       if (!rec) return;
       repo.resumeSaving();
       if (choice === 'backup' && rec.backup) get().loadDoc(rec.backup.doc, 'Restore backup', rec.backup.runtime ?? {});
-      else get().newOffice(true);
+      else get().newBrain();
       set({ recovery: null, past: [], future: [] });
       const r = get().save();
-      get().notify(choice === 'backup' && rec.backup ? `Restored the backup from ${new Date(rec.backup.savedAt).toLocaleString()}${r ? '' : ' (not saved yet)'}` : `Started a fresh office${r ? '' : ' (not saved yet)'}`, r ? 'info' : 'warn');
+      get().notify(choice === 'backup' && rec.backup ? `Restored the backup from ${new Date(rec.backup.savedAt).toLocaleString()}${r ? '' : ' (not saved yet)'}` : `Started a fresh brain${r ? '' : ' (not saved yet)'}`, r ? 'info' : 'warn');
     },
     saveVersion(name) {
       try { repo.saveVersion(name, get().doc); get().save(); get().notify(`Saved version “${name}”`); }
@@ -349,40 +316,86 @@ export const useStore = create<State>((set, get) => {
       if (!s) { get().notify('No saved version yet', 'warn'); return; }
       get().loadDoc(s.doc, 'Reset to last save');
     },
-    loadDoc(doc, label, runtime) {
+    loadDoc(loaded, label, runtime) {
+      const doc = withOrigin(loaded);
       const prev = get().doc;
       if (runtime) {
         const rt = { ...emptyRuntime(), ...runtime } as RuntimeState;
-        const nav = buildNav(doc); syncRuntime(doc, rt, nav);
+        cleanRuntime(rt, doc); syncRuntime(doc, rt);
         set({ runtime: rt });
       }
-      setDoc(doc, prev, { past: [...get().past, { doc: prev, label }].slice(-100), future: [], selection: { kind: 'none' } });
+      setDoc(doc, { past: [...get().past, { doc: prev, label }].slice(-100), future: [], selection: { kind: 'none' } });
     },
     importText(text) {
       let data: unknown;
       try { data = JSON.parse(text); } catch { return { ok: false, errors: ['Not valid JSON'], warnings: [] }; }
       const r = parseOffice(data);
       if (!r.ok) return { ok: false, errors: r.errors, warnings: [] };
-      // imported office gets fresh runtime; agents start at their workstations
+      r.doc = withOrigin(r.doc);
+      // an imported brain gets fresh runtime
       const prev = get().doc;
-      const rt = emptyRuntime(); const nav = buildNav(r.doc); syncRuntime(r.doc, rt, nav);
-      log(rt, { kind: 'system', agentId: null, simulated: false, message: `Imported office “${r.doc.name}”` });
+      const rt = emptyRuntime(); syncRuntime(r.doc, rt);
+      log(rt, { kind: 'system', agentId: null, simulated: false, message: `Imported brain “${r.doc.name}”` });
       set({ runtime: rt });
-      setDoc(r.doc, prev, { past: [...get().past, { doc: prev, label: 'Import office' }].slice(-100), future: [], selection: { kind: 'none' } });
+      setDoc(r.doc, { past: [...get().past, { doc: prev, label: 'Import brain' }].slice(-100), future: [], selection: { kind: 'none' } });
       return { ok: true, errors: [], warnings: r.warnings };
     },
     exportText() {
       const { doc, runtime } = get();
       return exportOffice(doc, { runtime: { tasks: runtime.tasks } });
     },
-    newOffice(sample) {
-      const doc = sample === 'roblox' ? robloxHQ() : sample === 'creator' ? creatorBrain() : sample ? sampleOffice() : emptyOffice('Blank Office');
+    newBrain() {
+      const doc = creatorBrain();
       const prev = get().doc;
-      const rt = emptyRuntime(); const nav = buildNav(doc); syncRuntime(doc, rt, nav);
-      if (sample) seedSampleRuntime(doc, rt);
+      const rt = emptyRuntime(); syncRuntime(doc, rt);
       set({ runtime: rt });
-      if (sample === 'creator') get().setPrefs({ hqView: 'brain' });
-      setDoc(doc, prev, { past: [...get().past, { doc: prev, label: 'New office' }].slice(-100), future: [], selection: { kind: 'none' }, page: 'office' });
+      setDoc(doc, { past: [...get().past, { doc: prev, label: 'New brain' }].slice(-100), future: [], selection: { kind: 'none' }, page: 'office' });
+    },
+    brains: (() => { try { return listBrains(); } catch { return []; } })(),
+    refreshBrains() { try { set({ brains: listBrains() }); } catch { /* storage unavailable */ } },
+    startNewBrain(name) {
+      const { doc: prev, runtime } = get();
+      try { putBrain(prev, { tasks: runtime.tasks }); } catch (e) { get().notify((e as Error).message, 'error'); return false; }
+      // the sample brain is frozen, so the new brain is a copy with its own id and name
+      const doc = { ...creatorBrain(), id: `brain_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name: (name ?? '').trim() || `Brain ${listBrains().length + 1}` };
+      // a new brain grows from what the other brains learned
+      const grown = applyOps(doc, sharedSkillOps(doc, [{ brainId: prev.id, brainName: prev.name, skills: prev.skillBank ?? [] }, ...librarySkillBanks()]));
+      const rt = emptyRuntime(); syncRuntime(grown.doc, rt);
+      log(rt, { kind: 'system', agentId: null, simulated: false, message: `Started the brain “${doc.name}” with JARVIS and ${grown.doc.skillBank.length} skills from the other brains.` });
+      set({ runtime: rt });
+      setDoc(grown.doc, { past: [...get().past, { doc: prev, label: 'Start new brain' }].slice(-100), future: [], selection: { kind: 'none' }, page: 'universe', brains: listBrains() });
+      get().save();
+      return true;
+    },
+    addBrain(name) {
+      const { doc: open } = get();
+      const doc = { ...creatorBrain(), id: `brain_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name: (name ?? '').trim() || `Brain ${listBrains().length + 2}` };
+      // like a started brain, it already knows what the open brain and the others learned
+      const grown = applyOps(doc, sharedSkillOps(doc, [{ brainId: open.id, brainName: open.name, skills: open.skillBank ?? [] }, ...librarySkillBanks()]));
+      try { putBrain(grown.doc, null); } catch (e) { get().notify((e as Error).message, 'error'); return null; }
+      const brains = listBrains();
+      set({ brains });
+      return brains.find((b) => b.id === grown.doc.id) ?? null;
+    },
+    switchBrain(id) {
+      const { doc: prev, runtime } = get();
+      if (id === prev.id) return true;
+      let target;
+      try { target = takeBrain(id); } catch (e) { get().notify((e as Error).message, 'error'); return false; }
+      if (!target) { get().notify('That brain is not in the library any more.', 'warn'); return false; }
+      try { putBrain(prev, { tasks: runtime.tasks }); } catch (e) { try { putBrain(target.doc, target.runtime); } catch { /* keep going */ } get().notify((e as Error).message, 'error'); return false; }
+      // what the other brains learned since this one was last open
+      const grown = applyOps(target.doc, sharedSkillOps(target.doc, [{ brainId: prev.id, brainName: prev.name, skills: prev.skillBank ?? [] }, ...librarySkillBanks()]));
+      get().loadDoc(grown.doc, `Open brain “${target.name}”`, target.runtime ?? {});
+      set({ brains: listBrains() });
+      get().save();
+      return true;
+    },
+    deleteBrain(id) {
+      let ok = false;
+      try { ok = removeBrain(id); } catch (e) { get().notify((e as Error).message, 'error'); return false; }
+      set({ brains: listBrains() });
+      return ok;
     },
   };
 });

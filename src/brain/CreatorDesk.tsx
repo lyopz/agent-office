@@ -1,16 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, Check, FileText, Mic2, Plus, Search, ShieldCheck, Sparkles, Upload, X } from 'lucide-react';
+import { Check, FileText, GitBranch, Library, Mic2, Plus, ShieldCheck, Sparkles, Upload, X, type LucideIcon } from 'lucide-react';
 import { useStore } from '../store/store';
-import type { KnowledgeEntry } from '../model/types';
+import type { RunWindow } from '../model/types';
+import { ORIGIN_ID, SKILL_LABELS, SKILL_TEAMS, VENTURE_TEAM, agentPrompt, branchAgentOps, describeWindow, growKind, isOpportunityOrigin, opportunityOriginOps, originOutdated, suggestedWindow } from './opportunity';
+import SkillRequests from './SkillRequests';
+import OriginRuns from './OriginRuns';
+import SkillBank, { BankSkillPicker } from './SkillBank';
+import { brainMap, syncOrigin, taskAction } from './originLink';
+import { growIdeaOps, ownerIdeaOps } from './ideas';
+import { ownSkillFileOps, useSkillFiles } from './skillFiles';
+import { SkillFileDrop, type OwnSkillFile } from './SkillFileDrop';
+import { useOrigin } from './useOrigin';
+import { say } from '../ui/voice';
 
-type DeskTab = 'ideas' | 'agent' | 'tutorial';
-const DEPARTMENTS = ['Research', 'Product', 'Engineering', 'Quality', 'Finance', 'Creative', 'Community', 'Operations'];
+type DeskTab = 'ideas' | 'agent' | 'requests' | 'runs' | 'bank';
+const TABS: DeskTab[] = ['ideas', 'agent', 'requests', 'runs', 'bank'];
+const EVERY = [[15, 'every 15 min'], [30, 'every 30 min'], [60, 'every hour'], [120, 'every 2 hours'], [180, 'every 3 hours'], [300, 'every 5 hours'], [480, 'every 8 hours'], [720, 'every 12 hours'], [1440, 'once a day']] as const;
 
-function saveTextFile(name: string, text: string) {
-  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = name; a.click();
-  URL.revokeObjectURL(url);
+// Add idea in the bottom dock opens the desk from any page: the tab waits here until the desk is mounted.
+let pendingTab: DeskTab | null = null;
+const DESK_EVENT = 'brain:open-desk';
+export function openDesk(tab: DeskTab) { pendingTab = tab; window.dispatchEvent(new Event(DESK_EVENT)); }
+
+/** A tool button's round glowing bubble with its label under it, like the page dock. */
+function Orb({ icon: Icon, label, count, alert }: { icon: LucideIcon; label: string; count?: number | null; alert?: boolean }) {
+  return <><span className="creator-orb"><Icon size={20} strokeWidth={1.7} />{count != null && <span className={`creator-count${alert ? ' alert' : ''}`}>{count}</span>}</span><span className="creator-label">{label}</span></>;
 }
 
 export default function CreatorDesk() {
@@ -18,10 +32,15 @@ export default function CreatorDesk() {
   const library = doc.library;
   const leader = doc.agents.agent_origin ?? Object.values(doc.agents).find((a) => !a.skills.supervisorId) ?? null;
   const leaderId = leader?.id ?? null;
-  const leaderName = leader?.identity.name ?? 'ORIGIN';
+  const leaderName = leader?.identity.name ?? 'JARVIS';
   const [tab, setTab] = useState<DeskTab | null>(null);
-  const [ideaMine, setIdeaMine] = useState('');
-  const [ideaFriend, setIdeaFriend] = useState('');
+  useEffect(() => {
+    const take = () => { if (pendingTab) { setTab(pendingTab); pendingTab = null; } };
+    take();
+    window.addEventListener(DESK_EVENT, take);
+    return () => window.removeEventListener(DESK_EVENT, take);
+  }, []);
+  const [idea, setIdea] = useState('');
   const [fileName, setFileName] = useState('');
   const [fileText, setFileText] = useState('');
   const [notice, setNotice] = useState('');
@@ -29,18 +48,55 @@ export default function CreatorDesk() {
   const [agentRole, setAgentRole] = useState('');
   const [agentDept, setAgentDept] = useState('Research');
   const [agentPurpose, setAgentPurpose] = useState('');
+  const [parentId, setParentId] = useState<string | null>(null);
+  const [requestFrom, setRequestFrom] = useState<string | null>(null);
+  const openRequests = doc.skillRequests.filter((r) => r.status === 'venture-review' || r.status === 'owner-review').length;
+  const [window_, setWindow] = useState<RunWindow>(suggestedWindow('Research'));
+  const [agentSkills, setAgentSkills] = useState<string[]>([]);
+  // the owner's own SKILL.md for the new agent; without one, JARVIS writes it as soon as the agent exists
+  const [ownFile, setOwnFile] = useState<OwnSkillFile | null>(null);
+  useSkillFiles();
+  // what waits for the owner in JARVIS runs, shown on its button since notifications are off
+  const runner = useOrigin((st) => st.status);
+  const waiting = (runner?.tasks.filter((t) => t.status === 'proposed').length ?? 0) + (runner?.agentProposals?.filter((p) => p.status === 'proposed' && !runner.autoAgents).length ?? 0);
+  // JARVIS's rules come from the app: bring an older save up to date (new rules, the budget watch skill) once
+  useEffect(() => {
+    const d = useStore.getState().doc;
+    if (isOpportunityOrigin(d) && originOutdated(d)) useStore.getState().commit(opportunityOriginOps(d), "Update JARVIS's rules", { silent: true });
+  }, []);
+  // keep the live runner on JARVIS's current rules, bank skills and branches
+  const originPrompt = useMemo(() => (doc.agents[ORIGIN_ID] ? [agentPrompt(doc, ORIGIN_ID), brainMap(doc), ...Object.keys(doc.agents).map((id) => agentPrompt(doc, id))].join('\n') : ''), [doc]);
+  useEffect(() => {
+    if (!originPrompt) return;
+    const t = setTimeout(() => void syncOrigin(useStore.getState().doc), 1500);
+    return () => clearTimeout(t);
+  }, [originPrompt]);
+  const growFrom = parentId && doc.agents[parentId] ? parentId : leaderId;
+  // only JARVIS (starts ventures) and ventures (add skills) can grow branches
+  const parents = useMemo(() => Object.values(doc.agents).filter((a) => growKind(doc, a.id)).sort((a, b) => (a.id === leaderId ? -1 : b.id === leaderId ? 1 : a.identity.name.localeCompare(b.identity.name))), [doc, leaderId]);
+  const kind = growFrom ? growKind(doc, growFrom) : null;
+  const team = kind === 'venture' ? VENTURE_TEAM : agentDept;
+  const needsSetup = !!doc.agents.agent_origin && (!isOpportunityOrigin(doc) || originOutdated(doc));
   const inputRef = useRef<HTMLInputElement>(null);
   const pending = useMemo(() => Object.values(library).filter((item) => item.tags.includes('idea-review')).length, [library]);
 
   useEffect(() => {
     const onOpen = (event: Event) => {
-      const requested = (event as CustomEvent<{ tab?: DeskTab }>).detail?.tab;
-      if (requested !== 'ideas' && requested !== 'agent' && requested !== 'tutorial') return;
-      setNotice(''); setTab(requested);
+      const detail = (event as CustomEvent<{ tab?: DeskTab; parentId?: string; fromId?: string }>).detail;
+      const requested = detail?.tab;
+      if (!requested || !TABS.includes(requested)) return;
+      setNotice(''); setTab(requested); pickParent(detail?.parentId ?? null); setRequestFrom(detail?.fromId ?? null);
     };
     window.addEventListener('agent-office:open-creator', onOpen);
     return () => window.removeEventListener('agent-office:open-creator', onOpen);
   }, []);
+
+  useEffect(() => {
+    if (!tab) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setTab(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [tab]);
 
   const attachFile = async (file?: File) => {
     if (!file) return;
@@ -53,91 +109,112 @@ export default function CreatorDesk() {
     } catch { setNotice('I could not read that file. Try a plain text, Markdown, JSON or CSV file.'); }
   };
 
-  const makeIdeaPacket = () => {
-    if (!ideaMine.trim() || !ideaFriend.trim()) { setNotice('Add both ideas before preparing a comparison.'); return; }
-    const id = () => `idea_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const makeEntry = (title: string, summary: string): KnowledgeEntry => ({ id: id(), title, summary, topic: 'market research', tags: ['idea-review', 'owner-submitted'], sources: [], createdAt: new Date().toISOString(), authorAgentId: leaderId, projectId: doc.projects['proj_firm_playbook'] ? 'proj_firm_playbook' : null, confidence: 0, verification: 'unverified', sensitive: false, allowedAgentIds: [] });
-    const entries = [makeEntry('Owner idea for comparison', ideaMine.trim()), makeEntry('Friend idea for comparison', `${ideaFriend.trim()}${fileText ? `\n\nAttached file: ${fileName}\n${fileText}` : ''}`)];
-    const result = useStore.getState().commit(entries.map((entry) => ({ op: 'library.upsert' as const, entry })), 'Attach ideas to Creator Brain');
-    if (!result.ok) { setNotice(result.errors.join(' · ') || 'The ideas could not be attached.'); return; }
-    const packet = `# Idea comparison research request\n\nPrepared ${new Date().toLocaleString()}\n\n## Ideas\n\n### My idea\n${ideaMine.trim()}\n\n### Friend's idea\n${ideaFriend.trim()}\n${fileText ? `\nAttached file: ${fileName}\n\n${fileText}\n` : ''}\n## Research required before ranking\n\n1. Find current, dated demand signals and audience evidence for each idea.\n2. Identify direct competitors and comparable products; cite URLs and dates.\n3. Separate popularity, downloads or concurrent users from verified revenue evidence.\n4. Map monetization options, platform fees, likely conversion assumptions and operating costs. Show ranges, formulas and uncertainty; do not promise earnings.\n5. Compare build effort, maintenance, legal/platform risks, acquisition channels and a low-cost first experiment.\n6. Assess genuine user value and retention: clear first-session payoff, progression, social loops, content cadence, performance and accessibility. Do not use fake users or manipulative retention.\n7. Finish with an evidence table, assumptions, confidence, source links, and a recommendation for the smallest cheap test.\n\n## Current state\n\nThe submitted ideas are attached to the local Creator Brain library as unverified owner-provided notes. This packet is a research brief, not a live market analysis. Connect a current web research provider before reporting findings or revenue estimates.\n`;
-    saveTextFile('idea-comparison-research-request.md', packet);
-    setNotice('Both ideas are attached to the brain. A research packet was downloaded; connect a live research provider before treating anything as market findings.');
+  // One idea in, one venture out: JARVIS grows it into a venture at once, then picks the agents it needs; every one of them gets its own SKILL.md
+  const submitIdea = async () => {
+    const text = `${idea.trim()}${fileText ? `\n\nAttached file: ${fileName}\n${fileText}` : ''}`.trim();
+    if (!text) { setNotice('Type your idea first.'); return; }
+    const d = useStore.getState().doc;
+    const rootId = d.agents[ORIGIN_ID] ? ORIGIN_ID : leaderId;
+    if (!rootId) { setNotice('There is no main agent to give the idea to.'); return; }
+    const [saveIdea] = ownerIdeaOps(text, rootId);
+    if (saveIdea.op !== 'library.upsert') return;
+    const { agentId, name, ops } = growIdeaOps(d, saveIdea.entry, rootId);
+    const r = useStore.getState().commit([saveIdea, ...ops], `Idea: ${saveIdea.entry.title}`);
+    if (!r.ok) { setNotice(r.errors.join(' · ') || 'The idea could not be added.'); return; }
+    setIdea(''); setFileText(''); setFileName('');
+    await syncOrigin(useStore.getState().doc);
+    const t = await taskAction({ action: 'add', agentId, title: `Build the team for ${name}`, detail: `The owner just gave this idea:\n${text.slice(0, 3000)}\n\nWork as ${name} (venture id ${agentId}). Decide which skill agents this idea needs to make money, usually 3 to 6 (for example product research, design, listing copy and SEO, pricing, marketing), and create them now in proposedAgents with parentId "${agentId}", each with a clear two or three sentence purpose. Each gets its own detailed SKILL.md in the next runs. Then record the first research steps in your notes and report progress.` });
+    setNotice(t ? `${name} is now a venture of ${leaderName}. ${leaderName} picks the agents it needs in its next run and writes a SKILL.md for each one. Press Run 10 min in ${leaderName} runs to start now.` : `${name} is now a venture. Start ${leaderName}'s runner (npm.cmd run origin) so it can pick the agents and write their SKILL.md files.`);
   };
 
   const proposeAgent = () => {
     if (!agentName.trim() || !agentRole.trim() || !agentPurpose.trim()) { setNotice('Complete the agent name, role and purpose first.'); return; }
-    const id = `agent_custom_${Date.now().toString(36)}`;
-    const created = useStore.getState().commit([{ op: 'agent.createFromArchetype', archetype: 'custom', name: agentName.trim(), id }], `Approve specialist: ${agentName.trim()}`, { silent: true });
-    if (!created.ok) { setNotice(created.errors.join(' · ') || 'The specialist could not be added.'); return; }
-    const brief = `${agentPurpose.trim()}\n\nRole: ${agentRole.trim()}. Work only within this scope. For research, cite current sources with publication dates and URLs; separate evidence, assumptions and recommendations. State uncertainty, costs and success criteria. Never claim work ran if it was only planned. Never spend, publish, contact people externally, create accounts or delete data without owner approval.`;
-    const updated = useStore.getState().commit([{ op: 'agent.update', id, patch: { identity: { title: agentRole.trim(), department: agentDept, bio: agentPurpose.trim(), roleDescription: brief }, skills: { primaryRole: agentRole.trim(), supervisorId: leaderId, teams: [agentDept], skills: [agentRole.trim()], expertise: [agentPurpose.trim()], tools: ['web-research', 'library-search', 'reports'], taskPermissions: ['draft', 'research', 'recommend'], priorityRules: 'Owner priorities first; make costs and evidence visible.', escalationRules: 'Escalate unclear scope, missing research access, safety issues and any action requiring approval.' }, permissions: { allowedTools: ['web-research', 'library-search', 'reports'], requireApprovalFor: ['spend', 'publish', 'external-message', 'create-account', 'delete'] }, ai: { provider: 'simulated', executionMode: 'manual-approval', agentInstructions: brief, systemInstructions: `You are ${agentName.trim()}, a specialist reporting to ${leaderName}. ${brief}`, toolPermissions: ['web-research', 'library-search', 'reports'] } } }], `Configure specialist: ${agentName.trim()}`);
-    if (!updated.ok) { setNotice(`The agent was added, but its full blueprint needs review: ${updated.errors.join(' · ')}`); return; }
-    setNotice(`${agentName.trim()} was added to the local brain after approval. Its provider is simulated until you connect a live model and tools.`);
-    setAgentName(''); setAgentRole(''); setAgentPurpose('');
+    if (!growFrom || !kind) { setNotice(`Only ${leaderName} can start a venture, and only a venture can add skill agents.`); return; }
+    const parentName = doc.agents[growFrom]?.identity.name ?? leaderName;
+    const newId = `agent_custom_${Date.now().toString(36)}`;
+    const { ops, error } = branchAgentOps(doc, growFrom, { id: newId, name: agentName.trim(), specialty: agentRole.trim(), purpose: agentPurpose.trim(), skill: team, window: window_, bankSkillIds: agentSkills });
+    const own = ownFile ? ownSkillFileOps(doc, newId, agentName.trim(), ownFile, agentSkills) : [];
+    const result = error ? null : useStore.getState().commit([...ops, ...own], `Approve ${kind}: ${agentName.trim()}`);
+    if (!result?.ok) { setNotice(error ?? result?.errors.join(' · ') ?? 'The agent could not be added.'); return; }
+    setNotice(`${agentName.trim()} now grows from ${parentName} as a new ${kind} branch${agentSkills.length ? ` with ${agentSkills.length} bank skill${agentSkills.length === 1 ? '' : 's'}` : ''}, planned to work ${describeWindow(window_)}. ${ownFile ? `Your ${ownFile.fileName} is its SKILL.md.` : `${leaderName} is writing its SKILL.md now.`}`);
+    setAgentName(''); setAgentRole(''); setAgentPurpose(''); setAgentSkills([]); setOwnFile(null);
   };
 
+  const setupOrigin = () => {
+    const r = useStore.getState().commit(opportunityOriginOps(doc), 'Make JARVIS the Opportunity Research & Builder Agent');
+    setNotice(r.ok ? 'JARVIS is now your Opportunity Research & Builder Agent. Its memory starts empty: no allowance, sources or schedule are approved yet.' : r.errors.join(' · '));
+  };
+  const pickTeam = (t: string) => { setAgentDept(t); if (window_.setBy === 'origin') setWindow(suggestedWindow(t)); };
+  function pickParent(id: string | null) {
+    setParentId(id);
+    const k = growKind(useStore.getState().doc, id ?? leaderId ?? '');
+    setWindow(suggestedWindow(k === 'venture' ? VENTURE_TEAM : agentDept));
+  }
+
   const speak = () => {
-    if (!('speechSynthesis' in window)) { setNotice('Voice output is not available in this browser.'); return; }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(`I am ${leaderName}. I research the request, show evidence and costs, and prepare specialist agents for your approval. I will not claim a result until the work has actually run.`);
-    utterance.pitch = 0.72; utterance.rate = 0.91; utterance.volume = 0.9;
-    window.speechSynthesis.speak(utterance);
+    if (!('speechSynthesis' in window)) { setNotice('Voice output is not available here.'); return; }
+    say(`I am ${leaderName}. Speak to me with the mic in the command center, or type there. I research, grow your ventures and their agents, and ask you before using your accounts or spending.`);
   };
 
   return (
     <div className="creator-desk" onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
       <div className="creator-actions" aria-label="Agent Creator actions">
         <span className="creator-live"><i /> {leaderName} · OWNER-LED</span>
-        <button className="creator-action" onClick={() => { setTab('ideas'); setNotice(''); }}><Plus size={14} /> Add idea <span className="creator-count">{pending}</span></button>
-        <button className="creator-action" onClick={() => { setTab('agent'); setNotice(''); }}><Plus size={14} /> Build an agent</button>
-        <button className="creator-action creator-tutorial" onClick={() => { setTab('tutorial'); setNotice(''); }}><BookOpen size={14} /> Tutorial</button>
-        <button className="creator-voice" onClick={speak} title={`Hear ${leaderName}'s low-pitched voice`}><Mic2 size={14} /> Hear {leaderName}</button>
+        <button className="creator-action" title="Add idea" onClick={() => { setTab('ideas'); setNotice(''); }}><Orb icon={Plus} count={pending} label="Add idea" /></button>
+        <button className="creator-action" title="Start a venture" onClick={() => { setTab('agent'); pickParent(null); setNotice(''); }}><Orb icon={GitBranch} label="Start a venture" /></button>
+        <button className="creator-action" title={`${leaderName} runs`} onClick={() => { setTab('runs'); setNotice(''); }}><Orb icon={Sparkles} count={waiting || null} alert label={`${leaderName} runs`} /></button>
+        <button className="creator-action" title="Skill bank" onClick={() => { setTab('bank'); setNotice(''); }}><Orb icon={Library} count={doc.skillBank.length} label="Skill bank" /></button>
+        <button className="creator-action" title="Skill requests" onClick={() => { setTab('requests'); setRequestFrom(null); setNotice(''); }}><Orb icon={Plus} count={openRequests} label="Skill requests" /></button>
+        {needsSetup && <button className="creator-action" onClick={setupOrigin} title="Give JARVIS your Opportunity Research & Builder prompt and starting memory"><Orb icon={Sparkles} label={isOpportunityOrigin(doc) ? 'Update rules' : 'Set up Opportunity agent'} /></button>}
+        <button className="creator-voice" onClick={speak} title={`Hear ${leaderName}'s low-pitched voice`}><Orb icon={Mic2} label={`Hear ${leaderName}`} /></button>
       </div>
 
       {tab && <div className="creator-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setTab(null); }}>
         <section className="creator-dialog" role="dialog" aria-modal="true" aria-labelledby="creator-title">
           <header className="creator-dialog-head">
-            <div><span className="creator-kicker"><Sparkles size={13} /> AGENT CREATOR / {leaderName}</span><h2 id="creator-title">{tab === 'ideas' ? 'Compare two ideas' : tab === 'agent' ? 'Design a specialist' : 'A quick tour'}</h2></div>
+            <div><span className="creator-kicker"><Sparkles size={13} /> AGENT CREATOR / {leaderName}</span><h2 id="creator-title">{tab === 'ideas' ? 'Add an idea' : tab === 'agent' ? (kind === 'skill' ? 'Add a skill to a venture' : 'Start a venture branch') : tab === 'requests' ? 'Skill requests' : tab === 'runs' ? `${leaderName}'s runs and budget` : 'Skill bank'}</h2></div>
             <button className="creator-close" aria-label="Close dialog" onClick={() => setTab(null)}><X size={17} /></button>
           </header>
+          <nav className="page-tabs creator-tabs" role="tablist" aria-label="Agent Creator">
+            {([['ideas', 'Add idea', Plus], ['agent', 'Start a venture', GitBranch], ['runs', `${leaderName} runs`, Sparkles], ['bank', 'Skill bank', Library], ['requests', 'Skill requests', Plus]] as const).map(([id, label, Icon]) => (
+              <button key={id} role="tab" aria-selected={tab === id} className="page-tab" onClick={() => { if (id === 'agent' && tab !== 'agent') pickParent(null); if (id === 'requests') setRequestFrom(null); setTab(id); setNotice(''); }}><Icon size={15} />{label}</button>
+            ))}
+          </nav>
 
           {tab === 'ideas' && <div className="creator-body">
-            <div className="creator-context"><ShieldCheck size={16} /><span><b>Evidence first.</b> This prepares a research request that requires current sources; the local prototype does not fetch live market data or forecast earnings.</span></div>
-            <div className="creator-idea-grid">
-              <label className="creator-field"><span>Your idea</span><textarea value={ideaMine} onChange={(e) => setIdeaMine(e.target.value)} placeholder="What are you considering building? Who is it for?" rows={5} /></label>
-              <label className="creator-field"><span>Friend's idea</span><textarea value={ideaFriend} onChange={(e) => setIdeaFriend(e.target.value)} placeholder="Paste the idea or summarize the attached file." rows={5} /></label>
-            </div>
+            <label className="creator-field"><span>Your idea</span><textarea value={idea} onChange={(e) => setIdea(e.target.value)} placeholder="e.g. An Etsy store selling custom pet portraits" rows={6} /></label>
             <input ref={inputRef} className="creator-file-input" type="file" accept=".txt,.md,.json,.csv,text/plain,text/markdown,application/json,text/csv" onChange={(e) => void attachFile(e.target.files?.[0])} />
-            <div className="creator-upload-row"><button className="creator-upload" onClick={() => inputRef.current?.click()}><Upload size={15} /> Attach friend's idea</button><span>{fileName ? <><FileText size={13} /> {fileName}</> : 'TXT, MD, JSON or CSV · max 1 MB'}</span><button className="creator-upload-remove" disabled={!fileText} onClick={() => { setFileText(''); setFileName(''); }}>Remove</button></div>
-            <p className="creator-privacy">Submitted notes are saved in this local office library so the brain can reference them later. Do not attach secrets or personal details.</p>
-            <div className="creator-research-points"><span>Demand signals</span><span>Comparable games</span><span>Unit economics</span><span>Build cost</span><span>Retention quality</span></div>
-            <p className="creator-privacy">When saved, each idea becomes its own small brain branch growing from the main brain.</p>
-            <div className="creator-dialog-foot"><button className="creator-secondary" onClick={() => setTab(null)}>Cancel</button><button className="creator-primary" onClick={makeIdeaPacket}><Search size={15} /> Add ideas & prepare research brief</button></div>
+            <div className="creator-upload-row"><button className="creator-upload" onClick={() => inputRef.current?.click()}><Upload size={15} /> Attach a file</button><span>{fileName ? <><FileText size={13} /> {fileName}</> : 'Optional · TXT, MD, JSON or CSV · max 1 MB'}</span><button className="creator-upload-remove" disabled={!fileText} onClick={() => { setFileText(''); setFileName(''); }}>Remove</button></div>
+            <p className="creator-privacy">{leaderName} turns the idea into a venture branch right away, decides which agents it needs, creates them, and writes a detailed SKILL.md for each one. All of it stays inside your monthly cap.</p>
+            <div className="creator-dialog-foot"><button className="creator-secondary" onClick={() => setTab(null)}>Cancel</button><button className="creator-primary" disabled={!idea.trim() && !fileText} onClick={() => void submitIdea()}><Sparkles size={15} /> Give {leaderName} this idea</button></div>
           </div>}
 
           {tab === 'agent' && <div className="creator-body">
-            <div className="creator-context"><ShieldCheck size={16} /><span>This form builds a starter blueprint from your inputs. Live research and AI-designed proposals need connected providers. Nothing is added until you review the setup and choose <b>Approve & add agent</b>.</span></div>
+            <div className="creator-context"><ShieldCheck size={16} /><span>This builds the agent from your inputs and the bank skills you pick. {leaderName} and its ventures also create the agents they need in their runs (you can switch that to ask-first in {leaderName} runs).</span></div>
             <div className="creator-agent-grid">
               <label className="creator-field"><span>Agent name</span><input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="e.g. SIGNAL" /></label>
-              <label className="creator-field"><span>Specialty</span><input value={agentRole} onChange={(e) => setAgentRole(e.target.value)} placeholder="e.g. Mobile app market analyst" /></label>
-              <label className="creator-field"><span>Team</span><select value={agentDept} onChange={(e) => setAgentDept(e.target.value)}>{DEPARTMENTS.map((d) => <option key={d}>{d}</option>)}</select></label>
-              <label className="creator-field creator-wide"><span>What should this agent accomplish?</span><textarea value={agentPurpose} onChange={(e) => setAgentPurpose(e.target.value)} placeholder="Define the user, inputs, work, outputs and how you'll judge quality." rows={4} /></label>
+              <label className="creator-field"><span>{kind === 'venture' ? 'Venture' : 'Specialty'}</span><input value={agentRole} onChange={(e) => setAgentRole(e.target.value)} placeholder={kind === 'venture' ? 'e.g. Roblox development' : 'e.g. Roblox map modeller'} /></label>
+              <label className="creator-field"><span>Grows from</span><select value={growFrom ?? ''} onChange={(e) => pickParent(e.target.value)}>{parents.map((a) => <option key={a.id} value={a.id}>{a.id === leaderId ? `${a.identity.name}: start a new venture` : `${a.identity.name}: add a skill to this venture`}</option>)}</select></label>
+              {kind === 'skill'
+                ? <label className="creator-field"><span>Skill</span><select value={agentDept} onChange={(e) => pickTeam(e.target.value)}>{SKILL_TEAMS.map((d) => <option key={d} value={d}>{SKILL_LABELS[d] ?? d}</option>)}</select></label>
+                : <div className="creator-field"><span>Team</span><input readOnly value="Ventures" /></div>}
+              <label className="creator-field"><span>Works</span><span className="creator-window">
+                <input type="number" min={1} max={60} value={window_.maxMinutes} aria-label="Minutes per run" onChange={(e) => setWindow({ ...window_, maxMinutes: Math.max(1, Math.min(60, Number(e.target.value) || 1)), setBy: 'owner', reason: 'Set by the owner.' })} /> min
+                <select value={window_.everyMinutes} aria-label="How often" onChange={(e) => setWindow({ ...window_, everyMinutes: Number(e.target.value), setBy: 'owner', reason: 'Set by the owner.' })}>{EVERY.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+              </span></label>
+              <div className="creator-field"><span>Branch rule</span><p className="creator-rule">{kind === 'skill' ? `Works only for ${doc.agents[growFrom ?? '']?.identity.name ?? 'this venture'}. It can't add agents or start another business.` : `Only ${leaderName} starts ventures. A venture can add only the skills it needs.`}</p></div>
+              <div className="creator-field creator-wide"><span>Skills from the bank</span><BankSkillPicker value={agentSkills} onChange={setAgentSkills} /></div>
+              <div className="creator-field creator-wide"><span>Its SKILL.md: attach your own, or {leaderName} writes one as soon as the agent is added</span><SkillFileDrop value={ownFile} onChange={setOwnFile} /></div>
+              <label className="creator-field creator-wide"><span>{kind === 'venture' ? 'The opportunity: who pays, for what, and the cheap test' : `How does this skill help ${doc.agents[growFrom ?? '']?.identity.name ?? 'the venture'}?`}</span><textarea value={agentPurpose} onChange={(e) => setAgentPurpose(e.target.value)} placeholder="Define the user, inputs, work, outputs and how you'll judge quality." rows={4} /></label>
             </div>
-            <div className="creator-blueprint"><span className="creator-kicker">BLUEPRINT PREVIEW</span><p><b>Reports to:</b> ORIGIN · <b>Approval:</b> owner review · <b>Mode:</b> simulated until a provider is connected</p><p>Will use dated sources, expose assumptions, show costs and uncertainty, and request approval before external actions.</p></div>
+            <div className="creator-blueprint"><span className="creator-kicker">BLUEPRINT PREVIEW</span><p><b>{kind === 'skill' ? 'Skill for' : 'Started by'}:</b> {doc.agents[growFrom ?? '']?.identity.name ?? leaderName} · <b>Works:</b> {describeWindow(window_)} ({window_.setBy === 'origin' ? `suggested by ${leaderName}: ${window_.reason}` : 'set by you'}) · <b>Skills:</b> {agentSkills.length ? agentSkills.map((id) => doc.skillBank.find((k) => k.id === id)?.name).filter(Boolean).join(', ') : 'none picked'}</p><p>Will use dated sources, expose assumptions, show costs and uncertainty, and request approval before external actions.</p></div>
             <div className="creator-dialog-foot"><button className="creator-secondary" onClick={() => setTab(null)}>Cancel</button><button className="creator-primary" onClick={proposeAgent}><Check size={15} /> Approve & add agent</button></div>
           </div>}
 
-          {tab === 'tutorial' && <div className="creator-body">
-            <ol className="creator-steps">
-              <li><b>Start with {leaderName}.</b><span>Use Compare ideas to save your idea and your friend's idea into the brain's local knowledge library.</span></li>
-              <li><b>Attach context.</b><span>Upload a plain text, Markdown, JSON or CSV idea file. The app keeps its contents in the local office save.</span></li>
-              <li><b>Review evidence before money decisions.</b><span>Download the research packet and connect a live research provider to gather current sources. The current prototype does not look up the market yet.</span></li>
-              <li><b>Approve specialists deliberately.</b><span>Build an agent, inspect its purpose and approval boundaries, then approve adding its local blueprint to the brain.</span></li>
-              <li><b>Share actual work safely.</b><span>Voice playback is generated by your browser. Workspaces and agents are local here; team access, live model research and shared mobile task intake need backend integrations.</span></li>
-            </ol>
-            <div className="creator-dialog-foot"><button className="creator-primary" onClick={() => setTab(null)}>Got it</button></div>
-          </div>}
+          {tab === 'runs' && <OriginRuns onNotice={setNotice} />}
+          {tab === 'bank' && <SkillBank onNotice={setNotice} />}
+          {tab === 'requests' && <SkillRequests fromId={requestFrom} onNotice={setNotice} />}
+
           {notice && <div className="creator-notice" role="status">{notice}</div>}
         </section>
       </div>}
