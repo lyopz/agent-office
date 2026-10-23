@@ -3,13 +3,14 @@
 // the app: an approved ad is saved on your PC and copied from here when you post it yourself.
 // The ads agent is created from here too, under your store venture, with the Ad strategy playbook.
 import { useMemo, useState } from 'react';
-import { Check, Copy, Megaphone, Sparkles, UserPlus, X } from 'lucide-react';
+import { Check, Clock, Copy, Megaphone, Sparkles, UserPlus, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import { useOrigin } from '../brain/useOrigin';
 import { adDecision, designUrl, makeAds, mockupUrl, runnerStatus, syncOrigin, taskAction, type AdEntry, type PublishRequest } from '../brain/originLink';
 import { branchAgentOps, branchKind, suggestedWindow } from '../brain/opportunity';
 import { AD_ROLE } from '../brain/builtinSkills';
 import type { OfficeDoc } from '../model/types';
+import { PageTabs, TabPanel, usePageTab } from './PageTabs';
 
 const CHANNEL: Record<AdEntry['channel'], string> = { tiktok: 'TikTok', instagram_reels: 'Instagram Reels', instagram_post: 'Instagram post', pinterest: 'Pinterest', etsy_ads: 'Etsy Ads', facebook_ads: 'Facebook / Instagram ads', other: 'Other' };
 const when = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -52,6 +53,7 @@ function AdCard({ ad, busy, onDecide }: { ad: AdEntry; busy: boolean; onDecide?:
 
 export function Ads() {
   const doc = useStore((s) => s.doc);
+  const [tab, setTab] = usePageTab('ads', ['waiting', 'approved', 'products'] as const);
   const st = useOrigin((o) => o.status);
   const checked = useOrigin((o) => o.checked);
   const [busy, setBusy] = useState<string | null>(null);
@@ -102,6 +104,12 @@ export function Ads() {
         </div>
       </div>
       {!agent && <div className="card span-12"><p className="small muted">No ads agent yet. <b>Create the ads agent</b> adds one under {venture?.identity.name ?? 'your store venture'} with the built-in Ad strategy playbook (your click is the approval), and its first task is to find the best inexpensive way to reach buyers. Until then JARVIS makes the ads itself.</p></div>}
+      <PageTabs label="Ads sections" value={tab} onChange={setTab} tabs={[
+        { id: 'waiting', label: 'Waiting for you', icon: Clock, count: waiting.length, alert: true },
+        { id: 'approved', label: 'Approved', icon: Check, count: approved.length },
+        { id: 'products', label: 'Approved clothing', icon: Megaphone, count: products.length },
+      ]} />
+      {tab === 'products' && <TabPanel id="products">
       <div className="card span-12 approval-group"><h4><Megaphone size={13} /> Approved clothing <span className="count">{products.length}</span></h4>
         {!products.length && <p className="small muted">Nothing listed yet. Say Yes to a design in Approvals; once it is listed on your store it shows here and ads can be made for it.</p>}
         <div className="approval-grid">
@@ -112,15 +120,20 @@ export function Ads() {
           </figure>)}
         </div>
       </div>
+      </TabPanel>}
+      {tab === 'waiting' && <TabPanel id="waiting">
       <div className="card span-12 approval-group"><h4>Waiting for your Yes or No <span className="count">{waiting.length}</span></h4>
         {!waiting.length && <p className="small muted">No ads waiting. Press Make ads on a product, or wait for the ads agent's next run.</p>}
         <div className="approval-grid">{waiting.map((ad) => <AdCard key={ad.id} ad={ad} busy={busy === ad.id} onDecide={(a) => void decide(ad, a)} />)}</div>
       </div>
+      </TabPanel>}
+      {tab === 'approved' && <TabPanel id="approved">
       <div className="card span-12 approval-group"><h4>Approved: yours to post <span className="count">{approved.length}</span></h4>
         {!approved.length && <p className="small muted">Approved ads stay here with their copy, and as files in origin-data/ads on your PC.</p>}
         <div className="approval-grid">{approved.map((ad) => <AdCard key={ad.id} ad={ad} busy={false} />)}</div>
         {declined.length > 0 && <p className="small muted">{declined.length} declined ad{declined.length === 1 ? '' : 's'} ({declined.slice(0, 5).map((a) => `"${a.headline}"`).join(', ')}{declined.length > 5 ? ', …' : ''}).</p>}
       </div>
+      </TabPanel>}
     </div>
   );
 }

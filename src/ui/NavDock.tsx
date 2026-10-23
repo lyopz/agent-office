@@ -17,8 +17,8 @@ const PAGES: { id: Page; label: string; icon: LucideIcon }[] = [
 /** The round page buttons along the bottom, and Add idea at the bottom left. */
 export function NavDock() {
   const page = useStore((s) => s.page);
-  // designs and products waiting for the owner's Yes or No
-  const waiting = useOrigin((o) => (o.status?.designs ?? []).filter((d) => d.status === 'waiting').length + (o.status?.publishRequests ?? []).filter((r) => r.status === 'waiting').length);
+  // memes, designs and products waiting for the owner's Yes or No (the same count as Approvals' To decide)
+  const waiting = useOrigin((o) => (o.status?.memePicks ?? []).length + (o.status?.designs ?? []).filter((d) => d.status === 'waiting').length + (o.status?.publishRequests ?? []).filter((r) => r.status === 'waiting').length);
   const go = (p: Page) => useStore.getState().setUi({ page: p });
   return (
     <>

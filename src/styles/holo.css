@@ -122,7 +122,9 @@ body { background: #030616; }
 .brain-float-left { top: 88px; left: 32px; bottom: 130px; width: 360px; display: grid; gap: 10px; align-content: start; grid-template-rows: auto auto minmax(0, 1fr); pointer-events: none; z-index: 12; }
 .brain-float-left > * { pointer-events: auto; }
 .brain-float-right { top: 104px; right: 32px; width: 336px; }
-.brain-float-top { top: 92px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 820px); }
+/* no transform on this one: a transformed box would trap the desk's full-screen dialogs inside it */
+.brain-float-top { top: 92px; left: 410px; right: 410px; display: flex; justify-content: center; pointer-events: none; }
+.brain-float-top > * { pointer-events: auto; }
 .brain-float-bottom { left: 50%; bottom: 130px; transform: translateX(-50%); width: min(1330px, calc(100% - 250px)); }
 
 /* the Main Brain card */
@@ -217,7 +219,6 @@ body { background: #030616; }
 /* ---------- smaller windows ---------- */
 @media (max-width: 1500px) {
   /* the tool row shrinks to round icon buttons with their counts */
-  .brain-float-top { max-width: calc(100% - 780px); }
   .app .brain-float-top .creator-actions { flex-wrap: nowrap; }
   .app .brain-float-top :is(.creator-action, .creator-voice) { width: 38px; min-height: 38px; padding: 0; gap: 0; font-size: 0; position: relative; }
   .app .brain-float-top .creator-count { position: absolute; top: -6px; right: -8px; min-width: 18px; height: 18px; padding: 0 4px; font-size: 10px; }
@@ -270,3 +271,55 @@ body { background: #030616; }
 /* pages scroll under the dock and top bar: fade them out there */
 .app:not([data-page="office"]):not([data-page="universe"])::after { content: ''; position: fixed; z-index: 19; left: 0; right: 0; bottom: 0; height: 130px; pointer-events: none; background: linear-gradient(180deg, transparent, rgba(3, 6, 22, .92) 60%); }
 .app:not([data-page="office"]):not([data-page="universe"]) .topbar { background: linear-gradient(180deg, rgba(3, 6, 22, .95) 60%, transparent); }
+
+/* ---------- pages: header, section tabs under it, then cards (2026-10-23) ---------- */
+.app .dash { overflow: visible; max-width: 1360px; padding: 8px 8px 24px; gap: 16px; }
+.app .dash-head { padding: 6px 2px 2px; align-items: flex-end; gap: 16px; }
+.app .dash-head .kicker { color: var(--neon-cyan); font: 600 11px/1.4 var(--font-sans); letter-spacing: .16em; text-transform: uppercase; }
+.app .dash-head .kicker i { background: var(--neon-cyan); box-shadow: 0 0 8px var(--neon-cyan); }
+.app .dash-head h2 { margin-top: 4px; color: #fff; font: 650 30px/1.15 var(--font-sans); letter-spacing: -.02em; }
+.app .dash-head p { max-width: 82ch; margin-top: 6px; color: #a9b4d8; font-size: 13.5px; line-height: 1.5; }
+.app .dash-head .actions { align-items: center; }
+.app .dash-head .actions .btn { height: 36px; padding: 0 14px; font-size: 13px; }
+.app .dash-head .actions .badge { height: 30px; }
+
+.page-tabs { grid-column: 1 / -1; position: sticky; top: 0; z-index: 5; display: flex; gap: 4px; padding: 6px; overflow-x: auto; border: 1px solid var(--glass-edge); border-radius: 14px; background: rgba(8, 12, 40, .86); box-shadow: var(--glass-glow); backdrop-filter: blur(14px); scrollbar-width: none; }
+.page-tab { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border: 0; border-radius: 10px; background: transparent; color: #aab6dc; font: 500 13.5px var(--font-sans); white-space: nowrap; cursor: pointer; transition: background var(--dur) var(--ease), color var(--dur) var(--ease); }
+.page-tab:hover { color: #fff; background: rgba(120, 150, 255, .08); }
+.page-tab[aria-selected="true"] { color: #fff; background: linear-gradient(160deg, rgba(56, 214, 255, .18), rgba(140, 100, 255, .16)); box-shadow: inset 0 0 0 1px rgba(56, 214, 255, .45), 0 0 14px rgba(56, 214, 255, .16); }
+.page-tab[aria-selected="true"] svg { color: var(--neon-cyan); }
+.page-tab-count { min-width: 22px; height: 20px; padding: 0 6px; display: grid; place-items: center; border-radius: 999px; background: rgba(140, 160, 230, .16); color: #cfd8f5; font: 600 11px var(--font-sans); }
+.page-tab-count.alert { background: var(--neon-pink); color: #fff; box-shadow: 0 0 8px rgba(255, 79, 176, .55); }
+.tab-panel { grid-column: 1 / -1; display: grid; gap: 16px; grid-template-columns: repeat(12, minmax(0, 1fr)); align-content: start; animation: tab-in .2s var(--ease); }
+@keyframes tab-in { from { opacity: 0; } }
+
+.app .dash .card { padding: 20px 22px; }
+.app .card h4 { margin: 0 0 14px; gap: 10px; color: #f2f5ff; font: 600 15px/1.3 var(--font-sans); letter-spacing: 0; text-transform: none; }
+.app .card h4 svg { width: 16px; height: 16px; color: var(--neon-cyan); }
+.app .card h4 .count { color: #8f9bc4; font: 450 12.5px var(--font-sans); }
+.app .kpi { gap: 6px; }
+.app .kpi .l, .app .charts .card.kpi h4 { margin: 0; color: #9aa6cf; font: 500 12.5px/1.3 var(--font-sans); letter-spacing: 0; text-transform: none; }
+.app .kpi .v, .app .charts .kpi-value { color: #fff; font: 650 30px/1.1 var(--font-sans); letter-spacing: -.02em; }
+.app .kpi .s { color: #9aa6cf; font-size: 12px; }
+.app .kpi.accent .v { color: var(--neon-pink); }
+.app .note, .app .card p.small.muted, .app .card .small.muted { color: #a3aed4; }
+.app .note { font-size: 13px; }
+.empty-state { display: grid; justify-items: center; gap: 8px; padding: 44px 20px !important; text-align: center; color: #9aa6cf; }
+.empty-state svg { color: var(--neon-cyan); }
+.empty-state b { color: #fff; font-size: 16px; font-weight: 600; }
+
+.app table.data th { color: #8f9bc4; font: 600 11.5px/1.4 var(--font-sans); letter-spacing: .02em; text-transform: none; border-bottom-color: rgba(140, 160, 230, .2); padding: 8px 6px; }
+.app table.data td { padding: 10px 6px; border-bottom-color: rgba(140, 160, 230, .1); }
+.app table.data tr:hover td { background: rgba(80, 120, 255, .06); }
+.app :is(input[type="text"], input[type="number"], input[type="search"], select, textarea) { border-color: rgba(120, 150, 255, .26); border-radius: 10px; background: rgba(6, 10, 34, .7); }
+.app .approval-card { padding: 12px; border-color: rgba(120, 150, 255, .22); border-radius: 14px; background: rgba(10, 16, 50, .55); transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+.app .approval-card:hover { border-color: rgba(140, 190, 255, .5); box-shadow: 0 0 18px rgba(60, 110, 255, .18); }
+.app .approval-img { border-radius: 10px; background: rgba(255, 255, 255, .06); }
+.app .approval-actions .btn { height: 32px; }
+.app .approval-state { border-radius: 999px; }
+@media (max-width: 1250px) { .app > main.page { padding: 136px 16px 120px; } }
+.app .dash :is(section, div)[id] { scroll-margin-top: 150px; }
+.app .task-progress { height: 18px; border-color: rgba(120, 150, 255, .28); border-radius: 999px; background: rgba(120, 140, 220, .12); overflow: hidden; }
+.app .task-progress i { background: linear-gradient(90deg, #2ee6ff, #5a8cff 60%, #a35bff); box-shadow: 0 0 10px rgba(80, 150, 255, .45); }
+.app .know { border-color: rgba(120, 150, 255, .2); border-radius: 12px; background: rgba(10, 16, 50, .45); }
+.app .know b { color: var(--neon-cyan); font: 600 12.5px/1.5 var(--font-sans); letter-spacing: 0; text-transform: none; }

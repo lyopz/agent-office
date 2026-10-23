@@ -1,9 +1,9 @@
-// Approvals: everything that waits for the owner's Yes or No, and the budgets the agents work
-// within. Designs the agents made pop up here as cards; Yes has the agent that made it build the
-// Printify product and list it on the store (the Yes is the approval), No discards it. Products
-// made outside that flow still wait for the Publish button. Budgets are set here too, whenever the
-// owner tops up: the monthly cap, funds added to it, the image and Canva limits, and per-branch
-// budgets. Everything comes from JARVIS's runner (useOrigin); nothing is simulated.
+// Approvals: everything that waits for the owner's Yes or No (To decide), what was decided, and
+// the design setup (style notes, source folders). Designs the agents made pop up here as cards; Yes
+// has the agent that made it build the Printify product and list it on the store (the Yes is the
+// approval), No discards it. Products made outside that flow still wait for the Publish button.
+// Budgets (cap, added funds, image and Canva limits, per-branch budgets) are defined here and shown
+// under Settings. Everything comes from JARVIS's runner (useOrigin); nothing is simulated.
 import { useMemo, useState } from 'react';
 import { BadgeCheck, Check, CircleDollarSign, FolderOpen, Images, Palette, Plus, Repeat, Trash2, X, AlertTriangle } from 'lucide-react';
 import { useStore } from '../store/store';
@@ -11,6 +11,7 @@ import { useOrigin } from '../brain/useOrigin';
 import { designDecision, designUrl, mockupUrl, publishDecision, runnerStatus, setBudgets, setDesignStyle, sourceAction, sourceUrl, type DesignEntry, type PublishRequest, type RunnerStatus, type SourceFile } from '../brain/originLink';
 import { ORIGIN_ID } from '../brain/opportunity';
 import { usd } from './Dashboard';
+import { PageTabs, TabPanel, usePageTab } from './PageTabs';
 
 const when = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
@@ -21,8 +22,13 @@ function RunnerImage({ load, id, alt, cls = 'approval-img' }: { load: (id: strin
   return src ? <img className={cls} src={src} alt={alt} /> : <div className={`${cls} is-empty`} aria-hidden />;
 }
 
+/** Which Approvals tab holds a section (a finished task's Open button names the section). */
+export function approvalsTabFor(anchor: string | null | undefined): 'decide' | 'decided' | 'setup' {
+  return anchor === 'approvals-decided' ? 'decided' : anchor === 'approvals-sources' ? 'setup' : 'decide';
+}
+
 export function Approvals() {
-  const doc = useStore((s) => s.doc);
+  const [tab, setTab] = usePageTab('approvals', ['decide', 'decided', 'setup'] as const);
   const st = useOrigin((o) => o.status);
   const checked = useOrigin((o) => o.checked);
   const [busy, setBusy] = useState<string | null>(null);
@@ -61,6 +67,7 @@ export function Approvals() {
   const taskOf = (id: string | null) => st.tasks.find((t) => t.id === id);
   const groups = [...new Map(waiting.map((d) => [d.taskId ?? '', d])).keys()];
   const memes = st.memePicks ?? [];
+  const toDecide = waiting.length + products.length + memes.length;
   const placeName = { front_center: 'front, centred', full_front: 'full front', left_chest: 'left chest', back: 'back' } as const;
 
   return (
@@ -68,11 +75,19 @@ export function Approvals() {
       <div className="dash-head">
         <div>
           <span className="kicker"><i />APPROVALS</span>
-          <h2>{waiting.length + products.length + memes.length ? `${waiting.length + products.length + memes.length} waiting for your Yes or No` : 'Nothing waiting right now'}</h2>
+          <h2>{toDecide ? `${toDecide} waiting for your Yes or No` : 'Nothing waiting right now'}</h2>
           <p>Yes on a design: the agent that made it builds the Printify product and lists it on your store (that Yes is the approval; Etsy charges {usd(st.budgets?.listingFeeUsd ?? 0.2)} a listing). No deletes it from Printify too. Each ask shows at most 5 designs at a time; the agent makes more when you decide.</p>
         </div>
       </div>
 
+      <PageTabs label="Approvals sections" value={tab} onChange={setTab} tabs={[
+        { id: 'decide', label: 'To decide', icon: Check, count: toDecide, alert: true },
+        { id: 'decided', label: 'Decided', icon: Repeat, count: decided.length },
+        { id: 'setup', label: 'Design setup', icon: Palette },
+      ]} />
+
+      {tab === 'decide' && <TabPanel id="decide">
+      {!toDecide && <div className="card span-12 empty-state"><Check size={22} /><b>All caught up</b><span>Memes, designs and products that wait for your Yes or No show up here.</span></div>}
       {memes.length > 0 && <section id="approvals-memes" className="card approval-group">
         <h4><Images size={13} /> Memes to pick <span className="count">{memes.length} found by the scouts · only your Yes picks get designed</span></h4>
         <div className="approval-grid">
@@ -135,6 +150,10 @@ export function Approvals() {
         </div>
       </section>}
 
+      </TabPanel>}
+
+      {tab === 'decided' && <TabPanel id="decided">
+      {!decided.length && <div className="card span-12 empty-state"><Repeat size={22} /><b>Nothing decided yet</b><span>Your Yes and No answers are listed here.</span></div>}
       {decided.length > 0 && <section id="approvals-decided" className="card approval-group">
         <h4><Repeat size={13} /> Decided lately <span className="count">{decided.length}</span></h4>
         <ul className="approval-log">
@@ -142,8 +161,9 @@ export function Approvals() {
         </ul>
       </section>}
 
-      <DesignStyle st={st} onDone={() => void refresh()} />
-      <Budgets st={st} agents={doc.agents} onDone={() => void refresh()} />
+      </TabPanel>}
+
+      {tab === 'setup' && <TabPanel id="setup"><DesignStyle st={st} onDone={() => void refresh()} /></TabPanel>}
     </div>
   );
 }
@@ -211,7 +231,7 @@ function DesignSources({ st, onDone }: { st: RunnerStatus; onDone: () => void })
   );
 }
 
-function Budgets({ st, agents, onDone }: { st: RunnerStatus; agents: Record<string, { identity: { name: string } }>; onDone: () => void }) {
+export function Budgets({ st, agents, onDone }: { st: RunnerStatus; agents: Record<string, { identity: { name: string } }>; onDone: () => void }) {
   const b = st.budgets;
   const [cap, setCap] = useState('');
   const [add, setAdd] = useState('');

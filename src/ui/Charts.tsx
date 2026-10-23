@@ -2,15 +2,16 @@
 // Printify's orders (pulled every hour, or now with the button), costs from the ledger, designs and
 // ads from their lists. Nothing here is simulated; with no sales yet the charts say so.
 import { useMemo, useState } from 'react';
-import { BarChart3, RefreshCw, Table2 } from 'lucide-react';
+import { BarChart3, GitBranch, Images, RefreshCw, Table2 } from 'lucide-react';
 import { useStore } from '../store/store';
 import { useOrigin } from '../brain/useOrigin';
 import { moneyAction, runnerStatus, type RunnerStatus, type SaleLine } from '../brain/originLink';
 import { moneyByBranch } from '../brain/branchMoney';
 import { usd } from './Dashboard';
+import { PageTabs, TabPanel, usePageTab } from './PageTabs';
 
-/** The two series colours, validated together for colour-blind readers on the dark surface. */
-export const EARNED = '#ea5068', SPENT = '#3f96cc';
+/** The two series colours (Holo Space cyan and violet): told apart by lightness too, for colour-blind readers. */
+export const EARNED = '#38d6ff', SPENT = '#9a6bff';
 const DAYS = 30;
 const dayKey = (d: Date) => d.toISOString().slice(0, 10);
 const shortDay = (key: string) => new Date(`${key}T12:00:00Z`).toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -91,6 +92,7 @@ export function Charts() {
   const st = useOrigin((o) => o.status);
   const checked = useOrigin((o) => o.checked);
   const [table, setTable] = useState(false);
+  const [tab, setTab] = usePageTab('charts', ['sales', 'branches', 'pipeline'] as const);
   const [busy, setBusy] = useState(false);
   const refresh = async () => useOrigin.setState({ status: await runnerStatus() });
   const pull = async () => {
@@ -124,6 +126,12 @@ export function Charts() {
       <div className="card kpi span-3"><h4>Earned, all time</h4><div className="kpi-value">{usd(earned)}</div><div className="small muted">real sales and your own entries</div></div>
       <div className="card kpi span-3"><h4>Spent, all time</h4><div className="kpi-value">{usd(spent)}</div><div className="small muted">runs, images, fees, production</div></div>
       <div className="card kpi span-3"><h4>Net</h4><div className="kpi-value" style={{ color: earned - spent < 0 ? 'var(--warn)' : undefined }}>{usd(earned - spent)}</div><div className="small muted">{earned - spent < 0 ? 'the store has not paid for itself yet' : 'the store is ahead'}</div></div>
+      <PageTabs label="Chart sections" value={tab} onChange={setTab} tabs={[
+        { id: 'sales', label: 'Sales', icon: BarChart3 },
+        { id: 'branches', label: 'Branches & products', icon: GitBranch },
+        { id: 'pipeline', label: 'Designs & ads', icon: Images },
+      ]} />
+      {tab === 'sales' && <TabPanel id="sales">
       <div className="card span-8"><h4><BarChart3 size={13} /> Revenue per day</h4>
         {table ? <table className="spend-table"><thead><tr><th>Day</th><th>Revenue</th><th>Items</th><th>Orders</th></tr></thead><tbody>{days.filter((d) => d.items > 0).map((d) => <tr key={d.day}><td>{shortDay(d.day)}</td><td>{usd(d.revenueUsd)}</td><td>{d.items}</td><td>{d.orders}</td></tr>)}{!days.some((d) => d.items > 0) && <tr><td colSpan={4} className="muted">No sales in the last {DAYS} days.</td></tr>}</tbody></table>
           : <><DayBars rows={days} value="revenueUsd" label="Revenue" /><DayBars rows={days} value="items" label="Items sold" color={SPENT} money={false} /></>}
@@ -132,8 +140,10 @@ export function Charts() {
         <Meter label="JARVIS and agents (Claude)" value={st.spentUsd} cap={st.capUsd} color={SPENT} />
         {st.images && <Meter label="Design images" value={st.images.spentUsd} cap={st.images.capUsd} color={SPENT} />}
         {st.canva?.configured && <div className="meter"><div className="row"><span>Canva AI designs</span><span className="muted">{st.canva.aiCalls} of {st.canva.limit}</span></div><div className="meter-track"><i style={{ width: `${Math.min(100, (100 * st.canva.aiCalls) / Math.max(1, st.canva.limit))}%`, background: SPENT }} /></div></div>}
-        <p className="small muted">Budgets are set in Approvals. Runs stop at the cap.</p>
+        <p className="small muted">Budgets are set in Settings, under Budgets. Runs stop at the cap.</p>
       </div>
+      </TabPanel>}
+      {tab === 'branches' && <TabPanel id="branches">
       <div className="card span-6"><h4>Earned and spent per branch</h4>
         {table ? <table className="spend-table"><thead><tr><th>Branch</th><th>Earned</th><th>Spent</th><th>Net</th></tr></thead><tbody>{branches.map((b) => <tr key={b.id}><td>{b.name}</td><td>{usd(b.earnedUsd)}</td><td>{usd(b.spentUsd)}</td><td>{usd(b.netUsd)}</td></tr>)}</tbody></table>
           : <Bars rows={branches.map((b) => ({ name: b.name, values: [b.earnedUsd, b.spentUsd] }))} series={[{ name: 'Earned', color: EARNED }, { name: 'Spent', color: SPENT }]} />}
@@ -142,6 +152,8 @@ export function Charts() {
         {table ? <table className="spend-table"><thead><tr><th>Product</th><th>Revenue</th><th>Items</th></tr></thead><tbody>{products.map((p) => <tr key={p.productId}><td>{p.title}</td><td>{usd(p.revenueUsd)}</td><td>{p.items}</td></tr>)}{!products.length && <tr><td colSpan={3} className="muted">No sales yet.</td></tr>}</tbody></table>
           : <Bars rows={products.map((p) => ({ name: p.title, values: [p.revenueUsd] }))} series={[{ name: 'Revenue', color: EARNED }]} />}
       </div>
+      </TabPanel>}
+      {tab === 'pipeline' && <TabPanel id="pipeline">
       <div className="card span-6"><h4>Designs</h4>
         <Bars money={false} rows={[{ name: 'Waiting for you', values: [count(designs, 'waiting')] }, { name: 'Approved', values: [count(designs, 'approved')] }, { name: 'Listed on the store', values: [count(designs, 'published')] }, { name: 'Declined', values: [count(designs, 'rejected')] }]} series={[{ name: 'Designs', color: SPENT }]} />
         <p className="small muted">The last {designs.length} designs the runner keeps.</p>
@@ -150,6 +162,7 @@ export function Charts() {
         <Bars money={false} rows={[{ name: 'Waiting for you', values: [count(ads, 'waiting')] }, { name: 'Approved', values: [count(ads, 'approved')] }, { name: 'Declined', values: [count(ads, 'rejected')] }]} series={[{ name: 'Ads', color: SPENT }]} />
         <p className="small muted">Approved ads are yours to post; the Ads tab has the copy.</p>
       </div>
+      </TabPanel>}
     </div>
   );
 }

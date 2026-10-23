@@ -2,7 +2,7 @@
 // what each branch has spent and earned, who is busy, and what waits for the owner. Everything
 // here is real: it comes from JARVIS's runner (useOrigin) and the brain itself; nothing is simulated.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, BookOpen, CircleDollarSign, ExternalLink, FileText, Play, RotateCcw, ShieldCheck, Sparkles, Store, Sunrise, Users, X } from 'lucide-react';
+import { Activity, BookOpen, CircleDollarSign, ExternalLink, FileText, LayoutGrid, Play, RotateCcw, ShieldCheck, Sparkles, Store, Sunrise, Users, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import { useOrigin } from '../brain/useOrigin';
 import { runOrigin, runnerStatus, setMemeLookFor, startStore, storeAction, taskAction, type RunnerStatus, type RunnerTask, type TaskReport } from '../brain/originLink';
@@ -12,6 +12,8 @@ import { STATUS_COLOR } from '../brain/status';
 import { MANUAL_RUN_MINUTES, ORIGIN_ID } from '../brain/opportunity';
 import { skillFileId } from '../brain/skillFiles';
 import { Library } from './Business';
+import { PageTabs, TabPanel, openSection, usePageTab } from './PageTabs';
+import { approvalsTabFor } from './Approvals';
 
 // Show, don't store: the page only reads what the runner and the brain already hold. The one thing it
 // keeps is the last answer the runner gave, so a runner that goes offline leaves stale numbers, not blanks.
@@ -26,8 +28,7 @@ const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'num
 
 /** Go to where a finished task's result is: a section of Approvals, or the Ads page. */
 function openResult(open: NonNullable<TaskReport['open']>) {
-  useStore.getState().setUi({ page: open.page });
-  if (open.anchor) setTimeout(() => document.getElementById(open.anchor!)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250);
+  openSection(open.page, open.page === 'approvals' ? approvalsTabFor(open.anchor) : null, open.anchor);
 }
 
 /** Open the brain page on one of JARVIS's dialogs (its runs, the agent creator, ideas). */
@@ -45,6 +46,7 @@ export function Dashboard() {
   const stale = !live && lastKnown ? lastKnown : null;
   const st = live ?? stale?.st ?? null;
   const [logAgent, setLogAgent] = useState('');
+  const [tab, setTab] = usePageTab('dashboard', ['overview', 'store', 'money', 'activity', 'library'] as const);
   // the digest covers everything since you last had this page open; the mark moves when you leave it
   const since = useRef(seenAt()).current;
   useEffect(() => () => { try { localStorage.setItem(SEEN_KEY, String(Date.now())); } catch { /* storage unavailable */ } }, []);
@@ -181,165 +183,179 @@ export function Dashboard() {
         <div className="s">{runner.note}</div>
       </div>
 
-      <div className="card span-7">
-        <h4><Sunrise size={13} /> Since you last looked <span className="count">{since ? `from ${when(new Date(since).toISOString())}` : 'first visit'}</span></h4>
-        {!st && <p className="note">Nothing to report: the runner has not answered yet.</p>}
-        {st && fresh.length === 0 && <p className="note">No runs since then. {working.length ? `${working.length} task${working.length === 1 ? '' : 's'} waiting for the next run${st.nextScheduledAt ? ` about ${clock(st.nextScheduledAt)}` : ''}.` : ''}{waiting ? ` ${waiting} thing${waiting === 1 ? '' : 's'} waiting for you.` : ''}</p>}
-        {fresh.length > 0 && <>
-          <p style={{ margin: '0 0 8px' }}><b>{fresh.length} run{fresh.length === 1 ? '' : 's'}</b> for {usd(freshCost)}{fresh.some((r) => !r.costKnown) ? ' (some costs unknown)' : ''}{waiting ? <>, and <b>{waiting}</b> thing{waiting === 1 ? '' : 's'} waiting for you</> : ''}.</p>
-          <div className="events">{(notes.length ? notes : fresh.slice(0, 4)).map((r) => <div key={r.id} className="ev"><time>{when(r.startedAt)}</time><span className="m">{r.notify ?? r.summary ?? r.status}</span><span className="small muted mono-num">{r.costKnown ? usd(r.costUsd) : '?'}</span></div>)}</div>
-        </>}
-      </div>
-      <div className="card span-5">
-        <h4><BookOpen size={13} /> What {leader} knows</h4>
-        <div className="know-list">
-          <button className="know" onClick={() => openProfile('skillfile')}><b>SKILL.md</b><span>{skillFile ? skillFile.description || skillFile.name : 'Not written yet. Ask in the console: "write your SKILL.md".'}</span></button>
-          <button className="know" onClick={() => openProfile('memory')}><b>Notes</b><span>{st?.memory ? st.memory.split('\n').find((l) => l.trim()) ?? 'Notes from its runs' : 'No notes yet; each run can add to them.'}</span></button>
-          <button className="know" onClick={() => openBrain('runs')}><b>Next action</b><span>{st?.nextAction || 'Decided at the start of the next run.'}</span></button>
-          <div className="know static"><b>Library</b><span>{Object.keys(doc.library).length} entr{Object.keys(doc.library).length === 1 ? 'y' : 'ies'} · {doc.skillBank.length} skill{doc.skillBank.length === 1 ? '' : 's'} in the bank</span></div>
-        </div>
-      </div>
-
-      <div className="card span-7">
-        <h4><Activity size={13} /> What {leader} is working on <span className="count">{working.length}</span></h4>
-        {working.length === 0 && <p className="note">{st ? `Nothing approved. ${leader} only proposes until you approve a task, or give it one in the console below.` : 'Start the runner to see live work here.'}</p>}
-        <div className="task-list">
-          {working.slice(0, 8).map((t) => (
-            <div key={t.id} className="task-row">
-              <div className="t"><b>{t.focus ? 'Focus: ' : ''}{t.title}</b><span>{name(t.agentId)}{t.by === 'origin' ? ` · set by ${leader}` : ''} · {usd(t.spentUsd ?? 0)} of {usd(t.budgetUsd ?? st?.taskBudgetUsd ?? 1.5)}</span>
-                {cancelId === t.id
-                  ? <span className="task-cancel"><button className="btn sm danger" disabled={cancelling} onClick={() => void cancelTask(t)}>{cancelling ? 'Cancelling…' : 'Yes, cancel it'}</button><button className="btn sm" disabled={cancelling} onClick={() => setCancelId(null)}>Keep</button></span>
-                  : <button className="btn sm ghost task-cancel-btn" title="Stop this task: no more runs or spend, and its waiting designs leave your approval list" onClick={() => setCancelId(t.id)}><X size={12} /> Cancel</button>}
+      <PageTabs label="Dashboard sections" value={tab} onChange={setTab} tabs={[
+        { id: 'overview', label: 'Overview', icon: LayoutGrid },
+        { id: 'store', label: 'Store', icon: Store, count: (st?.reports ?? []).length },
+        { id: 'money', label: 'Agents & money', icon: CircleDollarSign },
+        { id: 'activity', label: 'Activity', icon: Activity, count: st?.runs.length ?? 0 },
+        { id: 'library', label: 'Library', icon: BookOpen },
+      ]} />
+      {tab === 'overview' && <TabPanel id="overview">
+        <div className="card span-7">
+          <h4><Activity size={13} /> What {leader} is working on <span className="count">{working.length}</span></h4>
+          {working.length === 0 && <p className="note">{st ? `Nothing approved. ${leader} only proposes until you approve a task, or give it one in the console below.` : 'Start the runner to see live work here.'}</p>}
+          <div className="task-list">
+            {working.slice(0, 8).map((t) => (
+              <div key={t.id} className="task-row">
+                <div className="t"><b>{t.focus ? 'Focus: ' : ''}{t.title}</b><span>{name(t.agentId)}{t.by === 'origin' ? ` · set by ${leader}` : ''} · {usd(t.spentUsd ?? 0)} of {usd(t.budgetUsd ?? st?.taskBudgetUsd ?? 1.5)}</span>
+                  {cancelId === t.id
+                    ? <span className="task-cancel"><button className="btn sm danger" disabled={cancelling} onClick={() => void cancelTask(t)}>{cancelling ? 'Cancelling…' : 'Yes, cancel it'}</button><button className="btn sm" disabled={cancelling} onClick={() => setCancelId(null)}>Keep</button></span>
+                    : <button className="btn sm ghost task-cancel-btn" title="Stop this task: no more runs or spend, and its waiting designs leave your approval list" onClick={() => setCancelId(t.id)}><X size={12} /> Cancel</button>}
+                </div>
+                {cancelId === t.id && <span className="small warn">Stops the task for good (no more runs or spend) and clears its designs still waiting for your Yes or No. The files stay in the gallery.</span>}
+                <ProgressBar pct={t.count ? Math.round(((st?.publishRequests ?? []).filter((r) => r.taskId === t.id).length / t.count) * 100) : t.progress} label={`${t.title} progress`} />
+                {t.steps?.length ? <span className="small muted">{t.steps.filter((x) => x.done).length} of {t.steps.length} steps · next: {t.steps.find((x) => !x.done)?.text ?? 'finishing'}</span> : null}
               </div>
-              {cancelId === t.id && <span className="small warn">Stops the task for good (no more runs or spend) and clears its designs still waiting for your Yes or No. The files stay in the gallery.</span>}
-              <ProgressBar pct={t.count ? Math.round(((st?.publishRequests ?? []).filter((r) => r.taskId === t.id).length / t.count) * 100) : t.progress} label={`${t.title} progress`} />
-              {t.steps?.length ? <span className="small muted">{t.steps.filter((x) => x.done).length} of {t.steps.length} steps · next: {t.steps.find((x) => !x.done)?.text ?? 'finishing'}</span> : null}
-            </div>
-          ))}
+            ))}
+          </div>
+          {working.length > 8 && <p className="note">And {working.length - 8} more under {leader}'s runs.</p>}
         </div>
-        {working.length > 8 && <p className="note">And {working.length - 8} more under {leader}'s runs.</p>}
-      </div>
 
-      <div className="card span-5">
-        <h4><Users size={13} /> Agents online <span className="count">{live ? `${(st?.workingNow ?? []).length} working now` : 'runner off'}</span></h4>
-        {!live && <p className="note">The runner is off, so no agent is online. Start it on your PC with npm.cmd run origin.</p>}
-        <div className="agent-online-list">
-          {agents.filter((a) => a.enabled).map((a) => {
-            const now = (st?.workingNow ?? []).find((w) => w.agentId === a.id);
-            const queued = now ? undefined : tasks.find((t) => t.status === 'approved' && !t.kind && (t.agentId ?? ORIGIN_ID) === a.id && !t.waitingOnOwner);
-            const state = !live ? 'offline' : now ? 'working' : queued ? 'queued' : 'idle';
-            return <div key={a.id} className={`agent-online ${state}`}>
-              <i aria-hidden />
-              <b>{a.identity.name}</b>
-              <span>{state === 'working' ? `working now on "${now!.title}"` : state === 'queued' ? `next run: "${queued!.title}"` : state === 'idle' ? 'online, nothing to do' : 'offline'}</span>
-            </div>;
-          })}
+        <div className="card span-5">
+          <h4><Users size={13} /> Agents online <span className="count">{live ? `${(st?.workingNow ?? []).length} working now` : 'runner off'}</span></h4>
+          {!live && <p className="note">The runner is off, so no agent is online. Start it on your PC with npm.cmd run origin.</p>}
+          <div className="agent-online-list">
+            {agents.filter((a) => a.enabled).map((a) => {
+              const now = (st?.workingNow ?? []).find((w) => w.agentId === a.id);
+              const queued = now ? undefined : tasks.find((t) => t.status === 'approved' && !t.kind && (t.agentId ?? ORIGIN_ID) === a.id && !t.waitingOnOwner);
+              const state = !live ? 'offline' : now ? 'working' : queued ? 'queued' : 'idle';
+              return <div key={a.id} className={`agent-online ${state}`}>
+                <i aria-hidden />
+                <b>{a.identity.name}</b>
+                <span>{state === 'working' ? `working now on "${now!.title}"` : state === 'queued' ? `next run: "${queued!.title}"` : state === 'idle' ? 'online, nothing to do' : 'offline'}</span>
+              </div>;
+            })}
+          </div>
         </div>
-      </div>
 
-      <div className="card span-7">
-        <h4><Store size={13} /> Start store <span className="count">{(st?.storeRuns ?? []).filter((r) => r.status === 'running' || r.status === 'waiting').length} running</span></h4>
-        <p className="note">One button runs a store's whole job in order. Each step starts when the last one is done, inside each task's budget and the monthly cap. You can also type "start store" in the console.</p>
-        <ol className="store-order">{(st?.storeOrder ?? ['Research what is selling now', 'Find memes and save them to memez', 'Design shirts from memez (no AI)', 'Ads for the products you approved']).map((x, i) => <li key={i}>{x}{i === 2 ? <small> · then your Yes in Approvals makes and lists each product</small> : null}</li>)}</ol>
-        <label className="look-for">
-          <b>What to look for</b>
-          <span className="small muted">Paste Pinterest pin links of memes you like: each one is saved to memez as it is (already a Yes), and the scouts look for more like them. Add words too: subjects, the kind of humour, what to avoid. Every picture a scout finds is checked before it is saved.</span>
-          <textarea rows={3} maxLength={1500} value={lookFor ?? st?.memeLookFor ?? ''} placeholder='e.g. "cats acting like people, deadpan captions, reaction faces; search Pinterest for: cursed cat meme, silly animal meme; no politics, no old drawings"' onChange={(e) => setLookFor(e.target.value)} />
-          {lookFor != null && lookFor !== (st?.memeLookFor ?? '') && <button className="btn sm primary" disabled={!live} onClick={() => void saveLookFor()}>Save what to look for</button>}
-        </label>
-        <div className="store-start">
-          {(st?.storeVentures?.length ?? 0) > 1 && <select value={storeId} onChange={(e) => setStoreId(e.target.value)} aria-label="Which store">{st!.storeVentures!.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select>}
-          <button className="btn sm primary" disabled={!live || starting} onClick={() => void runStore()}><Play size={13} /> {starting ? 'Starting…' : `Start ${st?.storeVentures?.find((v) => v.id === storeId)?.name ?? st?.storeVentures?.[0]?.name ?? leader}'s store`}</button>
+        <div className="card span-7">
+          <h4><Sunrise size={13} /> Since you last looked <span className="count">{since ? `from ${when(new Date(since).toISOString())}` : 'first visit'}</span></h4>
+          {!st && <p className="note">Nothing to report: the runner has not answered yet.</p>}
+          {st && fresh.length === 0 && <p className="note">No runs since then. {working.length ? `${working.length} task${working.length === 1 ? '' : 's'} waiting for the next run${st.nextScheduledAt ? ` about ${clock(st.nextScheduledAt)}` : ''}.` : ''}{waiting ? ` ${waiting} thing${waiting === 1 ? '' : 's'} waiting for you.` : ''}</p>}
+          {fresh.length > 0 && <>
+            <p style={{ margin: '0 0 8px' }}><b>{fresh.length} run{fresh.length === 1 ? '' : 's'}</b> for {usd(freshCost)}{fresh.some((r) => !r.costKnown) ? ' (some costs unknown)' : ''}{waiting ? <>, and <b>{waiting}</b> thing{waiting === 1 ? '' : 's'} waiting for you</> : ''}.</p>
+            <div className="events">{(notes.length ? notes : fresh.slice(0, 4)).map((r) => <div key={r.id} className="ev"><time>{when(r.startedAt)}</time><span className="m">{r.notify ?? r.summary ?? r.status}</span><span className="small muted mono-num">{r.costKnown ? usd(r.costUsd) : '?'}</span></div>)}</div>
+          </>}
         </div>
-        {(st?.storeRuns ?? []).slice(0, 3).map((r) => <div key={r.id} className="store-run">
-          <b>{r.ventureName}</b> <span className={`approval-state ${r.status === 'done' ? 'published' : r.status === 'stopped' ? '' : 'approved'}`}>{r.status}</span>
-          <span className="small muted"> · step {Math.min(r.stage + 1, (st?.storeOrder ?? []).length || 4)} of {(st?.storeOrder ?? []).length || 4}: {(st?.storeOrder ?? [])[r.stage] ?? ''} · started {when(r.startedAt)}</span>
-          {r.note ? <p className="small muted">{r.note}</p> : null}
-          <span className="store-run-actions">
-            {(r.status === 'running' || r.status === 'waiting') && <button className="btn sm danger" disabled={!live || starting} onClick={() => void storeDo('stop', r.id, r.ventureName)}><X size={12} /> Stop</button>}
-            <button className="btn sm" disabled={!live || starting} onClick={() => void storeDo('restart', r.id, r.ventureName)}><RotateCcw size={12} /> Restart from step 1</button>
-          </span>
-        </div>)}
-      </div>
 
-      <div className="card span-12">
-        <h4><FileText size={13} /> Finished tasks <span className="count">{(st?.reports ?? []).length} reports</span></h4>
-        {!(st?.reports ?? []).length && <p className="note">Each task that finishes gets a report here: what was done, what came of it, what it cost, and a button to its result.</p>}
-        <div className="report-list">
-          {(st?.reports ?? []).map((r) => <details key={r.id} className="report">
-            <summary>
-              <b>{r.title}</b>
-              <span className="small muted">{r.agentName} · {r.doneAt ? when(r.doneAt) : 'done'} · {usd(r.spentUsd)} over {r.runs} run{r.runs === 1 ? '' : 's'}</span>
-              {r.open && <button className="btn sm" onClick={(e) => { e.preventDefault(); openResult(r.open!); }}><ExternalLink size={12} /> {r.open.label}</button>}
-            </summary>
-            <ul className="report-facts">
-              {r.steps ? <li>{r.stepsDone} of {r.steps} steps done</li> : null}
-              {r.saved ? <li>{r.saved} image{r.saved === 1 ? '' : 's'} saved to memez</li> : null}
-              {r.designs.made ? <li>{r.designs.made} design{r.designs.made === 1 ? '' : 's'}: {r.designs.waiting} waiting for you, {r.designs.yes} yes, {r.designs.no} no</li> : null}
-              {r.products.made ? <li>{r.products.listed} of {r.products.made} product{r.products.made === 1 ? '' : 's'} listed{r.products.titles.length ? `: ${r.products.titles.join(', ')}` : ''}</li> : null}
-              {r.ads ? <li>{r.ads} ad{r.ads === 1 ? '' : 's'} made</li> : null}
-            </ul>
-            <pre className="origin-notes">{r.summary}</pre>
-          </details>)}
+        <div className="card span-5">
+          <h4><BookOpen size={13} /> What {leader} knows</h4>
+          <div className="know-list">
+            <button className="know" onClick={() => openProfile('skillfile')}><b>SKILL.md</b><span>{skillFile ? skillFile.description || skillFile.name : 'Not written yet. Ask in the console: "write your SKILL.md".'}</span></button>
+            <button className="know" onClick={() => openProfile('memory')}><b>Notes</b><span>{st?.memory ? st.memory.split('\n').find((l) => l.trim()) ?? 'Notes from its runs' : 'No notes yet; each run can add to them.'}</span></button>
+            <button className="know" onClick={() => openBrain('runs')}><b>Next action</b><span>{st?.nextAction || 'Decided at the start of the next run.'}</span></button>
+            <div className="know static"><b>Library</b><span>{Object.keys(doc.library).length} entr{Object.keys(doc.library).length === 1 ? 'y' : 'ies'} · {doc.skillBank.length} skill{doc.skillBank.length === 1 ? '' : 's'} in the bank</span></div>
+          </div>
         </div>
-      </div>
-
-      <div className="card span-5">
-        <h4><CircleDollarSign size={13} /> Money by branch <span className="count">all time</span></h4>
-        {!st?.money && <p className="note">Spent and earned per branch appear here once the runner is on.</p>}
-        <div className="money-list">
-          {money.map((r) => (
-            <div key={r.id || 'none'} className="money-row">
-              <b title={r.name}>{r.name}</b>
-              <span><small>Spent</small>{usd(r.spentUsd)}</span>
-              <span><small>Earned</small>{usd(r.earnedUsd)}</span>
-              <span className={r.netUsd < 0 ? 'neg' : r.netUsd > 0 ? 'pos' : ''}><small>Net</small>{usd(r.netUsd)}</span>
-            </div>
-          ))}
+      </TabPanel>}
+      {tab === 'store' && <TabPanel id="store">
+        <div className="card span-5">
+          <h4><Store size={13} /> Start store <span className="count">{(st?.storeRuns ?? []).filter((r) => r.status === 'running' || r.status === 'waiting').length} running</span></h4>
+          <p className="note">One button runs a store's whole job in order. Each step starts when the last one is done, inside each task's budget and the monthly cap. You can also type "start store" in the console.</p>
+          <ol className="store-order">{(st?.storeOrder ?? ['Research what is selling now', 'Find memes and save them to memez', 'Design shirts from memez (no AI)', 'Ads for the products you approved']).map((x, i) => <li key={i}>{x}{i === 2 ? <small> · then your Yes in Approvals makes and lists each product</small> : null}</li>)}</ol>
+          <label className="look-for">
+            <b>What to look for</b>
+            <span className="small muted">Paste Pinterest pin links of memes you like: each one is saved to memez as it is (already a Yes), and the scouts look for more like them. Add words too: subjects, the kind of humour, what to avoid. Every picture a scout finds is checked before it is saved.</span>
+            <textarea rows={3} maxLength={1500} value={lookFor ?? st?.memeLookFor ?? ''} placeholder='e.g. "cats acting like people, deadpan captions, reaction faces; search Pinterest for: cursed cat meme, silly animal meme; no politics, no old drawings"' onChange={(e) => setLookFor(e.target.value)} />
+            {lookFor != null && lookFor !== (st?.memeLookFor ?? '') && <button className="btn sm primary" disabled={!live} onClick={() => void saveLookFor()}>Save what to look for</button>}
+          </label>
+          <div className="store-start">
+            {(st?.storeVentures?.length ?? 0) > 1 && <select value={storeId} onChange={(e) => setStoreId(e.target.value)} aria-label="Which store">{st!.storeVentures!.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select>}
+            <button className="btn sm primary" disabled={!live || starting} onClick={() => void runStore()}><Play size={13} /> {starting ? 'Starting…' : `Start ${st?.storeVentures?.find((v) => v.id === storeId)?.name ?? st?.storeVentures?.[0]?.name ?? leader}'s store`}</button>
+          </div>
+          {(st?.storeRuns ?? []).slice(0, 3).map((r) => <div key={r.id} className="store-run">
+            <b>{r.ventureName}</b> <span className={`approval-state ${r.status === 'done' ? 'published' : r.status === 'stopped' ? '' : 'approved'}`}>{r.status}</span>
+            <span className="small muted"> · step {Math.min(r.stage + 1, (st?.storeOrder ?? []).length || 4)} of {(st?.storeOrder ?? []).length || 4}: {(st?.storeOrder ?? [])[r.stage] ?? ''} · started {when(r.startedAt)}</span>
+            {r.note ? <p className="small muted">{r.note}</p> : null}
+            <span className="store-run-actions">
+              {(r.status === 'running' || r.status === 'waiting') && <button className="btn sm danger" disabled={!live || starting} onClick={() => void storeDo('stop', r.id, r.ventureName)}><X size={12} /> Stop</button>}
+              <button className="btn sm" disabled={!live || starting} onClick={() => void storeDo('restart', r.id, r.ventureName)}><RotateCcw size={12} /> Restart from step 1</button>
+            </span>
+          </div>)}
         </div>
-        {st?.money && <p className="note" style={{ marginTop: 10 }}>Earned is only what buyers paid, plus income you add. Details and your own entries are under {leader}'s runs. <button className="btn sm" style={{ marginLeft: 6 }} onClick={() => openBrain('runs')}>Open</button></p>}
-      </div>
 
-      <div className="card span-7">
-        <h4>Agents <span className="count">{busy} of {agents.length} busy</span></h4>
-        <table className="data"><thead><tr><th>Agent</th><th>Status</th><th>Task</th><th className="num">This month</th></tr></thead><tbody>
-          {agents.sort((a, b) => (a.id === ORIGIN_ID ? -1 : b.id === ORIGIN_ID ? 1 : a.identity.name.localeCompare(b.identity.name))).map((a) => {
-            const r = rt.agents[a.id]; const status = a.enabled ? r?.status ?? 'idle' : 'paused';
-            const t = tasks.find((x) => x.status === 'approved' && x.kind == null && (x.agentId ?? ORIGIN_ID) === a.id);
-            return (
-              <tr key={a.id}>
-                <td><b>{a.identity.name}</b><span className="muted"> · {a.identity.title}</span></td>
-                <td><span className="status" style={{ color: STATUS_COLOR[status] }}><i className="dot" />{status}</span></td>
-                <td>{t ? <>{t.title}{t.progress != null ? <span className="muted"> · {t.progress}%</span> : null}</> : <span className="muted">—</span>}</td>
-                <td className="num">{st?.spentByAgent?.[a.id] != null ? usd(st.spentByAgent[a.id]) : <span className="muted">—</span>}</td>
-              </tr>
-            );
-          })}
-        </tbody></table>
-        {errors.length > 0 && <div style={{ marginTop: 10 }}>{errors.map(([id, r]) => <div key={id} className="issue error"><span className="ico">!</span><span>{name(id)}: {r.statusMessage}</span></div>)}</div>}
-      </div>
-
-      <div className="card span-5">
-        <h4><Play size={13} /> Recent runs <span className="count">{st?.runs.length ?? 0}</span></h4>
-        <div className="pulse" role="img" aria-label={`Runs per day over the last 14 days: ${days.map((d) => d.runs).join(', ')}`}>
-          {days.map((d, i) => <i key={i} title={`${d.day.toLocaleDateString([], { month: 'short', day: 'numeric' })}: ${d.runs} run${d.runs === 1 ? '' : 's'}, ${usd(d.usd)}`} style={{ height: `${Math.max(d.runs ? 12 : 4, (d.runs / maxRuns) * 100)}%`, opacity: d.runs ? 1 : .3 }} />)}
+        <div className="card span-7">
+          <h4><FileText size={13} /> Finished tasks <span className="count">{(st?.reports ?? []).length} reports</span></h4>
+          {!(st?.reports ?? []).length && <p className="note">Each task that finishes gets a report here: what was done, what came of it, what it cost, and a button to its result.</p>}
+          <div className="report-list">
+            {(st?.reports ?? []).map((r) => <details key={r.id} className="report">
+              <summary>
+                <b>{r.title}</b>
+                <span className="small muted">{r.agentName} · {r.doneAt ? when(r.doneAt) : 'done'} · {usd(r.spentUsd)} over {r.runs} run{r.runs === 1 ? '' : 's'}</span>
+                {r.open && <button className="btn sm" onClick={(e) => { e.preventDefault(); openResult(r.open!); }}><ExternalLink size={12} /> {r.open.label}</button>}
+              </summary>
+              <ul className="report-facts">
+                {r.steps ? <li>{r.stepsDone} of {r.steps} steps done</li> : null}
+                {r.saved ? <li>{r.saved} image{r.saved === 1 ? '' : 's'} saved to memez</li> : null}
+                {r.designs.made ? <li>{r.designs.made} design{r.designs.made === 1 ? '' : 's'}: {r.designs.waiting} waiting for you, {r.designs.yes} yes, {r.designs.no} no</li> : null}
+                {r.products.made ? <li>{r.products.listed} of {r.products.made} product{r.products.made === 1 ? '' : 's'} listed{r.products.titles.length ? `: ${r.products.titles.join(', ')}` : ''}</li> : null}
+                {r.ads ? <li>{r.ads} ad{r.ads === 1 ? '' : 's'} made</li> : null}
+              </ul>
+              <pre className="origin-notes">{r.summary}</pre>
+            </details>)}
+          </div>
         </div>
-        <div className="row small muted" style={{ marginBottom: 8 }}><span className="grow">14 days ago</span><span>today</span></div>
-        {!st?.runs.length && <p className="note">No runs yet. {leader} runs {st ? `${st.maxMinutes} minutes every ${st.everyMinutes >= 60 ? `${st.everyMinutes / 60} hours` : `${st.everyMinutes} minutes`}` : 'on a schedule'} while the runner is on.</p>}
-        <div className="events">
-          {(st?.runs ?? []).slice(0, 12).map((r) => (
-            <div key={r.id} className={`ev${r.status === 'error' ? ' error' : ''}`}><time>{when(r.startedAt)}</time><span className="m">{r.summary || r.status}{r.notify ? <b> · {r.notify}</b> : null}</span><span className="small muted mono-num">{r.costKnown ? usd(r.costUsd) : '?'}</span></div>
-          ))}
+      </TabPanel>}
+      {tab === 'money' && <TabPanel id="money">
+        <div className="card span-5">
+          <h4><CircleDollarSign size={13} /> Money by branch <span className="count">all time</span></h4>
+          {!st?.money && <p className="note">Spent and earned per branch appear here once the runner is on.</p>}
+          <div className="money-list">
+            {money.map((r) => (
+              <div key={r.id || 'none'} className="money-row">
+                <b title={r.name}>{r.name}</b>
+                <span><small>Spent</small>{usd(r.spentUsd)}</span>
+                <span><small>Earned</small>{usd(r.earnedUsd)}</span>
+                <span className={r.netUsd < 0 ? 'neg' : r.netUsd > 0 ? 'pos' : ''}><small>Net</small>{usd(r.netUsd)}</span>
+              </div>
+            ))}
+          </div>
+          {st?.money && <p className="note" style={{ marginTop: 10 }}>Earned is only what buyers paid, plus income you add. Details and your own entries are under {leader}'s runs. <button className="btn sm" style={{ marginLeft: 6 }} onClick={() => openBrain('runs')}>Open</button></p>}
         </div>
-      </div>
 
-      <div className="card span-7">
-        <div className="row"><h4 className="grow">Progress log</h4>
-          {who.length > 1 && <select aria-label="Agent or venture" value={logAgent} onChange={(e) => setLogAgent(e.target.value)} style={{ width: 180 }}><option value="">Everyone</option>{who.map(([id, n]) => <option key={id} value={id}>{n}</option>)}</select>}</div>
-        <ProgressLog entries={logAgent ? log.filter((e) => e.agentId === logAgent) : log} showAgent={!logAgent} limit={25} />
-      </div>
+        <div className="card span-7">
+          <h4>Agents <span className="count">{busy} of {agents.length} busy</span></h4>
+          <table className="data"><thead><tr><th>Agent</th><th>Status</th><th>Task</th><th className="num">This month</th></tr></thead><tbody>
+            {agents.sort((a, b) => (a.id === ORIGIN_ID ? -1 : b.id === ORIGIN_ID ? 1 : a.identity.name.localeCompare(b.identity.name))).map((a) => {
+              const r = rt.agents[a.id]; const status = a.enabled ? r?.status ?? 'idle' : 'paused';
+              const t = tasks.find((x) => x.status === 'approved' && x.kind == null && (x.agentId ?? ORIGIN_ID) === a.id);
+              return (
+                <tr key={a.id}>
+                  <td><b>{a.identity.name}</b><span className="muted"> · {a.identity.title}</span></td>
+                  <td><span className="status" style={{ color: STATUS_COLOR[status] }}><i className="dot" />{status}</span></td>
+                  <td>{t ? <>{t.title}{t.progress != null ? <span className="muted"> · {t.progress}%</span> : null}</> : <span className="muted">—</span>}</td>
+                  <td className="num">{st?.spentByAgent?.[a.id] != null ? usd(st.spentByAgent[a.id]) : <span className="muted">—</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody></table>
+          {errors.length > 0 && <div style={{ marginTop: 10 }}>{errors.map(([id, r]) => <div key={id} className="issue error"><span className="ico">!</span><span>{name(id)}: {r.statusMessage}</span></div>)}</div>}
+        </div>
+      </TabPanel>}
+      {tab === 'activity' && <TabPanel id="activity">
+        <div className="card span-5">
+          <h4><Play size={13} /> Recent runs <span className="count">{st?.runs.length ?? 0}</span></h4>
+          <div className="pulse" role="img" aria-label={`Runs per day over the last 14 days: ${days.map((d) => d.runs).join(', ')}`}>
+            {days.map((d, i) => <i key={i} title={`${d.day.toLocaleDateString([], { month: 'short', day: 'numeric' })}: ${d.runs} run${d.runs === 1 ? '' : 's'}, ${usd(d.usd)}`} style={{ height: `${Math.max(d.runs ? 12 : 4, (d.runs / maxRuns) * 100)}%`, opacity: d.runs ? 1 : .3 }} />)}
+          </div>
+          <div className="row small muted" style={{ marginBottom: 8 }}><span className="grow">14 days ago</span><span>today</span></div>
+          {!st?.runs.length && <p className="note">No runs yet. {leader} runs {st ? `${st.maxMinutes} minutes every ${st.everyMinutes >= 60 ? `${st.everyMinutes / 60} hours` : `${st.everyMinutes} minutes`}` : 'on a schedule'} while the runner is on.</p>}
+          <div className="events">
+            {(st?.runs ?? []).slice(0, 12).map((r) => (
+              <div key={r.id} className={`ev${r.status === 'error' ? ' error' : ''}`}><time>{when(r.startedAt)}</time><span className="m">{r.summary || r.status}{r.notify ? <b> · {r.notify}</b> : null}</span><span className="small muted mono-num">{r.costKnown ? usd(r.costUsd) : '?'}</span></div>
+            ))}
+          </div>
+        </div>
 
-      <Library className="card span-5" />
+        <div className="card span-7">
+          <div className="row"><h4 className="grow">Progress log</h4>
+            {who.length > 1 && <select aria-label="Agent or venture" value={logAgent} onChange={(e) => setLogAgent(e.target.value)} style={{ width: 180 }}><option value="">Everyone</option>{who.map(([id, n]) => <option key={id} value={id}>{n}</option>)}</select>}</div>
+          <ProgressLog entries={logAgent ? log.filter((e) => e.agentId === logAgent) : log} showAgent={!logAgent} limit={25} />
+        </div>
+      </TabPanel>}
+      {tab === 'library' && <TabPanel id="library">
+        <Library className="card span-12" />
+      </TabPanel>}
     </div>
   );
 }

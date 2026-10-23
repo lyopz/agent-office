@@ -1,21 +1,27 @@
-import { useState } from 'react';
+import { CircleDollarSign, Palette, SlidersHorizontal } from 'lucide-react';
 import { ThemeEditor } from './ThemeEditor';
 import { VoiceSettings } from './VoiceSettings';
-
-const TABS = [['general', 'General'], ['theme', 'Theme & colours']] as const;
+import { PageTabs, TabPanel, usePageTab } from './PageTabs';
+import { Budgets } from './Approvals';
+import { useStore } from '../store/store';
+import { useOrigin } from '../brain/useOrigin';
+import { runnerStatus } from '../brain/originLink';
 
 export function Settings() {
-  const [tab, setTab] = useState<(typeof TABS)[number][0]>('general');
+  const [tab, setTab] = usePageTab('settings', ['general', 'theme', 'budgets'] as const);
   return (
     <div className="dash settings">
       <div className="dash-head">
         <div><span className="kicker"><i /> THE BRAIN · SETTINGS</span><h2>Settings</h2><p>Every change here is part of the undo history and of saved versions, so you can always step back.</p></div>
-        <nav className="seg actions" role="tablist" aria-label="Settings sections">
-          {TABS.map(([k, label]) => <button key={k} className="btn sm" role="tab" aria-selected={tab === k} aria-pressed={tab === k} onClick={() => setTab(k)}>{label}</button>)}
-        </nav>
       </div>
-      {tab === 'general' && <General />}
-      {tab === 'theme' && <div className="span-12"><ThemeEditor /></div>}
+      <PageTabs label="Settings sections" value={tab} onChange={setTab} tabs={[
+        { id: 'general', label: 'General', icon: SlidersHorizontal },
+        { id: 'theme', label: 'Theme & colours', icon: Palette },
+        { id: 'budgets', label: 'Budgets', icon: CircleDollarSign },
+      ]} />
+      {tab === 'general' && <TabPanel id="general"><General /></TabPanel>}
+      {tab === 'theme' && <TabPanel id="theme"><div className="span-12"><ThemeEditor /></div></TabPanel>}
+      {tab === 'budgets' && <TabPanel id="budgets"><BudgetsTab /></TabPanel>}
     </div>
   );
 }
@@ -36,4 +42,12 @@ function General() {
       </div>
     </>
   );
+}
+
+/** The monthly cap, add funds, and per-branch budgets: they live in JARVIS's runner. */
+function BudgetsTab() {
+  const st = useOrigin((o) => o.status);
+  const agents = useStore((s) => s.doc.agents);
+  if (!st) return <div className="card span-12 empty-state"><b>Budgets need JARVIS's runner</b><span>The runner keeps the monthly cap and every branch's budget. Open the app from the desktop shortcut and it starts by itself.</span></div>;
+  return <div className="span-12"><Budgets st={st} agents={agents} onDone={() => void runnerStatus().then((s) => useOrigin.setState({ status: s }))} /></div>;
 }
