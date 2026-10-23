@@ -447,20 +447,20 @@ describe('origin runner: trends and free-to-use images', () => {
 });
 
 describe('origin runner: more than one brain', () => {
-  test("switching brains parks the other brain's tasks instead of stopping them, and only the open brain's tasks run", () => {
+  test("JARVIS oversees every brain: switching brains keeps the other brain's tasks running; a deleted brain's tasks wait", () => {
     const s: any = { ...base, brainId: 'b1', brains: { b1: { name: 'Store brain', agents: [{ id: 'a1', name: 'Designer' }] } }, agents: [{ id: 'a1', name: 'Designer' }],
       tasks: [{ id: 't1', title: 'Store work', detail: '', status: 'approved', by: 'owner', agentId: 'a1', brainId: 'b1', createdAt: '' }] };
     // the owner opens a second brain with its own agent
     s.brainId = 'b2'; s.brains.b2 = { name: 'Music brain', agents: [{ id: 'm1', name: 'Mixer' }] }; s.agents = [{ id: 'm1', name: 'Mixer' }];
     expect(runner.pruneGone(s, 'now')).toBe(0);
     expect(s.tasks[0].status).toBe('approved');
-    expect(runner.nextTask(s)).toBeNull();
-    s.tasks.push({ id: 't2', title: 'Music work', detail: '', status: 'approved', by: 'owner', agentId: 'm1', brainId: 'b2', createdAt: '' });
-    expect(runner.nextTask(s)).toMatchObject({ id: 't2' });
-    expect(runner.pickTasks(s).map((t: any) => t.id)).toEqual(['t2']);
-    // back in the first brain, its task is ready again; a legacy task without a brain runs anywhere
-    s.brainId = 'b1'; s.agents = [{ id: 'a1', name: 'Designer' }];
     expect(runner.nextTask(s)).toMatchObject({ id: 't1' });
+    s.tasks.push({ id: 't2', title: 'Music work', detail: '', status: 'approved', by: 'owner', agentId: 'm1', brainId: 'b2', createdAt: '' });
+    expect(runner.inBrain(s, s.tasks[1])).toBe(true);
+    // a brain that is gone from the app (deleted) no longer runs; a legacy task without a brain runs anywhere
+    delete s.brains.b1;
+    expect(runner.inBrain(s, s.tasks[0])).toBe(false);
+    expect(runner.nextTask(s)).toMatchObject({ id: 't2' });
     expect(runner.inBrain(s, { })).toBe(true);
   });
 });

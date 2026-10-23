@@ -349,3 +349,14 @@ fieldset.plain:disabled { opacity: 0.55; }
 @keyframes rise-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 @keyframes slide-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .overlay, .modal, .drawer, .ctx-menu, .toast, .console-log > div { animation: none; } }
+
+/* Brains tab (src/ui/BrainsTab.tsx): JARVIS's head brain, brain layouts, the brains it oversees */
+.brain-layout { padding: 8px 0; border-top: 1px solid var(--line); font-size: var(--fs-sm); }
+.brain-layout:first-of-type { border-top: 0; }
+.brain-layout p { margin: 4px 0; }
+.brain-layout-agents { margin: 4px 0 6px 18px; padding: 0; display: grid; gap: 2px; }
+.brain-row { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.brain-row .t { min-width: 220px; flex: 1; display: grid; gap: 2px; }
+.brain-row-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.brain-row-actions select { margin-left: 4px; }
+.brain-head-card .btn { margin-top: 6px; }

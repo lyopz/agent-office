@@ -3,9 +3,11 @@
 // returns null and the app stays in simulation.
 import type { OfficeDoc } from '../model/types';
 import { ORIGIN_ID, agentPrompt, branchKind } from './opportunity';
+import { libraryDocs } from '../persistence/brains';
+import type { BrainProposal } from './headBrain';
 
 /** Another brain the owner started, as the runner knows it. */
-export interface OtherBrain { id: string; name: string; agents: number; openTasks: number }
+export interface OtherBrain { id: string; name: string; agents: number; openTasks: number; head?: boolean; lead?: string; purpose?: string; evolvedAt?: string | null; lastNote?: string }
 export interface RunnerTask { brainId?: string; everyMinutes?: number; repeats?: number; designId?: string; doneAt?: string;
   id: string; title: string; detail: string; status: 'proposed' | 'approved' | 'rejected' | 'done' | 'stopped'; by: 'owner' | 'origin'; createdAt: string;
   spentUsd?: number; runCosts?: number[]; budgetUsd?: number; stopReason?: string; progress?: number; steps?: { text: string; done: boolean }[]; notes?: string; waitingOnOwner?: boolean;
@@ -52,7 +54,7 @@ export interface ImageEntry { id: string; at: string; model: string; quality: st
 /** One line of progress, filed under the agent the work was for. */
 export interface ProgressEntry { id: string; at: string; runId?: string; agentId: string; agentName: string; taskId: string | null; taskTitle: string | null; pct: number | null; note: string }
 /** A SKILL.md JARVIS wrote for one agent, waiting for the app to save it to the bank. */
-export interface SkillFile { id: string; agentId: string; agentName: string; agentIds?: string[]; agentNames?: string[]; version?: number; bank?: boolean; skillKey?: string; skillName?: string; name: string; description: string; body: string; status: 'new' | 'imported'; createdAt: string }
+export interface SkillFile { brainId?: string; id: string; agentId: string; agentName: string; agentIds?: string[]; agentNames?: string[]; version?: number; bank?: boolean; skillKey?: string; skillName?: string; name: string; description: string; body: string; status: 'new' | 'imported'; createdAt: string }
 export interface AgentProposal {
   id: string; parentId: string; name: string; specialty: string; purpose: string; skill: string; bankSkillIds: string[];
   everyMinutes: number; maxMinutes: number; reason: string; skillFile?: { name: string; description: string; body: string } | null; auto?: boolean; status: 'proposed' | 'approved' | 'rejected'; createdAt: string; agentId?: string | null;
@@ -62,7 +64,7 @@ export interface RunnerRun { workers?: RunnerWorker[]; id: string; agentId?: str
 export interface RunnerStatus {
   configured: boolean; model: string; capUsd: number; everyMinutes: number; maxMinutes: number; schedule: boolean;
   spentUsd: number; spentByAgent?: Record<string, number>; allowanceUsd?: number; spentTodayUsd?: number; parallel?: number; rounds?: number; taskBudgetUsd?: number; unknownCostRuns: number; month: string; running: string | null; synced: boolean; workingNow?: WorkingNow[]; storeRuns?: StoreRun[]; storeOrder?: string[]; storeVentures?: { id: string; name: string }[]; reports?: TaskReport[];
-  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; allowDrawnDesigns?: boolean; memeLookFor?: string; memePicks?: SourceFile[]; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; budgets?: Budgets; brain?: { id: string | null; others: OtherBrain[] }; ads?: AdEntry[]; sources?: SourceFolderInfo[]; trends?: TrendSources; degen?: { from: 'local' | 'github'; skills: number; given: number } | null; designStyle?: { guide: string; note: string; at: string | null }; canva?: { configured: boolean; connectedAt: string | null; connecting?: { url: string; startedAt: number } | null; month: string; aiCalls: number; exports: number; limit: number; log: CanvaEntry[] }; designs?: DesignEntry[]; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; money?: { byAgent: Record<string, MoneyRow>; entries: MoneyEntry[]; sales: SaleLine[]; salesSync: { at: string; error: string | null; orders: number | null } | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
+  memory: string; nextAction: string; tasks: RunnerTask[]; agentProposals?: AgentProposal[]; autoAgents?: boolean; autoTasks?: boolean; allowDrawnDesigns?: boolean; memeLookFor?: string; memePicks?: SourceFile[]; etsy?: { configured: boolean; connected: boolean; shopName: string | null }; printify?: { configured: boolean; shopId: number | null; shopTitle: string | null; channel: string | null }; publishRequests?: PublishRequest[]; openai?: { configured: boolean; model: string }; budgets?: Budgets; brain?: { id: string | null; head?: string | null; others: OtherBrain[] }; brainProposals?: BrainProposal[]; ads?: AdEntry[]; sources?: SourceFolderInfo[]; trends?: TrendSources; degen?: { from: 'local' | 'github'; skills: number; given: number } | null; designStyle?: { guide: string; note: string; at: string | null }; canva?: { configured: boolean; connectedAt: string | null; connecting?: { url: string; startedAt: number } | null; month: string; aiCalls: number; exports: number; limit: number; log: CanvaEntry[] }; designs?: DesignEntry[]; images?: { month: string; spentUsd: number; capUsd: number; log: ImageEntry[] }; money?: { byAgent: Record<string, MoneyRow>; entries: MoneyEntry[]; sales: SaleLine[]; salesSync: { at: string; error: string | null; orders: number | null } | null }; progressLog?: ProgressEntry[]; skillFiles?: SkillFile[]; asks?: OriginAsk[]; runs: RunnerRun[]; nextScheduledAt: string | null; focusEveryMinutes?: number;
 }
 
 // in the browser the dev server forwards /api/origin; the desktop app talks to the runner directly
@@ -88,15 +90,36 @@ export function brainMap(doc: OfficeDoc): string {
   }).join('\n')}`;
 }
 
+/** Every agent of a brain but JARVIS, with its instructions and SKILL.md, so JARVIS can work a task as that agent. */
+function agentsOf(doc: OfficeDoc) {
+  return Object.values(doc.agents).filter((a) => a.id !== ORIGIN_ID).map((a) => ({
+    id: a.id, name: a.identity.name, title: a.identity.title, kind: branchKind(doc, a.id), ventureId: a.branch?.ventureId ?? null,
+    hasSkillFile: doc.skillBank.some((k) => k.id === `skill_file_${a.id}`), prompt: agentPrompt(doc, a.id),
+  }));
+}
+
 /** Send JARVIS's current instructions, bank skills and brain map so scheduled runs use them. */
 export async function syncOrigin(doc: OfficeDoc) {
   if (!doc.agents[ORIGIN_ID]?.ai.systemInstructions) return false;
   // every other agent's instructions and SKILL.md, so JARVIS can work a task as that agent
-  const agents = Object.values(doc.agents).filter((a) => a.id !== ORIGIN_ID).map((a) => ({
-    id: a.id, name: a.identity.name, title: a.identity.title, kind: branchKind(doc, a.id), ventureId: a.branch?.ventureId ?? null,
-    hasSkillFile: doc.skillBank.some((k) => k.id === `skill_file_${a.id}`), prompt: agentPrompt(doc, a.id),
-  }));
-  return !!(await call('/sync', { instructions: `${agentPrompt(doc, ORIGIN_ID)}\n\n${brainMap(doc)}`, agents, brainId: doc.id, brainName: doc.name }, 10_000));
+  const agents = agentsOf(doc);
+  // JARVIS oversees every brain, so the other brains' agents go too: their tasks run whichever brain is open
+  let brains: { id: string; name: string; head: boolean; lead: string; purpose: string; agents: ReturnType<typeof agentsOf> }[] = [];
+  try { brains = libraryDocs().filter((d) => d.id !== doc.id).map((d) => ({ id: d.id, name: d.name, head: !!d.head, lead: d.plan?.lead ?? 'jarvis', purpose: d.plan?.purpose ?? '', agents: agentsOf(d) })); } catch { /* storage unavailable: only the open brain */ }
+  return !!(await call('/sync', { instructions: `${agentPrompt(doc, ORIGIN_ID)}\n\n${brainMap(doc)}`, agents, brainId: doc.id, brainName: doc.name, head: !!doc.head, lead: doc.plan?.lead ?? 'jarvis', purpose: doc.plan?.purpose ?? '', brains }, 10_000));
+}
+
+/** Ask JARVIS to design a brain for a business or task; the layout comes back to Approvals. */
+export async function planBrain(ask: string) {
+  return (await call<{ ok: boolean; error?: string; task?: RunnerTask }>('/brains', { action: 'plan', ask }))?.data ?? null;
+}
+/** Ask JARVIS to research how one brain could grow, now. */
+export async function evolveBrain(brainId: string) {
+  return (await call<{ ok: boolean; error?: string }>('/brains', { action: 'evolve', brainId }))?.data ?? null;
+}
+/** The owner's answer to a brain layout; on Yes the app has built it and says where. */
+export async function brainProposalAction(body: { action: 'approve'; id: string; brainId: string; agentIds: Record<string, string> } | { action: 'reject'; id: string }) {
+  return (await call<{ ok: boolean; error?: string; errors?: string[] }>('/brains', body, 60_000))?.data ?? null;
 }
 
 /** Start a manual work window; resolves when it ends (up to the window length). */

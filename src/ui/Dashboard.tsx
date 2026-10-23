@@ -2,7 +2,7 @@
 // what each branch has spent and earned, who is busy, and what waits for the owner. Everything
 // here is real: it comes from JARVIS's runner (useOrigin) and the brain itself; nothing is simulated.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, BookOpen, CircleDollarSign, ExternalLink, FileText, LayoutGrid, Play, RotateCcw, ShieldCheck, Sparkles, Store, Sunrise, Users, X } from 'lucide-react';
+import { Activity, BookOpen, Brain, CircleDollarSign, ExternalLink, FileText, LayoutGrid, Play, RotateCcw, ShieldCheck, Sparkles, Store, Sunrise, Users, X } from 'lucide-react';
 import { useStore } from '../store/store';
 import { useOrigin } from '../brain/useOrigin';
 import { runOrigin, runnerStatus, setMemeLookFor, startStore, storeAction, taskAction, type RunnerStatus, type RunnerTask, type TaskReport } from '../brain/originLink';
@@ -14,6 +14,7 @@ import { skillFileId } from '../brain/skillFiles';
 import { Library } from './Business';
 import { PageTabs, TabPanel, openSection, usePageTab } from './PageTabs';
 import { approvalsTabFor } from './Approvals';
+import { BrainsTab } from './BrainsTab';
 
 // Show, don't store: the page only reads what the runner and the brain already hold. The one thing it
 // keeps is the last answer the runner gave, so a runner that goes offline leaves stale numbers, not blanks.
@@ -46,7 +47,7 @@ export function Dashboard() {
   const stale = !live && lastKnown ? lastKnown : null;
   const st = live ?? stale?.st ?? null;
   const [logAgent, setLogAgent] = useState('');
-  const [tab, setTab] = usePageTab('dashboard', ['overview', 'store', 'money', 'activity', 'library'] as const);
+  const [tab, setTab] = usePageTab('dashboard', ['overview', 'brains', 'store', 'money', 'activity', 'library'] as const);
   // the digest covers everything since you last had this page open; the mark moves when you leave it
   const since = useRef(seenAt()).current;
   useEffect(() => () => { try { localStorage.setItem(SEEN_KEY, String(Date.now())); } catch { /* storage unavailable */ } }, []);
@@ -185,6 +186,7 @@ export function Dashboard() {
 
       <PageTabs label="Dashboard sections" value={tab} onChange={setTab} tabs={[
         { id: 'overview', label: 'Overview', icon: LayoutGrid },
+        { id: 'brains', label: 'Brains', icon: Brain, count: (st?.brainProposals ?? []).filter((p) => p.status === 'proposed').length, alert: true },
         { id: 'store', label: 'Store', icon: Store, count: (st?.reports ?? []).length },
         { id: 'money', label: 'Agents & money', icon: CircleDollarSign },
         { id: 'activity', label: 'Activity', icon: Activity, count: st?.runs.length ?? 0 },
@@ -248,6 +250,7 @@ export function Dashboard() {
           </div>
         </div>
       </TabPanel>}
+      {tab === 'brains' && <TabPanel id="brains"><BrainsTab /></TabPanel>}
       {tab === 'store' && <TabPanel id="store">
         <div className="card span-5">
           <h4><Store size={13} /> Start store <span className="count">{(st?.storeRuns ?? []).filter((r) => r.status === 'running' || r.status === 'waiting').length} running</span></h4>

@@ -13,7 +13,8 @@ import { ORIGIN_ID } from '../brain/opportunity';
 import { createRepository, type LoadResult, type OfficeRepository, type Preferences, type SaveResult } from '../persistence/repository';
 import { exportOffice, parseOffice } from '../model/schema';
 import { withBrainTheme } from '../model/themes';
-import { librarySkillBanks, listBrains, putBrain, removeBrain, takeBrain, type BrainSummary } from '../persistence/brains';
+import { libraryDocs, librarySkillBanks, listBrains, peekBrain, putBrain, removeBrain, takeBrain, type BrainSummary } from '../persistence/brains';
+import { applyBrainChange, buildPlannedBrain, mergeIntoHead, newBrainId, pickHeadId, splitVenture, storeVentureIn, withLead, type BrainProposal } from '../brain/headBrain';
 import { sharedSkillOps } from '../brain/brainUniverse';
 
 export type Selection = { kind: 'none' } | { kind: 'agent'; id: string };
@@ -82,6 +83,18 @@ interface State {
   /** Keep the open brain in the library and open another one from it. */
   switchBrain(id: string): boolean;
   deleteBrain(id: string): boolean;
+  /** Move a venture (the store one when none is named) out of the head brain into a brain of its own, run by JARVIS. Saves a version first. */
+  moveVentureToBrain(ventureId?: string): BrainSummary | null;
+  /** Put a moved brain's agents back into the head brain and remove that brain (the open brain must be the head). */
+  moveBrainBack(id: string): boolean;
+  /** Build the brain an approved layout describes; returns its id and its agents' ids by lowercase name. */
+  buildBrain(p: BrainProposal): { brainId: string; agentIds: Record<string, string> } | null;
+  /** Apply an approved change to a brain, open or in the library. */
+  changeBrain(p: BrainProposal): { brainId: string; agentIds: Record<string, string> } | null;
+  /** Change any brain, the open one (undoable) or one in the library. */
+  updateBrain(id: string, fn: (doc: OfficeDoc) => OfficeDoc | null, label: string): boolean;
+  /** Who runs a brain: 'jarvis' or one of its agents. */
+  setBrainLead(id: string, lead: string): boolean;
 }
 
 export const repo: OfficeRepository = createRepository();
@@ -93,7 +106,7 @@ function initial() {
   // a damaged save is reported (recovery dialog), never replaced: the sample below is only a placeholder
   const recovery = loaded.status === 'corrupt' ? loaded : null;
   const saved = loaded.status === 'ok' ? loaded : null;
-  const doc = withOrigin(saved?.doc ?? creatorBrain()); // first run opens the user-led agent brain
+  const doc = withHead(withOrigin(saved?.doc ?? creatorBrain())); // first run opens the user-led agent brain
   const runtime: RuntimeState = { ...emptyRuntime(), ...(saved?.runtime ?? {}) } as RuntimeState;
   runtime.events ??= []; runtime.tasks ??= {}; runtime.agents ??= {}; runtime.usage ??= []; runtime.approvals ??= {}; runtime.alerts ??= {};
   cleanRuntime(runtime, doc);
@@ -103,6 +116,19 @@ function initial() {
   if (loaded.status === 'empty') { try { lastSaved = { doc, at: repo.saveCurrent(doc, runtime).savedAt }; } catch { /* storage unavailable: stay unsaved */ } }
   return { doc, runtime, lastSaved, recovery };
 }
+
+/** JARVIS's head brain is marked once: the original brain (or the biggest one the owner started), whether it is open or in the library. */
+function withHead(doc: OfficeDoc): OfficeDoc {
+  let lib: OfficeDoc[] = [];
+  try { lib = libraryDocs(); } catch { /* storage unavailable */ }
+  if (doc.head || lib.some((d) => d.head)) return doc;
+  const id = pickHeadId([doc, ...lib]);
+  if (id === doc.id) return { ...doc, head: true };
+  const b = id ? peekBrain(id) : null;
+  if (b) { try { putBrain({ ...b.doc, head: true }, b.runtime); } catch { /* marked next time */ } }
+  return doc;
+}
+const ownerPlan = (): OfficeDoc['plan'] => ({ purpose: '', lead: 'jarvis', createdBy: 'owner', createdAt: new Date().toISOString(), research: [], history: [] });
 
 /** The brain always has JARVIS at its core; a save without it gets a fresh JARVIS. */
 function withOrigin(doc: OfficeDoc): OfficeDoc {
@@ -357,7 +383,7 @@ export const useStore = create<State>((set, get) => {
       const { doc: prev, runtime } = get();
       try { putBrain(prev, { tasks: runtime.tasks }); } catch (e) { get().notify((e as Error).message, 'error'); return false; }
       // the sample brain is frozen, so the new brain is a copy with its own id and name
-      const doc = { ...creatorBrain(), id: `brain_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name: (name ?? '').trim() || `Brain ${listBrains().length + 1}` };
+      const doc = { ...creatorBrain(), id: newBrainId(), name: (name ?? '').trim() || `Brain ${listBrains().length + 1}`, head: false, plan: ownerPlan() };
       // a new brain grows from what the other brains learned
       const grown = applyOps(doc, sharedSkillOps(doc, [{ brainId: prev.id, brainName: prev.name, skills: prev.skillBank ?? [] }, ...librarySkillBanks()]));
       const rt = emptyRuntime(); syncRuntime(grown.doc, rt);
@@ -369,7 +395,7 @@ export const useStore = create<State>((set, get) => {
     },
     addBrain(name) {
       const { doc: open } = get();
-      const doc = { ...creatorBrain(), id: `brain_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name: (name ?? '').trim() || `Brain ${listBrains().length + 2}` };
+      const doc = { ...creatorBrain(), id: newBrainId(), name: (name ?? '').trim() || `Brain ${listBrains().length + 2}`, head: false, plan: ownerPlan() };
       // like a started brain, it already knows what the open brain and the others learned
       const grown = applyOps(doc, sharedSkillOps(doc, [{ brainId: open.id, brainName: open.name, skills: open.skillBank ?? [] }, ...librarySkillBanks()]));
       try { putBrain(grown.doc, null); } catch (e) { get().notify((e as Error).message, 'error'); return null; }
@@ -393,8 +419,76 @@ export const useStore = create<State>((set, get) => {
     },
     deleteBrain(id) {
       let ok = false;
+      if (peekBrain(id)?.doc.head) { get().notify('JARVIS\'s head brain cannot be deleted: it runs all the others.', 'warn'); return false; }
       try { ok = removeBrain(id); } catch (e) { get().notify((e as Error).message, 'error'); return false; }
       set({ brains: listBrains() });
+      return ok;
+    },
+    moveVentureToBrain(ventureId) {
+      const { doc: head } = get();
+      if (!head.head) { get().notify('Open JARVIS\'s head brain to move a venture out of it.', 'warn'); return null; }
+      const v = ventureId ?? storeVentureIn(head);
+      if (!v) return null;
+      const r = splitVenture(head, v, { name: head.agents[v]?.identity.name });
+      if ('error' in r) { get().notify(r.error, 'warn'); return null; }
+      // a version to go back to, then the new brain, then the head brain without the venture
+      try { repo.saveVersion(`Before moving ${head.agents[v].identity.name} into its own brain`, head); putBrain(r.brain, null); } catch (e) { get().notify((e as Error).message, 'error'); return null; }
+      setDoc(r.head, { past: [...get().past, { doc: head, label: `Move ${r.brain.name} into its own brain` }].slice(-100), future: [], selection: { kind: 'none' }, brains: listBrains() });
+      const rt = cloneRuntime(get().runtime);
+      log(rt, { kind: 'change', agentId: null, simulated: false, message: `Moved ${r.brain.name} and its ${Object.keys(r.brain.agents).length - 1} agents into a brain of its own. JARVIS runs it until you hook up another agent.` });
+      set({ runtime: rt });
+      get().save();
+      return listBrains().find((b) => b.id === r.brain.id) ?? null;
+    },
+    moveBrainBack(id) {
+      const { doc: head } = get();
+      const b = peekBrain(id);
+      if (!head.head || !b) { get().notify('Open JARVIS\'s head brain to move a brain back into it.', 'warn'); return false; }
+      const merged = mergeIntoHead(head, b.doc);
+      try { repo.saveVersion(`Before moving ${b.name} back`, head); removeBrain(id); } catch (e) { get().notify((e as Error).message, 'error'); return false; }
+      setDoc(merged, { past: [...get().past, { doc: head, label: `Move ${b.name} back into ${head.name}` }].slice(-100), future: [], selection: { kind: 'none' }, brains: listBrains() });
+      get().save();
+      return true;
+    },
+    buildBrain(p) {
+      const { doc: open } = get();
+      const head = open.head ? open : libraryDocs().find((d) => d.head) ?? open;
+      const r = buildPlannedBrain(head, p);
+      if (!Object.keys(r.agentIds).length) { get().notify(`Couldn't build ${p.name}: ${r.errors.join('; ')}`, 'error'); return null; }
+      const grown = applyOps(r.doc, sharedSkillOps(r.doc, [{ brainId: open.id, brainName: open.name, skills: open.skillBank ?? [] }, ...librarySkillBanks()]));
+      try { putBrain(grown.doc, null); } catch (e) { get().notify((e as Error).message, 'error'); return null; }
+      set({ brains: listBrains() });
+      if (r.errors.length) get().notify(`Built ${p.name}, but: ${r.errors.join('; ')}`, 'warn');
+      return { brainId: r.doc.id, agentIds: r.agentIds };
+    },
+    changeBrain(p) {
+      if (!p.brainId) return null;
+      let agentIds: Record<string, string> = {};
+      let errors: string[] = [];
+      const ok = get().updateBrain(p.brainId, (d) => { const r = applyBrainChange(d, p); agentIds = r.agentIds; errors = r.errors; return r.doc; }, `Grow ${p.name}`);
+      if (errors.length) get().notify(`${p.name}: ${errors.join('; ')}`, 'warn');
+      return ok ? { brainId: p.brainId, agentIds } : null;
+    },
+    updateBrain(id, fn, label) {
+      const { doc: open } = get();
+      if (id === open.id) {
+        const next = fn(open);
+        if (!next) return false;
+        setDoc(next, { past: [...get().past, { doc: open, label }].slice(-100), future: [] });
+        return true;
+      }
+      const b = peekBrain(id);
+      if (!b) { get().notify('That brain is not in the library any more.', 'warn'); return false; }
+      const next = fn(b.doc);
+      if (!next) return false;
+      try { putBrain(next, b.runtime); } catch (e) { get().notify((e as Error).message, 'error'); return false; }
+      set({ brains: listBrains() });
+      return true;
+    },
+    setBrainLead(id, lead) {
+      let err: string | null = null;
+      const ok = get().updateBrain(id, (d) => { const r = withLead(d, lead); if ('error' in r) { err = r.error; return null; } return r.doc; }, 'Change who runs the brain');
+      if (err) get().notify(err, 'warn');
       return ok;
     },
   };

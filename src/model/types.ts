@@ -183,10 +183,32 @@ export interface ControlSettings {
   emergencyStop: boolean;
 }
 
+/**
+ * What a brain is for and who runs it. JARVIS's head brain (head: true) sits in the middle and
+ * oversees every other brain; it builds each one from a layout the owner approved, and keeps it
+ * growing through research (every change waits for the owner's Yes).
+ */
+export interface BrainPlan {
+  purpose: string;
+  /** Who runs the brain: JARVIS until the owner hooks up one of the brain's own agents. */
+  lead: 'jarvis' | ID;
+  createdBy: 'jarvis' | 'owner';
+  createdAt: string;
+  /** What JARVIS researches to keep the brain growing. */
+  research: string[];
+  /** The venture this brain was moved out of the head brain from, if any. */
+  fromVenture?: ID;
+  history: { at: string; note: string }[];
+}
+
 export interface OfficeDoc {
   schemaVersion: number;
   id: ID;
   name: string;
+  /** JARVIS's head brain: the one in the middle that builds and oversees the others. */
+  head?: boolean;
+  /** Every other brain: what it is for and who runs it. */
+  plan?: BrainPlan;
   agents: Record<ID, Agent>;
   appearance: AppearanceSettings;
   alertSettings: AlertSettings;
